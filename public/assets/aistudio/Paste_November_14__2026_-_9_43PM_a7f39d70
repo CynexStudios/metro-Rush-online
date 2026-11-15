@@ -1,0 +1,1395 @@
+# ACTUALIZACIÓN DEFINITIVA — EVOLUCIÓN EXTREMA DEL VIDEOJUEGO
+## Reconstrucción de la experiencia, expansión de jugabilidad, nuevos escenarios, jefes avanzados, multijugador online y renovación gráfica de nivel profesional.
+
+### 1. VISIÓN GENERAL Y OBJETIVO
+
+Ha llegado el momento de llevar este videojuego a otro nivel. No quiero una actualización convencional ni una colección de pequeños cambios. Quiero una transformación profunda de la calidad, la dificultad, la jugabilidad, el apartado gráfico, la inteligencia artificial y la experiencia general.
+
+Debes trabajar como un estudio profesional de desarrollo de videojuegos, con especialistas en:
+
+- Diseño de videojuegos.
+- Programación y arquitectura.
+- Diseño de niveles.
+- Inteligencia artificial.
+- Modelado y animación 3D.
+- Diseño de interfaces UI/UX.
+- Iluminación y renderizado.
+- Sonido y composición musical.
+- Sistemas multijugador.
+- Bases de datos.
+- Optimización y pruebas.
+
+El objetivo es conseguir un videojuego mucho más impresionante, desafiante, inmersivo, visualmente atractivo y técnicamente sólido.
+
+Quiero que el resultado tenga una identidad propia. Aunque conserve elementos característicos de su inspiración original, no debe sentirse como una copia genérica.
+
+**IMPORTANTE: trabaja sobre el proyecto existente. No reconstruyas todo desde cero, no elimines funcionalidades que ya funcionan y no destruyas los avances anteriores.**
+
+Debes analizar primero el estado actual del proyecto y después ejecutar las mejoras.
+
+---
+
+# 2. INVESTIGACIÓN PROFESIONAL Y NUEVOS RECURSOS
+
+Antes de modificar los modelos, escenarios y sistemas, realiza una investigación profunda en Internet.
+
+Quiero que busques recursos reales que puedan integrarse al proyecto.
+
+Investiga:
+
+- Modelos 3D de personajes.
+- Modelos 3D de jefes y criaturas.
+- Modelos de edificios.
+- Arquitectura urbana.
+- Vehículos y trenes.
+- Elementos industriales.
+- Túneles.
+- Decoraciones ambientales.
+- Trampas.
+- Obstáculos.
+- Modelos de aviones y jets.
+- Texturas PBR.
+- Materiales.
+- Animaciones.
+- Efectos de partículas.
+- Sonidos ambientales.
+- Música.
+- Efectos especiales.
+
+Utiliza bibliotecas como Sketchfab, Poly Haven, Kenney, ambientCG y otras plataformas de recursos compatibles.
+
+Investiga también recursos gratuitos y de pago cuando sean necesarios, pero no realices compras ni suscripciones.
+
+### Requisitos de integración
+
+1. Comprueba que los recursos sean compatibles con el motor y la versión del proyecto.
+2. Verifica sus licencias.
+3. Descarga los modelos cuando sea posible.
+4. Integra los modelos en las escenas correspondientes.
+5. Configura correctamente materiales y texturas.
+6. Implementa las animaciones necesarias.
+7. Optimiza los recursos.
+8. Comprueba que los modelos funcionen correctamente dentro del videojuego.
+
+No quiero que simplemente encuentres imágenes de modelos en Internet y las presentes como si estuvieran implementadas.
+
+Quiero recursos 3D reales, integrados y funcionales.
+
+Cuando un modelo no sea compatible, busca una alternativa o adáptalo.
+
+---
+
+# 3. RECONSTRUCCIÓN DE LA EXPERIENCIA PRINCIPAL
+
+La experiencia principal del videojuego necesita una renovación profunda.
+
+Analiza el flujo completo desde que el jugador inicia el juego hasta que termina una partida.
+
+Mejora:
+
+- Pantalla de inicio.
+- Pantalla de carga.
+- Lobby.
+- Menú principal.
+- Selección de personajes.
+- Selección de modos.
+- Inicio de partida.
+- Interfaz durante la partida.
+- Menú de pausa.
+- Menú de derrota.
+- Menú de resultados.
+- Transiciones entre escenas.
+
+Todo debe sentirse conectado.
+
+Las transiciones deben ser fluidas y cada pantalla debe tener una identidad visual coherente.
+
+---
+
+# 4. NUEVO MENÚ PRINCIPAL: REDISEÑO TOTAL
+
+Quiero abandonar completamente la organización visual actual del menú principal.
+
+No quiero seguir utilizando la misma estructura con pequeños cambios.
+
+Diseña una nueva interfaz desde cero, conservando las funciones existentes, pero reorganizando absolutamente la experiencia de navegación.
+
+### Dirección artística
+
+Quiero un menú impactante, moderno, elegante y cinematográfico.
+
+Debe tener:
+
+- Escenario 3D dinámico.
+- Personaje principal presentado con calidad.
+- Cámara cinematográfica.
+- Iluminación ambiental.
+- Animaciones de personajes.
+- Elementos ambientales en movimiento.
+- Efectos de profundidad.
+- Música propia del lobby.
+- Animaciones de navegación.
+- Indicadores de progreso.
+- Información del jugador.
+- Nivel y experiencia.
+- Monedas.
+- Recursos especiales.
+- Notificaciones.
+- Eventos activos.
+
+### Nueva organización
+
+Reorganiza las opciones principales para que el jugador pueda acceder intuitivamente a:
+
+- Jugar.
+- Multijugador.
+- Historia.
+- Eventos.
+- Misiones.
+- Pase de batalla.
+- Tienda.
+- Inventario.
+- Garaje.
+- Estadísticas.
+- Perfil.
+- Ajustes.
+
+No quiero que todos los botones estén amontonados en un mismo lugar.
+
+Utiliza una distribución profesional, con jerarquías visuales y accesos rápidos.
+
+El botón de jugar debe destacar claramente.
+
+El jugador debe entender inmediatamente dónde está cada función.
+
+### Elementos adicionales
+
+Añade un espacio de novedades que permita visualizar:
+
+- Eventos actuales.
+- Nuevos desafíos.
+- Recompensas.
+- Actualizaciones.
+- Contenido destacado.
+
+No llenes la pantalla de información innecesaria.
+
+**El menú principal debe convertirse en una de las mejores presentaciones visuales del videojuego.**
+
+---
+
+# 5. NUEVO MENÚ DE PAUSA
+
+Reconstruye completamente el menú de pausa.
+
+No debe parecer una ventana improvisada encima de la partida.
+
+Debe tener una presentación visual profesional, sin perder la visibilidad del escenario cuando resulte apropiado.
+
+Incluye:
+
+- Continuar partida.
+- Reiniciar partida, cuando el modo lo permita.
+- Configuración.
+- Estadísticas actuales.
+- Información de la misión.
+- Controles.
+- Volver al menú principal.
+- Abandonar partida.
+
+Añade:
+
+- Animaciones de apertura.
+- Transiciones.
+- Efectos visuales.
+- Sonidos.
+- Paneles organizados.
+- Indicadores de estado.
+
+Cuando el jugador pause la partida, el comportamiento del mundo debe ser coherente: los enemigos, obstáculos y sistemas que deban detenerse tienen que hacerlo correctamente.
+
+En multijugador, utiliza una pausa individual de interfaz cuando corresponda, sin congelar la partida de los demás jugadores.
+
+---
+
+# 6. RECONSTRUCCIÓN DE LOS MAPAS Y LOS ENTORNOS
+
+Este apartado es prioritario.
+
+Actualmente los mapas se sienten demasiado parecidos entre sí. Las ciudades parecen reutilizar las mismas estructuras y los escenarios carecen de suficiente personalidad.
+
+Quiero una transformación radical del diseño de niveles.
+
+Cada mapa debe tener una identidad visual, una distribución, una arquitectura y una experiencia de juego diferenciadas.
+
+No quiero simplemente cambiar los colores de los mismos edificios.
+
+### 6.1. Nuevos entornos
+
+Investiga y desarrolla diferentes ambientes:
+
+- Ciudades modernas.
+- Ciudades industriales.
+- Zonas comerciales.
+- Barrios residenciales.
+- Distritos abandonados.
+- Zonas de construcción.
+- Áreas subterráneas.
+- Estaciones ferroviarias.
+- Complejos industriales.
+- Zonas elevadas.
+- Áreas de infraestructura urbana.
+
+Cada entorno debe contar con modelos, iluminación, arquitectura, decoraciones y elementos ambientales propios.
+
+### 6.2. Diseño vertical
+
+Quiero que los mapas dejen de ser superficies relativamente planas.
+
+Introduce desniveles y cambios de altura importantes.
+
+Implementa:
+
+- Cuestas pronunciadas.
+- Bajadas rápidas.
+- Rampas.
+- Saltos elevados.
+- Puentes.
+- Pasarelas.
+- Plataformas.
+- Túneles.
+- Pasos subterráneos.
+- Accesos alternativos.
+- Estructuras elevadas.
+- Zonas de riesgo.
+
+Los jugadores deben tener que reaccionar constantemente a las características del terreno.
+
+### 6.3. Túneles subterráneos
+
+Introduce segmentos subterráneos completamente desarrollados.
+
+No quiero simples agujeros en el suelo.
+
+Deben incluir:
+
+- Arquitectura propia.
+- Iluminación industrial.
+- Señalización.
+- Tuberías.
+- Elementos eléctricos.
+- Efectos ambientales.
+- Sonidos.
+- Obstáculos.
+- Trenes cuando corresponda.
+- Rutas alternativas.
+
+Los túneles deben representar una experiencia diferente a las zonas exteriores.
+
+### 6.4. Trenes y ferrocarriles
+
+Quiero introducir trenes en determinadas secciones de las partidas.
+
+No conviertas todas las carreteras en vías ferroviarias.
+
+Las carreteras deben parecer carreteras reales, con carriles, aceras, cruces y elementos urbanos.
+
+Los trenes deben aparecer en áreas donde tenga sentido su presencia, especialmente en estaciones, túneles y corredores ferroviarios.
+
+Implementa:
+
+- Trenes en movimiento.
+- Diferentes velocidades.
+- Obstáculos ferroviarios.
+- Cruces peligrosos.
+- Señales.
+- Barreras.
+- Efectos sonoros.
+- Iluminación.
+- Eventos relacionados con trenes.
+
+Los trenes deben convertirse en un desafío de reflejos, no en elementos decorativos.
+
+---
+
+# 7. OBSTÁCULOS AÉREOS Y NUEVAS MECÁNICAS DE MOVIMIENTO
+
+Quiero llevar la jugabilidad a otro nivel.
+
+Introduce obstáculos y desafíos que obliguen al jugador a reaccionar tanto a nivel del suelo como en el aire.
+
+### Nuevos obstáculos:
+
+- Jets o aeronaves.
+- Drones.
+- Helicópteros.
+- Estructuras suspendidas.
+- Barreras aéreas.
+- Obstáculos móviles.
+- Plataformas elevadas.
+- Puentes colgantes.
+- Estructuras que se desplazan.
+- Objetos que caen.
+- Trampas suspendidas.
+- Obstáculos que cruzan el recorrido.
+
+### Eventos aéreos
+
+Implementa situaciones donde una aeronave atraviese una sección del mapa, genere una amenaza o obligue al jugador a modificar su trayectoria.
+
+Las aeronaves deben contar con:
+
+- Modelos 3D.
+- Animaciones.
+- Movimiento coherente.
+- Sonidos.
+- Efectos de iluminación.
+- Comportamientos programados.
+- Colisiones correctamente configuradas.
+
+No quiero obstáculos aéreos colocados aleatoriamente sin lógica.
+
+Deben estar integrados en el diseño del nivel.
+
+### Nuevas mecánicas
+
+Mejora y amplía:
+
+- Saltos.
+- Deslizamientos.
+- Cambios de carril.
+- Esquivas.
+- Saltos dobles, si son compatibles con el diseño.
+- Movimientos aéreos.
+- Transiciones entre plataformas.
+- Parkour.
+
+Introduce secciones de parkour más altas y complejas.
+
+El jugador debe poder encadenar movimientos para superar secuencias exigentes.
+
+---
+
+# 8. NUEVO SISTEMA DE DIFICULTAD PROGRESIVA
+
+Quiero que las partidas tengan un ritmo cuidadosamente diseñado.
+
+No quiero que el jugador comience inmediatamente en una situación caótica.
+
+### Primera etapa: adaptación
+
+Los primeros metros deben ser tranquilos.
+
+- Obstáculos sencillos.
+- Espacios amplios.
+- Pocas amenazas.
+- Velocidad controlada.
+- Música relajada.
+- Tiempo para acostumbrarse.
+
+El objetivo es que el jugador entre en ritmo.
+
+### Segunda etapa: incremento de dificultad
+
+Introduce gradualmente:
+
+- Más obstáculos.
+- Mayor velocidad.
+- Combinaciones de movimientos.
+- Desniveles.
+- Trampas.
+- Cambios de dirección.
+- Obstáculos móviles.
+
+### Tercera etapa: dificultad avanzada
+
+Aquí el jugador debe comenzar a poner a prueba sus reflejos.
+
+- Obstáculos combinados.
+- Secciones estrechas.
+- Trenes.
+- Saltos elevados.
+- Trampas aéreas.
+- Eventos aleatorios.
+- Persecución intensificada.
+
+### Cuarta etapa: dificultad extrema
+
+Introduce secuencias complejas y exigentes.
+
+El jugador debe dominar las mecánicas para sobrevivir.
+
+La dificultad debe aumentar de manera gradual y controlada.
+
+No utilices únicamente más velocidad para hacer el juego difícil. La complejidad debe venir también del diseño de los obstáculos y de las decisiones que debe tomar el jugador.
+
+---
+
+# 9. SISTEMA DE MAPAS Y CLIMA ALEATORIO
+
+Quiero que el jugador deje de elegir manualmente el mapa y el clima cuando el modo de juego esté diseñado para selección aleatoria.
+
+El sistema debe determinar automáticamente el entorno y las condiciones ambientales.
+
+### Selección de mapas
+
+- Selección aleatoria entre mapas disponibles.
+- Evitar repeticiones excesivas.
+- Distribución equilibrada.
+- Variación entre partidas.
+- Compatibilidad con eventos y jefes.
+
+### Clima dinámico
+
+Implementa diferentes condiciones:
+
+- Soleado.
+- Nublado.
+- Lluvioso.
+- Tormenta.
+- Niebla.
+- Atardecer.
+- Amanecer.
+- Noche.
+
+Cada condición debe modificar la ambientación de forma perceptible.
+
+No quiero que el clima sea simplemente un filtro de color.
+
+Debe afectar:
+
+- Iluminación.
+- Visibilidad.
+- Sonidos.
+- Partículas.
+- Ambiente.
+- Materiales.
+- Reflejos.
+- Atmósfera.
+
+### Sistema de lluvia limitada
+
+La lluvia de monedas, objetos o recompensas especiales no debe mantenerse constantemente.
+
+Debe aparecer solamente durante eventos o intervalos determinados.
+
+Implementa un sistema que controle:
+
+- Probabilidad.
+- Duración.
+- Frecuencia.
+- Cantidad.
+- Tiempo de espera.
+- Recompensas.
+
+Algunas rondas podrán tener eventos especiales y otras no.
+
+No quiero que todas las partidas se sientan idénticas.
+
+---
+
+# 10. RECONSTRUCCIÓN COMPLETA DEL SISTEMA DE JEFES
+
+Este es uno de los cambios más importantes.
+
+Actualmente los jefes aparecen durante las partidas, pero no representan una amenaza real ni aprovechan adecuadamente sus posibilidades.
+
+Quiero convertirlos en verdaderos enfrentamientos.
+
+No basta con que aparezcan en pantalla. Deben tener inteligencia artificial, habilidades, fases, ataques y comportamientos propios.
+
+### 10.1. Identidad de cada jefe
+
+Cada jefe debe tener:
+
+- Modelo 3D exclusivo.
+- Animaciones propias.
+- Efectos visuales.
+- Sonidos.
+- Personalidad.
+- Introducción cinematográfica.
+- Barra de vida.
+- Sistema de ataques.
+- Patrones de movimiento.
+- Fases de combate.
+- Recompensas.
+
+Los jefes deben ser reconocibles incluso por su silueta y sus habilidades.
+
+### 10.2. Fases de combate
+
+Cada jefe debe tener varias fases.
+
+Ejemplo de estructura:
+
+**Fase 1: reconocimiento**
+
+El jefe aparece y comienza a estudiar los movimientos del jugador.
+
+Utiliza ataques relativamente sencillos.
+
+**Fase 2: agresividad**
+
+Aumenta la velocidad de sus ataques.
+
+Introduce nuevas habilidades y combinaciones.
+
+**Fase 3: presión máxima**
+
+El jefe utiliza sus habilidades más peligrosas.
+
+Modifica el ritmo del combate y obliga al jugador a reaccionar rápidamente.
+
+**Fase final: habilidad definitiva**
+
+Introduce un ataque especial que represente la mayor amenaza del enfrentamiento.
+
+Las fases deben tener transiciones visuales y sonoras.
+
+### 10.3. Habilidades de los jefes
+
+Cada jefe debe tener un conjunto de habilidades diferente.
+
+Ejemplos:
+
+- Ataques de área.
+- Proyectiles.
+- Ondas expansivas.
+- Embestidas.
+- Obstáculos invocados.
+- Ataques aéreos.
+- Trampas.
+- Explosiones.
+- Persecuciones.
+- Alteraciones del entorno.
+- Ataques consecutivos.
+
+Las habilidades deben tener anticipaciones visuales y sonoras para que el jugador pueda reaccionar.
+
+### 10.4. Arenas de combate
+
+Cuando aparezca un jefe, el sistema debe adaptar el entorno para permitir un enfrentamiento adecuado.
+
+Si es necesario, utiliza zonas especiales o modifica temporalmente la distribución del mapa.
+
+No permitas que los jefes aparezcan en espacios donde no puedan utilizar sus habilidades correctamente.
+
+Crea arenas específicas para los enfrentamientos cuando sea necesario.
+
+Elimina temporalmente obstáculos incompatibles con la batalla, pero conserva los elementos que aporten interés al combate.
+
+### 10.5. Recompensas
+
+Derrotar a un jefe debe sentirse importante.
+
+Implementa:
+
+- Monedas.
+- Experiencia.
+- Tiques.
+- Objetos especiales.
+- Recompensas poco comunes.
+- Progreso de misiones.
+- Recompensas del pase de batalla.
+
+La dificultad debe estar equilibrada con las recompensas.
+
+---
+
+# 11. HABILIDADES DE LOS PERSONAJES
+
+Quiero que cada personaje tenga habilidades realmente diferentes.
+
+Actualmente las diferencias entre personajes no resultan suficientemente interesantes.
+
+Rediseña este sistema.
+
+Cada personaje debe tener:
+
+- Habilidad principal.
+- Habilidad secundaria cuando corresponda.
+- Ventaja pasiva.
+- Animación propia.
+- Efecto visual.
+- Sonido característico.
+- Tiempo de recarga.
+- Descripción detallada.
+
+### Diferenciación
+
+No quiero que todos los personajes tengan habilidades prácticamente iguales con diferentes nombres.
+
+Cada uno debe ofrecer una manera diferente de jugar.
+
+Ejemplos de especializaciones:
+
+- Velocidad.
+- Movilidad.
+- Supervivencia.
+- Magnetismo.
+- Recolección.
+- Defensa.
+- Control de obstáculos.
+- Recuperación.
+- Bonificaciones de puntuación.
+
+### Mejoras
+
+Permite mejorar las habilidades mediante el sistema de progresión existente.
+
+Las mejoras deben tener efectos reales y equilibrados.
+
+Evita que un personaje sea tan poderoso que los demás pierdan utilidad.
+
+---
+
+# 12. RECONSTRUCCIÓN DEL GARAGE
+
+El garaje necesita una mejora radical.
+
+Quiero un espacio 3D mucho más elaborado.
+
+Implementa:
+
+- Escenario tridimensional.
+- Iluminación profesional.
+- Cámaras cinematográficas.
+- Modelos detallados.
+- Animaciones.
+- Rotación de personajes.
+- Vistas de diferentes ángulos.
+- Efectos visuales.
+- Información de características.
+- Rarezas.
+- Indicadores de desbloqueo.
+
+Cada personaje debe poder visualizarse correctamente.
+
+El escenario del garaje debe tener una identidad propia y no parecer una simple pantalla con un modelo colocado en el centro.
+
+---
+
+# 13. RECONSTRUCCIÓN DE LA TIENDA Y EL INVENTARIO EN 3D
+
+Este apartado debe recibir una mejora extraordinaria.
+
+Actualmente no quiero una tienda compuesta simplemente por tarjetas planas.
+
+Quiero una experiencia visual tridimensional.
+
+### 13.1. Tienda 3D
+
+Diseña un espacio de presentación donde los artículos puedan visualizarse mediante modelos reales.
+
+Cada artículo debe mostrar:
+
+- Modelo 3D.
+- Rotación.
+- Animación.
+- Iluminación.
+- Vista previa.
+- Nombre.
+- Rareza.
+- Precio.
+- Descripción.
+- Características.
+
+Los personajes deben aparecer en modelos tridimensionales completos.
+
+Los trajes deben visualizarse equipados sobre el personaje correspondiente.
+
+Los objetos especiales deben contar con presentaciones visuales propias.
+
+### 13.2. Inventario 3D
+
+El inventario debe permitir visualizar los objetos adquiridos en un espacio tridimensional.
+
+Secciones:
+
+- Personajes.
+- Trajes.
+- Habilidades.
+- Tiques.
+- Objetos especiales.
+
+Permite seleccionar, equipar, utilizar y consultar los elementos.
+
+### 13.3. Calidad de presentación
+
+Quiero:
+
+- Modelos de alta calidad.
+- Materiales PBR.
+- Texturas detalladas.
+- Iluminación adecuada.
+- Sombras.
+- Animaciones.
+- Efectos de selección.
+- Cámaras dinámicas.
+- Transiciones.
+
+Busca nuevos modelos en Internet y reemplaza los modelos antiguos que tengan una calidad inferior.
+
+No quiero que se utilicen simples imágenes 2D para simular modelos 3D cuando el motor permita visualizar los modelos reales.
+
+---
+
+# 14. RECONSTRUCCIÓN DEL SISTEMA DE ILUMINACIÓN
+
+Actualmente las luces están demasiado superpuestas y la iluminación no consigue diferenciar correctamente los ambientes.
+
+Necesito una revisión completa del sistema.
+
+No quiero simplemente aumentar la intensidad de todas las luces.
+
+Analiza:
+
+- Fuentes de luz.
+- Intensidad.
+- Alcance.
+- Sombras.
+- Solapamiento.
+- Temperatura de color.
+- Iluminación ambiental.
+- Reflejos.
+- Exposición.
+- Materiales.
+- Rendimiento.
+
+Elimina luces redundantes y organiza correctamente las fuentes de iluminación.
+
+### 14.1. Ciclo de día y noche
+
+Reconstruye el sistema para que las diferencias entre los momentos del día sean claramente perceptibles.
+
+**Día:**
+- Luz solar intensa.
+- Sombras definidas.
+- Cielo luminoso.
+- Colores naturales.
+
+**Atardecer:**
+- Tonalidades cálidas.
+- Luz solar baja.
+- Sombras largas.
+- Ambiente cinematográfico.
+
+**Noche:**
+- Iluminación ambiental reducida.
+- Luces artificiales.
+- Señalización luminosa.
+- Contraste.
+- Reflejos.
+- Cielo nocturno.
+
+**Amanecer:**
+- Iluminación progresiva.
+- Tonalidades suaves.
+- Transición ambiental.
+
+Los cambios deben ser visualmente evidentes.
+
+### 14.2. Iluminación específica por entorno
+
+Cada mapa debe tener una configuración de iluminación propia.
+
+No utilices exactamente las mismas luces en todas las ciudades.
+
+Los túneles, zonas industriales, calles, estaciones y espacios abiertos deben iluminarse de manera diferente.
+
+---
+
+# 15. SISTEMA DE MÚSICA DINÁMICA
+
+Mejora considerablemente la música de las partidas.
+
+No quiero escuchar siempre la misma pista durante toda la experiencia.
+
+Implementa un sistema musical adaptativo.
+
+La música debe cambiar dependiendo de:
+
+- Inicio de partida.
+- Exploración.
+- Incremento de velocidad.
+- Aparición de obstáculos.
+- Persecuciones.
+- Eventos.
+- Combates contra jefes.
+- Fases finales.
+- Derrota.
+
+Utiliza transiciones suaves y cambios musicales coherentes.
+
+Cada mapa puede contar con diferentes variantes musicales.
+
+Los enfrentamientos con jefes deben tener música propia, con intensidad creciente según las fases.
+
+Evita repetir constantemente los mismos fragmentos.
+
+---
+
+# 16. NUEVO SISTEMA DE MULTIJUGADOR ONLINE
+
+Ha llegado el momento de convertir el sistema online de prueba en una funcionalidad realmente operativa.
+
+Quiero que los jugadores puedan conectarse, crear salas y competir entre amigos.
+
+No quiero una interfaz que simplemente simule que hay conexión.
+
+Necesito comunicación real entre clientes y servidores.
+
+### 16.1. Servidores locales gratuitos
+
+Implementa la posibilidad de crear servidores gratuitos autogestionados.
+
+El sistema debe permitir:
+
+- Crear un servidor.
+- Unirse a un servidor.
+- Compartir una dirección o código de conexión.
+- Invitar amigos.
+- Crear salas privadas.
+- Crear partidas públicas cuando la infraestructura lo permita.
+- Consultar jugadores conectados.
+- Consultar el estado de la partida.
+- Abandonar una sala.
+
+Investiga las posibilidades técnicas del motor para implementar servidores dedicados y servidores alojados por los propios jugadores.
+
+### 16.2. Servidores externos
+
+Investiga herramientas que permitan ejecutar servidores del videojuego desde computadoras personales o servicios externos gratuitos.
+
+Evalúa alternativas como:
+
+- Servidores dedicados del propio motor.
+- Aplicaciones de alojamiento autogestionado.
+- Herramientas de túneles de red.
+- Sistemas de conexión entre jugadores.
+- Servicios gratuitos con límites de uso.
+
+La arquitectura debe permitir utilizar herramientas externas sin depender obligatoriamente de un proveedor de pago.
+
+Explica las limitaciones de cada alternativa.
+
+Importante: no prometas alojamiento público gratuito permanente si depende de recursos que no están disponibles. Debe distinguirse entre servidor LAN, servidor autohospedado y servidor público accesible desde Internet.
+
+### 16.3. Modos multijugador
+
+Prepara la infraestructura para:
+
+- Partidas privadas.
+- Partidas con amigos.
+- Competición.
+- Clasificaciones.
+- Eventos multijugador.
+
+Implementa primero los modos compatibles con la arquitectura existente.
+
+---
+
+# 17. SISTEMA DE CUENTAS Y BASE DE DATOS
+
+Quiero implementar un sistema real de cuentas de jugadores.
+
+El juego debe permitir:
+
+- Crear una cuenta.
+- Iniciar sesión.
+- Cerrar sesión.
+- Recuperar una cuenta cuando sea posible.
+- Consultar el perfil.
+- Consultar estadísticas.
+- Guardar el progreso.
+- Consultar rankings.
+- Identificar amigos.
+
+### 17.1. Registro
+
+El formulario de registro debe solicitar los datos necesarios.
+
+Incluye:
+
+- Nombre de usuario.
+- Contraseña.
+- Confirmación de contraseña.
+- Correo electrónico cuando la arquitectura lo requiera.
+
+Implementa validaciones.
+
+No permitas nombres duplicados ni registros incompletos.
+
+### 17.2. Inicio de sesión
+
+El sistema debe comprobar que las credenciales sean correctas.
+
+Debe verificar que la cuenta exista y permitir recuperar el progreso asociado.
+
+### 17.3. Base de datos local en PC
+
+Quiero que los datos no dependan exclusivamente del almacenamiento del navegador.
+
+Implementa una base de datos real almacenada localmente en la computadora.
+
+Investiga qué tecnología resulta más adecuada para el proyecto.
+
+Por ejemplo, SQLite puede ser una alternativa si la arquitectura permite utilizar una aplicación local con acceso al sistema de archivos.
+
+La base de datos debe conservar:
+
+- Usuarios.
+- Perfiles.
+- Progreso.
+- Estadísticas.
+- Inventarios.
+- Monedas.
+- Compras.
+- Habilidades.
+- Misiones.
+- Historial.
+- Configuraciones.
+
+### 17.4. Persistencia y reinstalación
+
+Quiero que si el jugador desinstala el videojuego y posteriormente lo vuelve a instalar, pueda recuperar su cuenta y su progreso.
+
+Para ello, debes diferenciar correctamente:
+
+- Datos de instalación.
+- Datos de usuario.
+- Base de datos.
+- Copias de seguridad.
+- Datos de cuenta.
+- Datos sincronizados.
+
+No guardes la única copia de la base de datos dentro de una carpeta que se elimine al desinstalar.
+
+Utiliza una ubicación persistente del sistema operativo y permite exportar o respaldar los datos.
+
+### 17.5. Seguridad
+
+Implementa:
+
+- Contraseñas almacenadas mediante algoritmos de hash seguros.
+- Validación de entradas.
+- Protección de sesiones.
+- Control de permisos.
+- Protección contra manipulación de datos.
+- Validación de transacciones.
+- Prevención de duplicaciones.
+- Copias de seguridad.
+
+No almacenes contraseñas en texto plano.
+
+### 17.6. Cuentas locales y online
+
+Distingue entre cuentas locales y cuentas que puedan utilizarse en servidores online.
+
+Una base de datos SQLite local no permite que diferentes computadoras compartan automáticamente los mismos usuarios.
+
+Para el multijugador, implementa un servidor que gestione la autenticación y los datos compartidos.
+
+El cliente no debe tener autoridad para modificar directamente las monedas, recompensas o rankings del servidor.
+
+---
+
+# 18. SISTEMA DE RANKING Y COMPETICIÓN ENTRE AMIGOS
+
+Introduce un sistema de clasificación.
+
+Los jugadores deben poder comparar sus resultados.
+
+Implementa:
+
+- Ranking global cuando exista infraestructura disponible.
+- Ranking de amigos.
+- Ranking por temporada.
+- Mejores puntuaciones.
+- Mayor distancia.
+- Mejor supervivencia.
+- Jefes derrotados.
+- Desafíos completados.
+
+Permite consultar:
+
+- Posición.
+- Nombre.
+- Nivel.
+- Puntuación.
+- Estadísticas relevantes.
+
+Los resultados deben provenir de partidas verificadas.
+
+No permitas que el cliente envíe libremente puntuaciones sin validación.
+
+Cuando no exista conexión, permite conservar los resultados localmente para sincronizarlos posteriormente si el modo y la arquitectura lo permiten.
+
+---
+
+# 19. CORRECCIÓN DE BUGS Y REVISIÓN DE MECÁNICAS
+
+Necesito una revisión profunda de los errores existentes.
+
+No quiero seguir añadiendo contenido sobre una base que todavía presenta fallos.
+
+Prioriza:
+
+### Saltos
+- Saltos que no responden correctamente.
+- Colisiones incorrectas.
+- Saltos que se interrumpen.
+- Problemas de aterrizaje.
+- Problemas con plataformas.
+
+### Deslizamientos
+- Animaciones.
+- Colisiones.
+- Duración.
+- Transiciones.
+- Interacciones con obstáculos.
+
+### Imán
+- Atracción incorrecta.
+- Objetos que quedan atascados.
+- Objetos que atraviesan el escenario.
+- Objetos que aparecen demasiado lejos.
+- Objetos que no se recogen correctamente.
+
+### Habilidades y objetos
+- Activaciones incorrectas.
+- Efectos que no terminan.
+- Duraciones incorrectas.
+- Conflictos entre habilidades.
+- Objetos duplicados.
+- Recompensas que no se registran.
+
+### Otros problemas
+- Errores de colisión.
+- Personajes que atraviesan objetos.
+- Fallos de navegación.
+- Problemas de cámara.
+- Fallos de animación.
+- Errores de interfaz.
+- Problemas de rendimiento.
+- Errores de guardado.
+
+No soluciones los errores simplemente ocultando sus síntomas.
+
+Identifica sus causas y corrige los sistemas responsables.
+
+---
+
+# 20. SISTEMA DE TUTORIAL PARA NUEVOS JUGADORES
+
+Implementa una partida de tutorial para los nuevos jugadores.
+
+Cuando alguien inicie el videojuego por primera vez, debe acceder a una experiencia guiada.
+
+El tutorial debe enseñar:
+
+1. Movimiento.
+2. Saltos.
+3. Deslizamientos.
+4. Cambios de carril.
+5. Recolección de objetos.
+6. Utilización de habilidades.
+7. Funcionamiento de los obstáculos.
+8. Mecánicas especiales.
+9. Condiciones básicas de supervivencia.
+
+El tutorial debe tener una dificultad muy baja.
+
+Introduce explicaciones visuales y controles en pantalla.
+
+Permite que el jugador practique cada mecánica.
+
+### Finalización
+
+Cuando el jugador complete el tutorial, la partida debe terminar de manera natural y mostrar una pantalla de finalización.
+
+Después debe regresar al flujo normal del videojuego para que pueda comenzar a jugar libremente.
+
+Registra que el tutorial ha sido completado para no obligar al jugador a repetirlo cada vez que inicie el juego.
+
+Permite volver a jugar el tutorial desde el menú de ajustes.
+
+---
+
+# 21. SISTEMA DE PROGRESIÓN Y ESTADÍSTICAS
+
+Amplía las estadísticas para que registren los nuevos sistemas.
+
+Incluye:
+
+- Partidas.
+- Distancia.
+- Supervivencia.
+- Puntuaciones.
+- Monedas.
+- Objetos.
+- Habilidades utilizadas.
+- Enemigos derrotados.
+- Jefes derrotados.
+- Eventos completados.
+- Reanimaciones.
+- Misiones.
+- Progreso del pase.
+- Resultados multijugador.
+
+Todas las estadísticas deben reflejar información real.
+
+Añade gráficos y comparaciones cuando aporten valor.
+
+---
+
+# 22. OPTIMIZACIÓN DEL RENDIMIENTO
+
+La mejora visual no debe destruir el rendimiento.
+
+Analiza especialmente:
+
+- Modelos de alta resolución.
+- Texturas.
+- Iluminación dinámica.
+- Sombras.
+- Partículas.
+- Efectos.
+- Trenes.
+- Aeronaves.
+- IA de enemigos.
+- Jefes.
+- Física.
+- Navegación.
+- Carga de mapas.
+
+Implementa:
+
+- LOD.
+- Culling.
+- Instanciación cuando corresponda.
+- Gestión de recursos.
+- Optimización de colisiones.
+- Gestión de memoria.
+- Carga y descarga de recursos.
+- Configuraciones gráficas escalables.
+
+Evita mantener activos objetos y procesos que no sean necesarios.
+
+Comprueba que el juego siga funcionando correctamente en equipos de capacidad limitada.
+
+---
+
+# 23. REINICIO DE LA BASE DE DATOS ACTUAL
+
+Quiero comenzar una nueva etapa del videojuego con los datos de jugadores reiniciados.
+
+La base de datos actual de progreso debe restablecerse para comenzar desde cero.
+
+Sin embargo, realiza esta operación con cuidado.
+
+Antes de eliminar datos:
+
+1. Identifica exactamente dónde se encuentra la base de datos actual.
+2. Identifica qué información contiene.
+3. Comprueba qué sistemas dependen de ella.
+4. Crea una copia de seguridad por si se necesita recuperar información.
+5. Separa los datos de jugadores de los archivos del proyecto, modelos, escenas, configuraciones y recursos.
+
+Después:
+
+- Restablece el progreso de los jugadores.
+- Reinicia las monedas y recursos de prueba.
+- Reinicia los inventarios de prueba.
+- Reinicia las estadísticas de prueba.
+- Reinicia los rankings de prueba.
+- Reinicia los datos de cuentas de prueba únicamente cuando corresponda.
+- Conserva la estructura de las tablas y las migraciones necesarias.
+- Inicializa correctamente la nueva base de datos.
+
+**No elimines archivos del proyecto ni recursos del videojuego por confundirlos con la base de datos.**
+
+No borres bases de datos de producción, cuentas reales ni datos ajenos al entorno de pruebas sin identificar su alcance y contar con autorización específica.
+
+El objetivo es comenzar una nueva etapa con una base de datos limpia, organizada y preparada para los nuevos sistemas.
+
+---
+
+# 24. METODOLOGÍA OBLIGATORIA DE DESARROLLO
+
+No intentes implementar absolutamente todo sin analizar las dependencias.
+
+Divide el trabajo en las siguientes fases:
+
+### FASE 1. AUDITORÍA TÉCNICA
+
+- Inspeccionar el proyecto.
+- Identificar tecnología y arquitectura.
+- Analizar los sistemas.
+- Detectar errores.
+- Examinar modelos.
+- Evaluar iluminación.
+- Analizar mapas.
+- Revisar el sistema online.
+- Identificar la base de datos.
+
+Presenta un diagnóstico técnico.
+
+### FASE 2. RECONSTRUCCIÓN VISUAL
+
+- Menú principal.
+- Pantalla de inicio.
+- Lobby.
+- Menú de pausa.
+- Garaje.
+- Tienda.
+- Inventario.
+- Iluminación.
+- Modelos.
+- Personajes.
+- Escenarios.
+
+### FASE 3. REDISEÑO DE MAPAS
+
+- Nuevos entornos.
+- Ciudades diferentes.
+- Desniveles.
+- Túneles.
+- Trenes.
+- Obstáculos aéreos.
+- Trampas.
+- Parkour.
+- Clima.
+- Iluminación ambiental.
+
+### FASE 4. JUGABILIDAD AVANZADA
+
+- Dificultad progresiva.
+- Jefes.
+- Fases de combate.
+- Nuevas habilidades.
+- Eventos aleatorios.
+- Persecuciones.
+- Desafíos.
+
+### FASE 5. CUENTAS Y MULTIJUGADOR
+
+- Registro.
+- Inicio de sesión.
+- Base de datos.
+- Servidores.
+- Salas.
+- Invitaciones.
+- Rankings.
+- Persistencia.
+
+### FASE 6. TUTORIAL Y PROGRESIÓN
+
+- Tutorial.
+- Misiones.
+- Estadísticas.
+- Recompensas.
+- Progresión.
+
+### FASE 7. AUDIOVISUAL
+
+- Música dinámica.
+- Efectos.
+- Ambientes.
+- Sonidos de jefes.
+- Transiciones.
+
+### FASE 8. PRUEBAS FINALES
+
+- Pruebas funcionales.
+- Pruebas de rendimiento.
+- Pruebas multijugador.
+- Pruebas de guardado.
+- Pruebas de cuentas.
+- Pruebas de jefes.
+- Pruebas de mapas.
+- Corrección de errores.
+
+---
+
+# 25. REGLAS INNEGOCIABLES
+
+1. No reconstruyas el juego desde cero.
+2. No elimines funcionalidades existentes sin necesidad.
+3. No sustituyas sistemas funcionales por prototipos.
+4. No utilices modelos 3D falsos o imágenes 2D como sustitutos cuando se soliciten modelos reales.
+5. No inventes que un servidor funciona si no se ha probado.
+6. No crees botones sin funcionalidad.
+7. No generes estadísticas ficticias.
+8. No dejes jefes sin inteligencia artificial.
+9. No reutilices el mismo diseño de mapa cambiando únicamente sus colores.
+10. No sobrecargues la iluminación.
+11. No hagas que todos los mapas tengan la misma dificultad.
+12. No elimines datos sin identificar primero su procedencia.
+13. No guardes contraseñas sin protección.
+14. No permitas que el cliente controle directamente las puntuaciones online.
+15. No sacrifiques estabilidad por gráficos.
+16. No dejes errores conocidos sin documentar.
+17. Comprueba cada sistema antes de continuar con las dependencias que lo necesitan.
+
+---
+
+# 26. RESULTADO FINAL
+
+Quiero que esta actualización represente un salto generacional en la calidad del videojuego.
+
+Los mapas deben ser diferentes, desafiantes y visualmente impresionantes.
+
+Los jefes deben ser amenazas reales, con habilidades, fases y enfrentamientos memorables.
+
+Las habilidades de los personajes deben ofrecer estilos de juego distintos.
+
+La tienda, el inventario y el garaje deben presentar modelos 3D de alta calidad.
+
+Los menús deben tener una identidad visual completamente renovada.
+
+La iluminación debe diferenciar claramente el día, la noche y el atardecer.
+
+La música debe adaptarse a lo que sucede durante las partidas.
+
+El multijugador debe permitir conexiones reales.
+
+Los jugadores deben poder crear cuentas y conservar sus progresos.
+
+Los servidores deben poder ejecutarse localmente o mediante herramientas externas compatibles.
+
+Los errores existentes deben corregirse.
+
+El tutorial debe preparar a los nuevos jugadores.
+
+La dificultad debe aumentar progresivamente hasta ofrecer desafíos verdaderamente exigentes.
+
+**No quiero una actualización que solamente se vea diferente. Quiero una actualización que cambie radicalmente cómo se juega, cómo se siente y cómo se experimenta el videojuego.**
+
+# INSTRUCCIÓN FINAL: LLEVAR EL PROYECTO AL LÍMITE
+
+Trabaja con mentalidad de un estudio profesional de videojuegos.
+
+Investiga, diseña, programa, integra, prueba y optimiza.
+
+Si un modelo es mediocre, busca uno mejor.
+
+Si un mapa es repetitivo, rediseña su estructura.
+
+Si un jefe no representa un desafío, desarrolla sus habilidades.
+
+Si un menú parece un prototipo, reconstruye su experiencia.
+
+Si un sistema online es solamente visual, implementa la comunicación real.
+
+Si una mecánica tiene errores, identifica su causa y corrígela.
+
+No quiero explicaciones de lo que podrías hacer en el futuro como sustituto de la implementación.
+
+Quiero que realices las modificaciones directamente en los archivos del proyecto y que compruebes su funcionamiento.
+
+Cuando una funcionalidad dependa de un servicio externo, una cuenta, una licencia o infraestructura que no esté disponible, indícalo claramente y deja la integración preparada sin fingir que está terminada.
+
+Trabaja por fases, conserva los avances y continúa hasta completar la actualización.
+
+**ESTA NO ES UNA ACTUALIZACIÓN MÁS. ES LA EVOLUCIÓN DEFINITIVA DEL VIDEOJUEGO.**

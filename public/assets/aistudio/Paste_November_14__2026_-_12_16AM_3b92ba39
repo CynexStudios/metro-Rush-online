@@ -1,0 +1,1074 @@
+# PROYECTO: EVOLUCIÓN DEFINITIVA DEL VIDEOJUEGO
+## Actualización integral, expansión de contenido, rediseño visual y optimización de todos los sistemas
+
+### 1. OBJETIVO PRINCIPAL
+
+Quiero llevar el videojuego a un nivel completamente superior. No quiero una actualización superficial ni pequeños cambios estéticos. Necesito una evolución radical de la experiencia completa, tanto visual como funcional.
+
+Debes trabajar sobre el proyecto existente, analizar todo lo que ya está implementado y desarrollar una actualización de gran escala que transforme considerablemente su presentación, jugabilidad, contenido, progresión y experiencia general.
+
+El objetivo es conseguir que el videojuego tenga una presentación digna de un producto comercial de alta calidad, con interfaces modernas, modelos visuales detallados, animaciones profesionales, efectos audiovisuales inmersivos, sistemas de progresión profundos y una experiencia de juego mucho más completa.
+
+**IMPORTANTE:** No quiero que reconstruyas el videojuego desde cero, que elimines funcionalidades existentes ni que sustituyas sistemas que ya funcionan por versiones incompletas. Debes conservar la identidad del proyecto, sus mecánicas principales y todos los datos existentes, mientras amplías y mejoras considerablemente cada apartado.
+
+No te limites a cumplir literalmente mis instrucciones. Analiza el proyecto y detecta oportunidades adicionales de mejora que puedan elevar su calidad.
+
+---
+
+# 2. INVESTIGACIÓN Y REFERENCIAS VISUALES
+
+Antes de comenzar las modificaciones:
+
+1. Navega por Internet e investiga videojuegos comerciales que destaquen por su calidad visual, interfaz, diseño de personajes, menús, progresión y experiencia de usuario.
+2. Busca referencias visuales de interfaces de videojuegos modernos, especialmente juegos con sistemas de personajes, inventarios, tiendas, pases de batalla, misiones y progresión.
+3. Investiga modelos 3D de alta calidad, escenarios, materiales, texturas, animaciones y efectos que puedan utilizarse legalmente en este proyecto.
+4. Identifica recursos compatibles con el motor gráfico y la tecnología utilizada.
+5. Investiga bibliotecas de modelos, texturas, sonidos y animaciones que permitan mejorar considerablemente los recursos actuales.
+
+Puedes tomar como referencias de calidad producciones AAA y videojuegos modernos, pero no debes copiar directamente sus interfaces, personajes, marcas ni contenido protegido.
+
+Prioriza recursos gratuitos o de licencia compatible con el proyecto. Comprueba las condiciones de utilización de los modelos y recursos externos.
+
+**No quiero que solamente describas las mejoras: implementa los recursos, modelos y sistemas que realmente puedas integrar.**
+
+---
+
+# 3. REDISEÑO TOTAL DE LA INTERFAZ (UI/UX)
+
+Este será uno de los apartados más importantes de la actualización.
+
+Quiero abandonar el acabado visual actual cuando resulte poco atractivo, anticuado, genérico o poco profesional.
+
+Desarrolla una nueva identidad visual coherente para todo el videojuego.
+
+### Requisitos generales:
+
+- Diseño moderno, elegante y de alta calidad.
+- Jerarquía visual clara.
+- Tipografías profesionales.
+- Iconografía personalizada y consistente.
+- Animaciones de transición fluidas.
+- Efectos visuales al seleccionar botones.
+- Paneles con profundidad y acabados detallados.
+- Iluminación, sombras y transparencias bien trabajadas.
+- Efectos de aparición y desaparición.
+- Adaptación a diferentes resoluciones.
+- Buena distribución de los elementos.
+- Información fácil de comprender.
+- Eliminar espacios vacíos innecesarios.
+- Evitar diseños genéricos o excesivamente simples.
+
+Todos los menús deben compartir una misma identidad visual, pero cada uno debe tener personalidad propia según su función.
+
+No quiero interfaces que parezcan prototipos sin terminar.
+
+### 3.1. Menú principal
+
+Rediseña completamente el menú principal.
+
+Quiero que sea visualmente impactante desde el primer momento.
+
+Debe incorporar:
+
+- Personaje principal en una presentación visual destacada.
+- Modelos 3D visibles y correctamente iluminados.
+- Escenario de fondo dinámico.
+- Animaciones ambientales.
+- Efectos de iluminación.
+- Cámara con movimientos cinematográficos sutiles.
+- Música ambiental.
+- Indicadores de nivel y progreso.
+- Monedas disponibles.
+- Fichas especiales.
+- Acceso al inventario.
+- Acceso a la tienda.
+- Acceso al pase de batalla.
+- Acceso a misiones.
+- Acceso al garaje.
+- Acceso a estadísticas.
+- Acceso a ajustes.
+- Información de eventos activos.
+- Notificaciones de recompensas pendientes.
+
+Organiza estos elementos de manera intuitiva, sin saturar la pantalla.
+
+Añade animaciones y efectos al navegar por las diferentes secciones.
+
+### 3.2. Menú de derrota
+
+Quiero una reconstrucción completa del menú de derrota.
+
+No quiero una pantalla sencilla que simplemente indique que el jugador perdió.
+
+Debe convertirse en una pantalla de resultados mucho más elaborada, cinematográfica y profesional.
+
+Incorpora:
+
+- Animación de derrota.
+- Transición desde la partida.
+- Presentación del personaje derrotado.
+- Estadísticas completas de la partida.
+- Tiempo de supervivencia.
+- Distancia recorrida.
+- Monedas obtenidas.
+- Enemigos eliminados.
+- Objetos recogidos.
+- Desafíos completados.
+- Experiencia conseguida.
+- Progreso del pase de batalla.
+- Misiones completadas durante la partida.
+- Recompensas obtenidas.
+- Bonificaciones especiales.
+- Registro de las causas de derrota cuando sea posible.
+
+Incluye un apartado de resumen de rendimiento que permita comparar los resultados con partidas anteriores.
+
+Añade botones para:
+
+- Volver a jugar.
+- Regresar al menú principal.
+- Revisar estadísticas.
+- Consultar misiones.
+- Utilizar una ficha de reanimación cuando corresponda.
+
+El diseño debe tener una presentación de calidad comercial, con animaciones, sonidos, transiciones y una distribución visual impecable.
+
+---
+
+# 4. REDISEÑO Y MEJORA DE LOS MODELOS 3D
+
+Quiero una mejora radical de los modelos actuales.
+
+Analiza todos los modelos existentes y determina cuáles necesitan ser sustituidos, optimizados o rediseñados.
+
+Prioriza:
+
+- Personajes.
+- Enemigos.
+- Jefes.
+- Vehículos y elementos interactivos, si existen.
+- Objetos del escenario.
+- Decoraciones.
+- Elementos del mapa.
+- Elementos del garaje.
+- Objetos coleccionables.
+- Equipamiento y accesorios.
+
+Mejora especialmente:
+
+- Geometría.
+- Texturas.
+- Materiales PBR.
+- Detalles superficiales.
+- Iluminación.
+- Sombras.
+- Animaciones.
+- Proporciones.
+- Acabados.
+- Efectos visuales.
+
+Los personajes deben contar con mejores modelos, animaciones de movimiento, animaciones de espera y animaciones especiales.
+
+No quiero modelos que parezcan simples figuras de prueba o recursos provisionales.
+
+Cuando sustituyas un modelo, conserva su funcionalidad, sus referencias y las conexiones necesarias con los demás sistemas.
+
+Optimiza los modelos para que la mejora visual no provoque una pérdida excesiva de rendimiento.
+
+---
+
+# 5. SISTEMA DE GARAJE
+
+El garaje debe recibir una actualización importante.
+
+Actualmente quiero que deje de funcionar como un apartado donde se acumulan todas las opciones de personalización y se convierta en un espacio dedicado a visualizar, seleccionar y administrar los vehículos o elementos que realmente correspondan a su función dentro del juego.
+
+Mejora:
+
+- Presentación de los modelos.
+- Iluminación del escenario.
+- Cámara de visualización.
+- Rotación de los modelos.
+- Animaciones de presentación.
+- Efectos visuales.
+- Información de cada elemento.
+- Diseño de las tarjetas.
+- Indicadores de selección.
+- Clasificación por categorías.
+
+Si existen vehículos, permite visualizar sus características y personalización.
+
+Si existen personajes, evita duplicar innecesariamente su gestión con el nuevo inventario.
+
+El garaje debe sentirse como una instalación profesional, no como un menú provisional.
+
+---
+
+# 6. NUEVA TIENDA DEL JUEGO
+
+Implementa una tienda independiente del garaje.
+
+La tienda será el lugar principal donde los jugadores podrán utilizar las monedas y otros recursos obtenidos durante las partidas.
+
+Organiza sus contenidos mediante categorías:
+
+### 6.1. Personajes
+
+- Personajes disponibles para comprar.
+- Personajes destacados.
+- Personajes especiales.
+- Personajes de diferentes rarezas.
+- Información de cada personaje.
+- Precio correspondiente.
+- Vista previa en 3D.
+- Confirmación antes de comprar.
+
+### 6.2. Trajes y aspectos
+
+- Trajes de personajes.
+- Aspectos especiales.
+- Variantes visuales.
+- Trajes exclusivos.
+- Clasificación por rareza.
+- Vista previa antes de comprar.
+- Indicador de elementos adquiridos.
+
+### 6.3. Mejoras y habilidades
+
+Introduce una sección dedicada a las mejoras de habilidades.
+
+Estas mejoras se adquirirán mediante tiques especiales.
+
+La tienda debe permitir comprar paquetes de tiques y unidades individuales cuando corresponda.
+
+Cada mejora debe mostrar:
+
+- Nombre.
+- Descripción.
+- Precio.
+- Beneficio.
+- Nivel de mejora.
+- Requisitos.
+- Cantidad de tiques necesarios.
+
+Los precios deben estar equilibrados con la economía del juego.
+
+### 6.4. Objetos especiales
+
+Incluye objetos especiales y consumibles, como:
+
+- Tiques de reanimación.
+- Talismanes de autorreanimación.
+- Objetos de supervivencia.
+- Recursos especiales.
+- Artículos de eventos.
+
+Algunos objetos deben tener precios elevados para mantener su valor dentro de la economía del juego.
+
+### 6.5. Funcionamiento de las compras
+
+Todas las compras deben ser funcionales.
+
+Implementa:
+
+- Descuento automático del saldo.
+- Comprobación de fondos suficientes.
+- Confirmación de compra.
+- Registro de transacciones.
+- Actualización del inventario.
+- Protección contra compras duplicadas.
+- Conservación de los elementos adquiridos.
+
+No permitas comprar un artículo si el jugador no tiene los recursos suficientes.
+
+---
+
+# 7. NUEVO SISTEMA DE INVENTARIO
+
+Desarrolla un inventario independiente de la tienda y del garaje.
+
+Debe estar dividido en secciones claramente diferenciadas.
+
+### 7.1. Personajes
+
+Permite:
+
+- Consultar personajes desbloqueados.
+- Seleccionar personajes.
+- Cambiar de personaje activo.
+- Visualizar sus características.
+- Consultar personajes bloqueados.
+- Ver sus requisitos de desbloqueo.
+
+### 7.2. Trajes
+
+Permite:
+
+- Consultar los trajes adquiridos.
+- Equipar y desequipar trajes.
+- Cambiar la apariencia del personaje.
+- Visualizar las modificaciones en tiempo real.
+- Diferenciar trajes disponibles y bloqueados.
+
+### 7.3. Tiques y mejoras
+
+Permite:
+
+- Consultar los tiques disponibles.
+- Utilizar tiques para desbloquear mejoras.
+- Consultar habilidades existentes.
+- Mejorar habilidades.
+- Visualizar el nivel de cada habilidad.
+- Consultar los beneficios de cada mejora.
+- Consultar el historial de mejoras.
+
+### 7.4. Objetos especiales
+
+Incluye una sección para administrar objetos consumibles y especiales.
+
+Cada objeto debe mostrar su cantidad, descripción, utilidad y condiciones de uso.
+
+El inventario debe actualizarse automáticamente después de cada compra, recompensa o consumo.
+
+---
+
+# 8. SISTEMA DE FICHAS DE REANIMACIÓN
+
+Implementa una nueva moneda o ficha especial destinada a permitir que el jugador continúe una partida después de sufrir una derrota.
+
+Esta ficha tendrá un coste progresivo durante cada partida.
+
+La progresión será la siguiente:
+
+| Reanimación | Fichas necesarias |
+|---|---:|
+| Primera | 1 |
+| Segunda | 2 |
+| Tercera | 4 |
+| Cuarta | 8 |
+| Quinta | 16 |
+| Sexta | 32 |
+
+La fórmula será:
+
+Coste = 2^(n-1)
+
+Donde n representa el número de reanimación solicitada dentro de la partida.
+
+### Reglas:
+
+- La primera reanimación cuesta una ficha.
+- Cada nueva reanimación duplica el coste anterior.
+- El sistema debe comprobar que el jugador dispone de suficientes fichas.
+- El coste debe mostrarse antes de confirmar.
+- Si el jugador no tiene fichas suficientes, debe ofrecer la posibilidad de regresar al menú de derrota.
+- El sistema debe registrar cuántas reanimaciones se han utilizado.
+- La progresión de costes debe reiniciarse al comenzar una partida nueva.
+
+La interfaz de reanimación debe ser especial, con una presentación visual diferente al resto de las pantallas.
+
+---
+
+# 9. TALISMÁN DE AUTORREANIMACIÓN
+
+Introduce un objeto especial denominado provisionalmente Talismán de Autorreanimación.
+
+Este objeto permitirá al jugador regresar automáticamente a la partida cuando sea derrotado, siempre que cumpla las condiciones de funcionamiento establecidas.
+
+Características:
+
+- Objeto de rareza especial.
+- Puede comprarse en la tienda.
+- Debe tener un precio medio-alto o elevado.
+- Puede aparecer aleatoriamente durante las partidas.
+- Su probabilidad de aparición debe ser baja.
+- Debe existir un indicador visual que permita saber si el jugador tiene uno disponible.
+- Debe consumirse al activarse.
+- No debe permitir reanimaciones ilimitadas.
+
+Cuando aparezca en una partida, debe contar con un efecto visual y sonoro especial.
+
+La aparición debe sentirse como un hallazgo poco común y valioso.
+
+---
+
+# 10. SISTEMA DE PASE DE BATALLA
+
+Implementa un pase de batalla completo.
+
+No quiero únicamente una barra de progreso decorativa.
+
+Debe incluir dos líneas de recompensas:
+
+1. Pase gratuito.
+2. Pase prémium.
+
+El pase prémium tendrá un coste considerable de monedas del juego.
+
+### Características:
+
+- Niveles de progresión.
+- Experiencia del pase.
+- Recompensas por nivel.
+- Personajes.
+- Trajes.
+- Monedas.
+- Tiques.
+- Objetos especiales.
+- Recompensas exclusivas.
+- Elementos cosméticos.
+- Recompensas finales especiales.
+
+### Misiones del pase de batalla
+
+Introduce misiones específicas para avanzar en el pase.
+
+Ejemplos:
+
+- Sobrevive durante determinado tiempo.
+- Recorre una distancia específica.
+- Elimina una cantidad determinada de enemigos.
+- Derrota a un jefe.
+- Recoge determinada cantidad de monedas.
+- Encuentra objetos especiales.
+- Completa partidas.
+- Supera desafíos aleatorios.
+
+Las misiones deben tener diferentes dificultades y recompensas.
+
+Implementa un seguimiento del progreso en tiempo real.
+
+El pase debe conservar el progreso incluso después de cerrar el juego.
+
+---
+
+# 11. SISTEMA DE MISIONES
+
+Rediseña por completo el apartado de misiones.
+
+Quiero una interfaz más moderna, intuitiva y completa.
+
+Organiza las misiones en:
+
+- Misiones diarias.
+- Misiones semanales.
+- Misiones generales.
+- Misiones especiales.
+- Misiones del pase de batalla.
+- Desafíos de temporada.
+
+Cada misión debe mostrar:
+
+- Objetivo.
+- Descripción.
+- Progreso.
+- Recompensa.
+- Dificultad.
+- Tiempo restante, cuando corresponda.
+- Estado de disponibilidad.
+- Estado de finalización.
+
+Añade recompensas que puedan incluir monedas, experiencia, tiques y objetos especiales.
+
+La interfaz debe tener animaciones al completar una misión y reclamar una recompensa.
+
+---
+
+# 12. NUEVO ENEMIGO PERSEGUIDOR
+
+Introduce un enemigo especial que persiga constantemente al jugador durante las partidas.
+
+Será una amenaza adicional que obligará al jugador a mantenerse en movimiento y evitar errores.
+
+### Comportamiento:
+
+- El enemigo debe seguir al jugador mediante un sistema de persecución.
+- Debe calcular la distancia que lo separa del jugador.
+- Debe reaccionar a los obstáculos.
+- Debe evitar quedarse atascado.
+- Debe utilizar navegación adecuada para el mapa.
+- Debe tener animaciones de movimiento.
+- Debe contar con sonidos propios.
+- Debe transmitir una sensación de amenaza.
+
+### Sistema de persecución dinámica
+
+Quiero que el enemigo tenga un comportamiento adaptativo:
+
+- Si el jugador avanza correctamente y evita obstáculos, el enemigo mantendrá una persecución constante.
+- Si el jugador tropieza, choca o pierde velocidad, el enemigo debe aprovechar esa oportunidad.
+- Si el jugador queda bloqueado, el enemigo debe acercarse progresivamente.
+- Si el jugador recupera la ventaja, el enemigo debe continuar persiguiéndolo.
+- El enemigo debe reaccionar de manera inteligente a los cambios del entorno.
+
+No quiero que se limite a seguir al jugador de manera mecánica.
+
+Implementa una IA que permita que la persecución se sienta dinámica, peligrosa y diferente en cada partida.
+
+Evita que el enemigo atraviese paredes o aparezca de manera injustificada delante del jugador.
+
+---
+
+# 13. JEFES Y EVENTOS ALEATORIOS DURANTE LAS PARTIDAS
+
+Introduce jefes que puedan aparecer durante las partidas normales.
+
+El objetivo es que las partidas sean menos predecibles y que cada intento pueda presentar situaciones diferentes.
+
+### 13.1. Aparición de jefes
+
+Implementa un sistema de aparición aleatoria con probabilidades controladas.
+
+Cada jefe tendrá:
+
+- Modelo 3D propio.
+- Animaciones.
+- Efectos visuales.
+- Sonidos.
+- Barra de vida.
+- Patrones de ataque.
+- Comportamientos diferenciados.
+- Recompensas especiales.
+
+Los jefes deben ser visual y mecánicamente diferentes.
+
+No quiero enemigos normales con más vida y un tamaño aumentado.
+
+Cada jefe debe representar un desafío particular.
+
+### 13.2. Eventos aleatorios
+
+Durante las partidas podrán activarse eventos especiales.
+
+Ejemplos:
+
+- Aparición de un jefe aleatorio.
+- Aparición de un enemigo especial.
+- Evento de monedas.
+- Evento de recompensas.
+- Aparición de objetos poco comunes.
+- Desafío de supervivencia.
+- Zona peligrosa.
+- Evento de persecución intensificada.
+- Recompensa especial por completar un objetivo.
+
+Los eventos deben tener probabilidades de aparición diferentes.
+
+Algunos deben ser muy poco frecuentes.
+
+El sistema debe evitar que los eventos aparezcan continuamente o interrumpan injustificadamente el ritmo de la partida.
+
+### 13.3. Recompensas
+
+Los eventos especiales pueden ofrecer:
+
+- Monedas.
+- Tiques.
+- Experiencia.
+- Objetos especiales.
+- Talismanes.
+- Recompensas exclusivas.
+
+Las recompensas deben estar equilibradas con la dificultad del desafío.
+
+---
+
+# 14. MEJORA DEL MODO HISTORIA
+
+El modo historia necesita una transformación importante.
+
+Actualmente transmite la sensación de que simplemente se está repitiendo la misma experiencia sin suficiente desarrollo narrativo.
+
+Quiero que tenga una identidad propia y que se diferencie claramente del modo normal.
+
+Mejora:
+
+- Narrativa.
+- Introducción de capítulos.
+- Desarrollo de acontecimientos.
+- Objetivos.
+- Escenarios.
+- Personajes.
+- Enemigos.
+- Jefes.
+- Cinemáticas.
+- Diálogos.
+- Música.
+- Ambientación.
+- Progresión.
+
+Cada capítulo debe presentar una situación diferente.
+
+Introduce variedad en las misiones:
+
+- Exploración.
+- Supervivencia.
+- Persecución.
+- Combate.
+- Resolución de desafíos.
+- Encuentros con jefes.
+- Objetivos especiales.
+
+Añade secuencias cinematográficas cuando sean necesarias.
+
+El modo historia debe tener progresión real, con objetivos y acontecimientos que permitan sentir que se está avanzando.
+
+Evita reutilizar continuamente el mismo mapa, los mismos enemigos y los mismos objetivos sin cambios significativos.
+
+Conserva los elementos narrativos existentes y amplíalos sin contradecir la historia original.
+
+---
+
+# 15. NUEVAS ESTADÍSTICAS Y PROGRESIÓN
+
+Amplía considerablemente el sistema de estadísticas.
+
+Quiero que el jugador pueda consultar su rendimiento general y analizar su progreso.
+
+### Estadísticas generales:
+
+- Partidas jugadas.
+- Partidas ganadas, si aplica.
+- Partidas perdidas.
+- Tiempo total de juego.
+- Mejor tiempo de supervivencia.
+- Distancia total recorrida.
+- Mayor distancia en una partida.
+- Monedas obtenidas.
+- Monedas gastadas.
+- Enemigos eliminados.
+- Jefes derrotados.
+- Objetos recogidos.
+- Reanimaciones utilizadas.
+- Misiones completadas.
+- Desafíos superados.
+- Nivel del jugador.
+- Nivel del pase de batalla.
+
+### Estadísticas por partida:
+
+Al finalizar cada partida, guarda los resultados correspondientes.
+
+### Historial:
+
+Implementa un historial de partidas que permita consultar los resultados anteriores.
+
+Añade gráficos y representaciones visuales para observar la evolución del jugador.
+
+Todas las estadísticas deben calcularse a partir de acontecimientos reales del juego. No utilices números inventados ni estadísticas decorativas.
+
+---
+
+# 16. SISTEMA ECONÓMICO Y MONEDAS
+
+Reorganiza la economía del videojuego.
+
+Las monedas existentes deben funcionar como una divisa utilizable en la tienda.
+
+Define correctamente:
+
+- Cómo se consiguen.
+- Cuánto se obtiene.
+- Qué artículos pueden comprarse.
+- Cuánto cuestan.
+- Qué recompensas las entregan.
+- Qué sistemas las consumen.
+
+Evita que los precios sean arbitrarios.
+
+El jugador debe poder progresar jugando, aunque los artículos más exclusivos requieran un esfuerzo considerable.
+
+Implementa protección contra:
+
+- Saldos negativos.
+- Compras duplicadas.
+- Recompensas repetidas.
+- Errores al guardar transacciones.
+- Manipulación accidental de los recursos.
+
+El sistema económico debe funcionar de manera consistente en todos los menús.
+
+---
+
+# 17. REDISEÑO DE LOS AJUSTES
+
+El menú de ajustes también debe recibir una renovación completa.
+
+Organiza las opciones por categorías.
+
+### Gráficos
+
+- Calidad gráfica.
+- Resolución.
+- Pantalla completa.
+- Sombras.
+- Efectos visuales.
+- Distancia de dibujado.
+- Calidad de texturas.
+
+### Audio
+
+- Volumen general.
+- Música.
+- Efectos de sonido.
+- Ambiente.
+- Interfaz.
+
+### Jugabilidad
+
+- Sensibilidad.
+- Controles.
+- Cámara.
+- Opciones de accesibilidad.
+- Configuración de jugabilidad cuando corresponda.
+
+### Sistema
+
+- Idioma.
+- Restablecer configuración.
+- Guardado de datos.
+- Información de versión.
+
+Los ajustes deben aplicarse correctamente y conservarse después de cerrar el juego.
+
+No incluyas opciones que no tengan una implementación real.
+
+---
+
+# 18. RENOVACIÓN DEL MAPA Y LOS ESCENARIOS
+
+Quiero una mejora considerable de los escenarios.
+
+Analiza los mapas actuales y determina qué elementos necesitan ser rediseñados.
+
+Mejora:
+
+- Terrenos.
+- Edificaciones.
+- Vegetación.
+- Objetos ambientales.
+- Texturas.
+- Materiales.
+- Iluminación.
+- Sombras.
+- Reflejos.
+- Efectos atmosféricos.
+- Decoraciones.
+- Elementos interactivos.
+
+Añade mayor profundidad visual.
+
+Evita escenarios vacíos, repetitivos o con objetos colocados sin intención.
+
+Incorpora elementos ambientales que contribuyan a contar visualmente lo que sucede en el mundo del juego.
+
+Mejora la iluminación para que cada escenario tenga una identidad propia.
+
+Implementa variaciones ambientales cuando sea viable:
+
+- Cambios de iluminación.
+- Niebla.
+- Lluvia.
+- Partículas.
+- Polvo.
+- Efectos atmosféricos.
+- Variaciones de ambiente.
+
+Todo debe mantener un buen rendimiento.
+
+---
+
+# 19. SONIDO, MÚSICA E INMERSIÓN
+
+El apartado audiovisual necesita una mejora importante.
+
+### Música de la partida
+
+Quiero que la música cambie dinámicamente según lo que esté ocurriendo.
+
+Por ejemplo:
+
+- Música ambiental al comenzar.
+- Música de exploración.
+- Música de tensión.
+- Música de persecución.
+- Música de combate.
+- Música especial durante los enfrentamientos con jefes.
+- Música de victoria.
+- Música de derrota.
+
+Las transiciones entre pistas deben ser fluidas.
+
+La música debe acompañar el ritmo de la partida y aumentar la inmersión.
+
+### Sonidos ambientales
+
+Mejora:
+
+- Pasos.
+- Colisiones.
+- Interacciones.
+- Objetos recogidos.
+- Monedas.
+- Recompensas.
+- Menús.
+- Botones.
+- Enemigos.
+- Jefes.
+- Ambientes.
+- Efectos de habilidades.
+
+Añade sonidos que permitan reconocer acontecimientos importantes sin necesidad de mirar constantemente la interfaz.
+
+### Lobby
+
+La sala principal debe tener una ambientación sonora propia.
+
+No quiero que parezca una pantalla silenciosa o desconectada del mundo del videojuego.
+
+---
+
+# 20. GUARDADO LOCAL Y PERSISTENCIA DE DATOS
+
+Implementa un sistema de guardado local confiable.
+
+Esta parte es fundamental.
+
+El videojuego debe conservar los datos del jugador aunque se cierre completamente la aplicación o se reinicie el dispositivo.
+
+Guarda como mínimo:
+
+- Monedas.
+- Fichas especiales.
+- Personajes desbloqueados.
+- Personaje seleccionado.
+- Trajes adquiridos.
+- Traje equipado.
+- Tiques.
+- Mejoras de habilidades.
+- Inventario.
+- Pase de batalla.
+- Progreso del pase.
+- Misiones.
+- Estadísticas.
+- Historial de partidas.
+- Configuración.
+- Progreso del modo historia.
+- Objetos especiales.
+
+### Requisitos técnicos
+
+1. Utiliza un sistema de almacenamiento local adecuado para la tecnología actual del proyecto.
+2. Evita guardar información exclusivamente en variables temporales.
+3. Implementa guardado automático después de acontecimientos importantes.
+4. Conserva los datos entre sesiones.
+5. Implementa un sistema de validación de datos.
+6. Evita perder toda la partida si un archivo de guardado presenta errores.
+7. Considera la creación de copias de seguridad.
+8. Evita duplicaciones de monedas, objetos o recompensas al cargar.
+9. Mantén una estructura de datos organizada y ampliable.
+
+### Sistema online existente
+
+El sistema online actual debe mantenerse tal como está, porque todavía se encuentra en una etapa de pruebas.
+
+No lo elimines ni lo sustituyas.
+
+Por el momento, el guardado local será la base de persistencia principal del jugador.
+
+Más adelante, cuando se compile y distribuya el videojuego, se implementará un sistema local definitivo o una infraestructura online más completa según las necesidades reales.
+
+Prepara la arquitectura para permitir esa futura transición sin tener que reconstruir todos los sistemas.
+
+---
+
+# 21. OPTIMIZACIÓN Y CALIDAD TÉCNICA
+
+Todas las mejoras deben implementarse teniendo en cuenta el rendimiento.
+
+No quiero que el videojuego termine teniendo una apariencia impresionante, pero que sea prácticamente injugable.
+
+Revisa:
+
+- Uso de memoria.
+- Carga de modelos.
+- Cantidad de polígonos.
+- Texturas.
+- Iluminación.
+- Sombras.
+- Efectos de partículas.
+- Física.
+- Navegación de enemigos.
+- Procesos en segundo plano.
+- Tiempos de carga.
+- Rendimiento de la interfaz.
+
+Implementa optimizaciones cuando sean necesarias.
+
+Evita duplicar recursos, scripts o sistemas que ya existen.
+
+Mantén una arquitectura limpia y organizada.
+
+---
+
+# 22. REGLAS OBLIGATORIAS DE IMPLEMENTACIÓN
+
+Estas reglas tienen prioridad durante todo el desarrollo.
+
+**REGLA 1. CONSERVAR EL PROYECTO**
+
+No reconstruyas el videojuego desde cero. Trabaja sobre los archivos y sistemas existentes.
+
+**REGLA 2. ANALIZAR ANTES DE MODIFICAR**
+
+Antes de implementar, examina la estructura del proyecto, sus scripts, escenas, modelos, recursos y sistemas actuales.
+
+**REGLA 3. NO ELIMINAR FUNCIONALIDADES**
+
+No elimines mecánicas, menús, datos o características existentes sin una justificación técnica y sin preservar su funcionalidad.
+
+**REGLA 4. IMPLEMENTACIÓN REAL**
+
+No crees botones decorativos ni funciones simuladas que aparenten estar terminadas. Cada elemento interactivo debe tener una función real.
+
+**REGLA 5. INTEGRACIÓN**
+
+La tienda, inventario, monedas, fichas, misiones, estadísticas y pase de batalla deben compartir los mismos datos y funcionar de manera coordinada.
+
+**REGLA 6. CONSERVAR LOS DATOS**
+
+No sobrescribas ni elimines los datos existentes del jugador. Implementa las migraciones necesarias cuando cambie la estructura de almacenamiento.
+
+**REGLA 7. CALIDAD VISUAL**
+
+No acepto interfaces genéricas, modelos provisionales ni acabados que parezcan prototipos sin terminar.
+
+**REGLA 8. INVESTIGAR RECURSOS**
+
+Investiga referencias y recursos externos, pero utiliza únicamente materiales compatibles y con licencias adecuadas.
+
+**REGLA 9. PRUEBAS**
+
+Comprueba que cada sistema funciona antes de considerarlo terminado.
+
+**REGLA 10. NO ROMPER LO QUE FUNCIONA**
+
+Cada modificación debe integrarse con cuidado y comprobar que no perjudique otros sistemas.
+
+---
+
+# 23. METODOLOGÍA DE TRABAJO
+
+Quiero que desarrolles esta actualización por fases.
+
+### FASE 1. AUDITORÍA DEL PROYECTO
+
+- Analiza todos los archivos.
+- Identifica el motor y la tecnología utilizada.
+- Examina los sistemas actuales.
+- Evalúa los menús.
+- Revisa los modelos.
+- Identifica errores.
+- Detecta funcionalidades incompletas.
+- Identifica oportunidades de optimización.
+
+Antes de realizar cambios, presenta un diagnóstico técnico de lo que encontraste.
+
+### FASE 2. REDISEÑO VISUAL
+
+- Menú principal.
+- Menú de derrota.
+- Menús secundarios.
+- Misiones.
+- Ajustes.
+- Estadísticas.
+- Garaje.
+- Tienda.
+- Inventario.
+- Pase de batalla.
+
+Establece una identidad visual coherente para todo el proyecto.
+
+### FASE 3. SISTEMAS NUEVOS
+
+Implementa:
+
+- Tienda.
+- Inventario.
+- Sistema de fichas.
+- Reanimación.
+- Talismán.
+- Pase de batalla.
+- Misiones.
+- Estadísticas.
+- Economía.
+- Guardado local.
+
+### FASE 4. JUGABILIDAD
+
+Implementa:
+
+- Enemigo perseguidor.
+- IA de persecución.
+- Jefes.
+- Eventos aleatorios.
+- Desafíos.
+- Recompensas especiales.
+
+### FASE 5. CONTENIDO Y AMBIENTACIÓN
+
+- Mejora de modelos.
+- Rediseño de mapas.
+- Iluminación.
+- Texturas.
+- Efectos.
+- Animaciones.
+- Música dinámica.
+- Sonidos ambientales.
+- Mejoras del modo historia.
+
+### FASE 6. PRUEBAS Y OPTIMIZACIÓN
+
+- Verificar los sistemas.
+- Corregir errores.
+- Comprobar el guardado.
+- Comprobar las compras.
+- Comprobar el inventario.
+- Comprobar las reanimaciones.
+- Comprobar la progresión.
+- Comprobar los eventos.
+- Optimizar el rendimiento.
+
+---
+
+# 24. RESULTADO FINAL ESPERADO
+
+Quiero que el resultado sea una evolución verdaderamente significativa del videojuego.
+
+No quiero simplemente más botones, más ventanas o más objetos.
+
+Quiero una experiencia completa, con una identidad visual reconocible, una interfaz de calidad comercial, modelos mucho más detallados, sistemas conectados entre sí, progresión atractiva, desafíos dinámicos y una experiencia audiovisual inmersiva.
+
+Cada apartado debe sentirse diseñado cuidadosamente y no añadido de manera improvisada.
+
+La tienda debe funcionar con el inventario. El inventario debe conectarse con los personajes. Los personajes deben conectarse con el garaje cuando corresponda. Las monedas deben utilizarse en la tienda. Los tiques deben permitir mejorar habilidades. Las misiones deben entregar recompensas. El pase de batalla debe progresar. Las estadísticas deben registrar acontecimientos reales. El guardado local debe conservarlo todo.
+
+**Todo debe funcionar como un único videojuego integrado, no como una colección de sistemas independientes.**
+
+### INSTRUCCIÓN FINAL
+
+Quiero que trabajes con mentalidad de un estudio profesional de desarrollo de videojuegos.
+
+Sé exigente con la calidad de tus propias implementaciones. Si un menú puede verse mejor, mejóralo. Si un modelo puede tener mayor calidad, busca una alternativa. Si un sistema puede funcionar de manera más eficiente, optimízalo.
+
+No te conformes con cumplir los requisitos mínimos.
+
+Prioriza la calidad, la coherencia, la inmersión, la funcionalidad y la estabilidad.
+
+No sacrifiques las funcionalidades existentes por conseguir una apariencia diferente.
+
+Si una tarea es demasiado grande para realizarla de una sola vez, divídela en entregas y continúa trabajando de manera ordenada hasta completar todas las fases.
+
+Al terminar cada fase, informa qué se implementó, qué archivos se modificaron, qué pruebas se realizaron y qué queda pendiente.
+
+**EL OBJETIVO ES LLEVAR EL VIDEOJUEGO A SU SIGUIENTE GENERACIÓN. NO QUIERO UNA SIMPLE ACTUALIZACIÓN: QUIERO UNA TRANSFORMACIÓN COMPLETA DE SU CALIDAD Y EXPERIENCIA.**

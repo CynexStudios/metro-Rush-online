@@ -1,0 +1,6 @@
+{
+  "name": "METRO RUSH: NEON CITY",
+  "description": "Videojuego 3D AAA de parkour urbano, velocidad extrema, mecánicas innovadoras y exploración futurista en la metrópolis de Neon City.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
