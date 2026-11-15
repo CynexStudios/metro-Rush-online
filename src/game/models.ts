@@ -1841,7 +1841,7 @@ export function buildEnemyModel(enemyClass: EnemyClass): THREE.Group {
 }
 
 /**
- * 5 Distinct Composite 3D Boss Models
+ * 8 Distinct Composite 3D Boss Models (with animated sub-part userData refs)
  */
 export function buildBossModel(bossId: BossId): THREE.Group {
   const g = new THREE.Group();
@@ -1854,12 +1854,15 @@ export function buildBossModel(bossId: BossId): THREE.Group {
 
   const palette: Record<BossId, { p: string; s: string }> = {
     titan_drone: { p: '#22d3ee', s: '#ef4444' },
-    overseer: { p: '#a855f7', s: '#38bdf8' },
     iron_hunter: { p: '#f97316', s: '#facc15' },
+    overseer: { p: '#a855f7', s: '#38bdf8' },
     neon_wraith: { p: '#2dd4bf', s: '#fb7185' },
+    cryo_leviathan: { p: '#38bdf8', s: '#a5f3fc' },
+    volt_archon: { p: '#facc15', s: '#6366f1' },
     the_sentinel: { p: '#e879f9', s: '#60a5fa' },
+    omega_core: { p: '#f43f5e', s: '#fbbf24' },
   };
-  const colors = palette[bossId];
+  const colors = palette[bossId] ?? palette.titan_drone;
   const priMat = new THREE.MeshStandardMaterial({
     color: colors.p,
     emissive: colors.p,
@@ -1871,12 +1874,18 @@ export function buildBossModel(bossId: BossId): THREE.Group {
     emissiveIntensity: 1.0,
   });
 
+  const rings: THREE.Object3D[] = [];
+  const wings: THREE.Object3D[] = [];
+  const segments: THREE.Object3D[] = [];
+  let core: THREE.Object3D | null = null;
+
   if (bossId === 'titan_drone') {
     const hull = new THREE.Mesh(new THREE.BoxGeometry(5.6, 1.9, 3.6), armorMat);
     const bridge = new THREE.Mesh(new THREE.BoxGeometry(2.5, 0.95, 2.2), armorMat);
     bridge.position.y = 1.25;
     const eye = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.45, 0.3), secMat);
     eye.position.set(0, 0.1, 1.85);
+    core = eye;
     const vent = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.25, 2.6), priMat);
     vent.position.set(0, 1.75, 0);
     g.add(hull, bridge, eye, vent);
@@ -1887,6 +1896,7 @@ export function buildBossModel(bossId: BossId): THREE.Group {
         const ring = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.11, 8, 20), priMat);
         ring.rotation.x = Math.PI / 2;
         ring.position.set(sx, 0.3, sz);
+        rings.push(ring);
         g.add(nac, ring);
       }
     }
@@ -1894,16 +1904,19 @@ export function buildBossModel(bossId: BossId): THREE.Group {
     const orb = new THREE.Mesh(new THREE.SphereGeometry(1.75, 20, 16), armorMat);
     const pupil = new THREE.Mesh(new THREE.SphereGeometry(0.85, 14, 12), secMat);
     pupil.position.set(0, 0, 1.32);
+    core = pupil;
     const ring1 = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.14, 10, 30), priMat);
     const ring2 = new THREE.Mesh(new THREE.TorusGeometry(3.15, 0.11, 10, 30), secMat);
     ring2.rotation.y = Math.PI / 3;
     ring2.rotation.x = Math.PI / 4;
+    rings.push(ring1, ring2);
     g.add(orb, pupil, ring1, ring2);
   } else if (bossId === 'iron_hunter') {
     const body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 1.8, 4.4), armorMat);
     body.position.y = 0.2;
     const jaw = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.75, 1.2), secMat);
     jaw.position.set(0, -0.3, 2.3);
+    core = jaw;
     const spine = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 3.6), priMat);
     spine.position.set(0, 1.15, 0);
     g.add(body, jaw, spine);
@@ -1913,6 +1926,7 @@ export function buildBossModel(bossId: BossId): THREE.Group {
         leg.position.set(sx, -1.1, sz);
         const pad = new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.25, 0.9), priMat);
         pad.position.set(sx, -2.15, sz);
+        segments.push(leg);
         g.add(leg, pad);
       }
     }
@@ -1923,27 +1937,94 @@ export function buildBossModel(bossId: BossId): THREE.Group {
     head.position.y = 2.15;
     const visor = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.26, 0.45), priMat);
     visor.position.set(0, 2.15, 0.65);
+    core = visor;
     const wingL = new THREE.Mesh(new THREE.BoxGeometry(3.4, 0.35, 0.15), secMat);
     wingL.position.set(-2.2, 1.2, -0.3);
     wingL.rotation.z = 0.38;
     const wingR = wingL.clone();
     wingR.position.x = 2.2;
     wingR.rotation.z = -0.38;
+    wings.push(wingL, wingR);
     g.add(cloak, head, visor, wingL, wingR);
+  } else if (bossId === 'cryo_leviathan') {
+    const head = new THREE.Mesh(new THREE.ConeGeometry(1.55, 3.2, 6), armorMat);
+    head.rotation.x = Math.PI / 2;
+    head.position.set(0, 0.4, 1.8);
+    const maw = new THREE.Mesh(new THREE.OctahedronGeometry(0.75, 0), secMat);
+    maw.position.set(0, 0.2, 2.8);
+    core = maw;
+    g.add(head, maw);
+    for (let i = 0; i < 6; i++) {
+      const segGroup = new THREE.Group();
+      const radius = 1.32 - i * 0.14;
+      const body = new THREE.Mesh(new THREE.CylinderGeometry(radius, radius * 0.9, 1.4, 8), armorMat);
+      body.rotation.x = Math.PI / 2;
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(radius * 2.5, 0.14, 0.65), i % 2 === 0 ? priMat : secMat);
+      segGroup.add(body, fin);
+      segGroup.position.set(0, 0.25, -i * 1.35);
+      segments.push(segGroup);
+      g.add(segGroup);
+    }
+  } else if (bossId === 'volt_archon') {
+    const torso = new THREE.Mesh(new THREE.OctahedronGeometry(1.45, 1), armorMat);
+    const arcCore = new THREE.Mesh(new THREE.SphereGeometry(0.85, 14, 14), priMat);
+    core = arcCore;
+    g.add(torso, arcCore);
+    for (const sx of [-2.4, 2.4]) {
+      const coil = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.55, 3.6, 12), armorMat);
+      coil.position.set(sx, 0.2, 0);
+      const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.09, 8, 20), priMat);
+      ringA.rotation.x = Math.PI / 2;
+      ringA.position.set(sx, 1.1, 0);
+      const ringB = ringA.clone();
+      ringB.position.y = -0.6;
+      rings.push(ringA, ringB);
+      wings.push(coil);
+      g.add(coil, ringA, ringB);
+    }
+    const crown = new THREE.Mesh(new THREE.TorusGeometry(2.65, 0.12, 8, 28), secMat);
+    crown.rotation.x = Math.PI / 3;
+    rings.push(crown);
+    g.add(crown);
+  } else if (bossId === 'omega_core') {
+    const singularity = new THREE.Mesh(new THREE.IcosahedronGeometry(1.55, 2), priMat);
+    core = singularity;
+    const armorShell = new THREE.Mesh(new THREE.TorusGeometry(2.55, 0.24, 12, 34), armorMat);
+    const orbitRing1 = new THREE.Mesh(new THREE.TorusGeometry(3.25, 0.14, 10, 34), secMat);
+    orbitRing1.rotation.x = Math.PI / 2.6;
+    const orbitRing2 = new THREE.Mesh(new THREE.TorusGeometry(3.75, 0.12, 10, 34), priMat);
+    orbitRing2.rotation.y = Math.PI / 2.4;
+    rings.push(armorShell, orbitRing1, orbitRing2);
+    g.add(singularity, armorShell, orbitRing1, orbitRing2);
+    for (let i = 0; i < 6; i++) {
+      const ang = (i * Math.PI) / 3;
+      const blade = new THREE.Mesh(new THREE.OctahedronGeometry(0.58, 0), secMat);
+      blade.position.set(Math.cos(ang) * 3.55, Math.sin(ang) * 2.55, 0);
+      segments.push(blade);
+      g.add(blade);
+    }
   } else {
-    const core = new THREE.Mesh(new THREE.IcosahedronGeometry(1.75, 1), priMat);
+    const sentCore = new THREE.Mesh(new THREE.IcosahedronGeometry(1.75, 1), priMat);
+    core = sentCore;
     const shieldRing = new THREE.Mesh(new THREE.TorusGeometry(2.9, 0.22, 10, 32), armorMat);
     const halo = new THREE.Mesh(new THREE.TorusGeometry(3.45, 0.12, 8, 32), secMat);
     halo.rotation.x = Math.PI / 2;
-    g.add(core, shieldRing, halo);
+    rings.push(shieldRing, halo);
+    g.add(sentCore, shieldRing, halo);
     for (let i = 0; i < 4; i++) {
       const ang = (i * Math.PI) / 2 + Math.PI / 4;
       const pylon = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 0), armorMat);
       pylon.position.set(Math.cos(ang) * 3.1, Math.sin(ang) * 2.2, 0);
+      segments.push(pylon);
       g.add(pylon);
     }
   }
 
+  g.userData.bossId = bossId;
+  g.userData.core = core;
+  g.userData.rings = rings;
+  g.userData.wings = wings;
+  g.userData.segments = segments;
   return g;
 }
 

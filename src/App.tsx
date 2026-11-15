@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Globe, RotateCcw } from 'lucide-react';
+import { AlertTriangle, Check, Globe, Power, RotateCcw } from 'lucide-react';
 import { GameHud } from './components/GameHud';
 import { MainMenuModal, MenuTab } from './components/MainMenuModal';
 import { PauseModal, ResultsModal } from './components/PauseResultsModal';
@@ -22,7 +22,9 @@ import {
   RunTelemetry,
 } from './game/storage';
 import {
+  AccountSyncConflict,
   BossId,
+  ConflictResolutionStrategy,
   DistrictId,
   GameMode,
   HardwareDiagnostics,
@@ -38,16 +40,28 @@ import {
 import { t } from './i18n';
 import {
   ActiveRunSession,
+  bootstrapDesktopSession,
+  buildAccountConflict,
   checkServerOnline,
+  createLocalProfileApi,
   fetchMeOnline,
+  getActiveLocalProfileId,
+  getLocalProfileApi,
+  linkAccountApi,
+  listLocalProfilesApi,
   loadSaveFromSqlite,
   mpClient,
   OnlineUser,
   RoomInviteNotice,
+  saveLocalProfileApi,
+  setActiveLocalProfileId,
   startServerRun,
+  stopCloudflaredTunnel,
+  stopLanHost,
   submitServerRun,
   syncSaveToSqlite,
 } from './services/onlineClient';
+import { rtcClient } from './services/rtcClient';
 
 const INITIAL_HUD: HudSnapshot = {
   phase: 'title',
@@ -144,16 +158,33 @@ export default function App() {
   const [serverOnline, setServerOnline] = useState<boolean>(false);
   const [onlineUser, setOnlineUser] = useState<OnlineUser | null>(null);
   const onlineUserRef = useRef<OnlineUser | null>(null);
+  const [activeLocalProfileId, setActiveLocalProfileState] = useState<string | null>(
+    () => getActiveLocalProfileId(),
+  );
+  const activeLocalProfileIdRef = useRef<string | null>(activeLocalProfileId);
   const [previewBossId, setPreviewBossId] = useState<BossId>('titan_drone');
+
+  // Electron local server error/restart banner
+  const [desktopServerBanner, setDesktopServerBanner] = useState<{
+    status: string;
+    message: string;
+  } | null>(null);
+
+  // Account sync conflict state
+  const [pendingConflict, setPendingConflict] = useState<AccountSyncConflict | null>(null);
+  const [pendingOnlineSave, setPendingOnlineSave] = useState<PlayerSaveData | null>(null);
 
   // Multiplayer WebSocket state
   const [mpConnected, setMpConnected] = useState<boolean>(false);
   const [mpSelfId, setMpSelfId] = useState<string | null>(null);
   const mpSelfIdRef = useRef<string | null>(null);
+  const [mpTargetUrl, setMpTargetUrl] = useState<string>(() => mpClient.getTargetUrl());
   const [mpRoom, setMpRoom] = useState<MultiplayerRoomState | null>(null);
   const [mpInvite, setMpInvite] = useState<RoomInviteNotice | null>(null);
+  const [mpNotice, setMpNotice] = useState<{ text: string; isError?: boolean } | null>(null);
   const mpPlayersRef = useRef<MultiplayerPlayerTelemetry[]>([]);
   const isMpRunRef = useRef<boolean>(false);
+  const appliedMpTxRef = useRef<Set<string>>(new Set());
 
   // 15s Video Confirmation State
   const [pendingVideoRevert, setPendingVideoRevert] = useState<{
@@ -161,12 +192,29 @@ export default function App() {
     secondsLeft: number;
   } | null>(null);
 
+  // Clean Exit Confirmation State
+  const [showExitConfirm, setShowExitConfirm] = useState(false);
+  const [exitingApp, setExitingApp] = useState(false);
+  const [browserExitNotice, setBrowserExitNotice] = useState<string | null>(null);
+
   useEffect(() => {
     onlineUserRef.current = onlineUser;
-    if (serverOnline) {
+    if (serverOnline && mpClient.isConnected()) {
       mpClient.authenticate();
     }
   }, [onlineUser, serverOnline]);
+
+  useEffect(() => {
+    if (!window.metroDesktop?.onServerStatus) return;
+    return window.metroDesktop.onServerStatus((evt) => {
+      if (evt.status === 'ready') {
+        setDesktopServerBanner(null);
+        setServerOnline(true);
+      } else if (evt.status === 'crashed' || evt.status === 'error' || evt.status === 'restarting') {
+        setDesktopServerBanner({ status: evt.status, message: evt.message });
+      }
+    });
+  }, []);
 
   const updateSave = useCallback((next: PlayerSaveData) => {
     saveRef.current = next;
@@ -176,32 +224,140 @@ export default function App() {
     if (next.settings.muted || !next.settings.lobbyMusicEnabled) {
       audioEngine.startLobbyMusicIfAllowed(false);
     }
+    if (activeLocalProfileIdRef.current) {
+      void saveLocalProfileApi(activeLocalProfileIdRef.current, next);
+    }
     if (onlineUserRef.current) {
       void syncSaveToSqlite(next);
     }
   }, []);
 
-  // Check server, SQLite profile sync & WebSocket connection on boot
+  const handleSwitchLocalProfile = useCallback(
+    (profileId: string, nextSave: PlayerSaveData) => {
+      setActiveLocalProfileId(profileId);
+      setActiveLocalProfileState(profileId);
+      activeLocalProfileIdRef.current = profileId;
+      saveRef.current = nextSave;
+      setSave(nextSave);
+      persistSaveData(nextSave);
+      engineRef.current?.syncSaveData(nextSave);
+    },
+    [],
+  );
+
+  const handleResolveConflict = useCallback(
+    async (strategy: ConflictResolutionStrategy, chosenSave: PlayerSaveData) => {
+      const localId = activeLocalProfileIdRef.current || 'local_default';
+      const txId = `boot_lnk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await linkAccountApi({
+        localProfileId: localId,
+        strategy,
+        mergedSave: chosenSave,
+        summary: pendingConflict
+          ? {
+              local: pendingConflict.localSummary,
+              online: pendingConflict.onlineSummary,
+            }
+          : {},
+        txId,
+      });
+      updateSave(chosenSave);
+      setPendingConflict(null);
+      setPendingOnlineSave(null);
+    },
+    [pendingConflict, updateSave],
+  );
+
+  // Check server, desktop safeStorage session, offline local SQLite profiles, optional online sync & WebSocket on boot
   useEffect(() => {
     let active = true;
-    void checkServerOnline().then(async (isUp) => {
+    void (async () => {
+      await bootstrapDesktopSession();
+      if (!active) return;
+      const resolvedActiveId = getActiveLocalProfileId();
+      if (resolvedActiveId && resolvedActiveId !== activeLocalProfileIdRef.current) {
+        activeLocalProfileIdRef.current = resolvedActiveId;
+        setActiveLocalProfileState(resolvedActiveId);
+      }
+
+      const isUp = await checkServerOnline();
       if (!active) return;
       setServerOnline(isUp);
       if (!isUp) return;
 
+      // 1. Ensure offline local profile exists in SQLite
+      let resolvedProfileId = activeLocalProfileIdRef.current;
+      const localList = await listLocalProfilesApi();
+      if (!active) return;
+
+      if (localList.ok) {
+        if (
+          resolvedProfileId &&
+          localList.profiles.some((p) => p.id === resolvedProfileId)
+        ) {
+          const loaded = await getLocalProfileApi(resolvedProfileId);
+          if (active && loaded.ok && loaded.save) {
+            const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
+            const localRuns = saveRef.current.stats?.totalRuns ?? 0;
+            if (sqliteRuns > localRuns) {
+              saveRef.current = loaded.save;
+              setSave(loaded.save);
+              persistSaveData(loaded.save);
+              engineRef.current?.syncSaveData(loaded.save);
+            }
+          }
+        } else if (localList.profiles.length > 0) {
+          resolvedProfileId = localList.profiles[0].id;
+          setActiveLocalProfileId(resolvedProfileId);
+          setActiveLocalProfileState(resolvedProfileId);
+          activeLocalProfileIdRef.current = resolvedProfileId;
+          const loaded = await getLocalProfileApi(resolvedProfileId);
+          if (active && loaded.ok && loaded.save) {
+            const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
+            const localRuns = saveRef.current.stats?.totalRuns ?? 0;
+            if (localRuns === 0 && sqliteRuns > 0) {
+              saveRef.current = loaded.save;
+              setSave(loaded.save);
+              persistSaveData(loaded.save);
+              engineRef.current?.syncSaveData(loaded.save);
+            }
+          }
+        } else {
+          const created = await createLocalProfileApi({
+            name: saveRef.current.playerName || 'RUNNER_01',
+            avatarId: saveRef.current.avatarId || 'kai',
+            save: saveRef.current,
+          });
+          if (active && created.ok && created.profile) {
+            resolvedProfileId = created.profile.id;
+            setActiveLocalProfileId(resolvedProfileId);
+            setActiveLocalProfileState(resolvedProfileId);
+            activeLocalProfileIdRef.current = resolvedProfileId;
+          }
+        }
+      }
+
+      // 2. Check optional online account & detect sync conflicts safely (never silent overwrite)
       const me = await fetchMeOnline();
       if (!active) return;
 
       if (me.ok && me.user) {
         setOnlineUser(me.user);
         onlineUserRef.current = me.user;
-        mpClient.connect(me.user.username);
+        mpClient.connect({ guestName: me.user.username });
 
         const cloudRes = await loadSaveFromSqlite();
         if (active && cloudRes.ok && cloudRes.hasSave && cloudRes.save) {
-          const cloudRuns = cloudRes.save.stats?.totalRuns ?? 0;
-          const localRuns = saveRef.current.stats.totalRuns ?? 0;
-          if (localRuns === 0 || cloudRuns > localRuns) {
+          const conflict = buildAccountConflict({
+            localProfileId: resolvedProfileId || 'local_default',
+            localSave: saveRef.current,
+            onlineUser: me.user,
+            onlineSave: cloudRes.save,
+          });
+          if (conflict.hasConflict) {
+            setPendingConflict(conflict);
+            setPendingOnlineSave(cloudRes.save);
+          } else if ((saveRef.current.stats.totalRuns ?? 0) === 0) {
             saveRef.current = cloudRes.save;
             setSave(cloudRes.save);
             persistSaveData(cloudRes.save);
@@ -209,9 +365,9 @@ export default function App() {
           }
         }
       } else {
-        mpClient.connect('RUNNER_PC');
+        mpClient.connect({ guestName: saveRef.current.playerName || 'RUNNER_PC' });
       }
-    });
+    })();
     return () => {
       active = false;
     };
@@ -336,8 +492,12 @@ export default function App() {
 
     saveRef.current = nextSave;
     setSave(nextSave);
+    persistSaveData(nextSave);
     engineRef.current?.syncSaveData(nextSave);
     setRunSummary(summary);
+    if (activeLocalProfileIdRef.current) {
+      void saveLocalProfileApi(activeLocalProfileIdRef.current, nextSave);
+    }
     if (onlineUserRef.current) {
       void syncSaveToSqlite(nextSave);
     }
@@ -479,11 +639,12 @@ export default function App() {
     [],
   );
 
-  // Subscribe to real-time WebSocket multiplayer events
+  // Subscribe to real-time WebSocket multiplayer + WebRTC signaling events
   useEffect(() => {
     const unsub = mpClient.subscribe({
-      onConnection: (connected, selfUserId) => {
+      onConnection: (connected, selfUserId, targetUrl) => {
         setMpConnected(connected);
+        if (targetUrl) setMpTargetUrl(targetUrl);
         if (selfUserId) {
           setMpSelfId(selfUserId);
           mpSelfIdRef.current = selfUserId;
@@ -493,6 +654,7 @@ export default function App() {
         setMpRoom(room);
       },
       onRoomStarted: (room) => {
+        setMpNotice(null);
         setMpRoom(room);
         const uid = mpSelfIdRef.current || mpClient.getSelfUserId() || 'mp_local';
         mpPlayersRef.current = [];
@@ -513,11 +675,61 @@ export default function App() {
       onInvited: (invite) => {
         setMpInvite(invite);
       },
+      onNotice: (text, isError) => {
+        if (text) setMpNotice({ text, isError });
+      },
+      onHostClosed: (reason) => {
+        setMpRoom(null);
+        setMpNotice({ text: reason, isError: true });
+        rtcClient.closeAll();
+        if (isMpRunRef.current) {
+          isMpRunRef.current = false;
+          engineRef.current?.enableMultiplayer(null);
+          engineRef.current?.returnToTitle();
+          setMenuTab('online');
+        }
+      },
+      onKicked: (reason) => {
+        setMpRoom(null);
+        setMpNotice({ text: reason, isError: true });
+        rtcClient.closeAll();
+        if (isMpRunRef.current) {
+          isMpRunRef.current = false;
+          engineRef.current?.enableMultiplayer(null);
+          engineRef.current?.returnToTitle();
+          setMenuTab('online');
+        }
+      },
+      onFinishAck: (ack) => {
+        if (!ack?.txId || appliedMpTxRef.current.has(ack.txId)) return;
+        appliedMpTxRef.current.add(ack.txId);
+        const cur = saveRef.current;
+        const prevBest = cur.stats.mpBestPlacement ?? 0;
+        const nextBest =
+          prevBest === 0 ? ack.placement : Math.min(prevBest, ack.placement);
+        const rewarded: PlayerSaveData = {
+          ...cur,
+          coins: cur.coins + (ack.rewardCoins || 0),
+          gems: cur.gems + (ack.rewardGems || 0),
+          stats: {
+            ...cur.stats,
+            mpBestPlacement: nextBest,
+          },
+        };
+        updateSave(rewarded);
+        setMpNotice({
+          text: `Meta #${ack.placement} validada por el anfitrión: +${ack.rewardCoins} Monedas y +${ack.rewardGems} Gemas.`,
+          isError: false,
+        });
+      },
+      onRtcSignal: (sig) => {
+        void rtcClient.handleIncomingSignal(sig);
+      },
     });
     return unsub;
-  }, [handleStartGame]);
+  }, [handleStartGame, updateSave]);
 
-  // 20Hz live multiplayer telemetry relay
+  // 20Hz live multiplayer telemetry relay (WS authoritative + WebRTC DataChannel P2P)
   useEffect(() => {
     if (
       !hud.isMultiplayer ||
@@ -525,11 +737,32 @@ export default function App() {
     ) {
       return;
     }
+    const unsubRtcTelemetry = rtcClient.subscribeTelemetry((peerId, rawPayload) => {
+      const payload = rawPayload as Partial<MultiplayerPlayerTelemetry> | undefined;
+      if (!payload || typeof payload.distance !== 'number') return;
+      const idx = mpPlayersRef.current.findIndex((p) => p.userId === peerId);
+      if (idx >= 0) {
+        const next = [...mpPlayersRef.current];
+        next[idx] = { ...next[idx], ...payload };
+        mpPlayersRef.current = next;
+        engineRef.current?.updateRemotePlayers(next);
+      }
+    });
     const timer = window.setInterval(() => {
       if (!engineRef.current) return;
-      mpClient.sendTelemetry(engineRef.current.getLiveTelemetry());
+      const telemetry = engineRef.current.getLiveTelemetry();
+      mpClient.sendTelemetry(telemetry);
+      if (rtcClient.hasOpenDataChannels()) {
+        rtcClient.broadcastTelemetry({
+          ...telemetry,
+          userId: mpSelfIdRef.current || mpClient.getSelfUserId() || 'p2p',
+        });
+      }
     }, 50);
-    return () => window.clearInterval(timer);
+    return () => {
+      unsubRtcTelemetry();
+      window.clearInterval(timer);
+    };
   }, [hud.isMultiplayer, hud.phase]);
 
   // Sync non-blocking multiplayer pause state over WebSocket
@@ -577,11 +810,16 @@ export default function App() {
     return avgMs;
   }, []);
 
-  // Enter / Space on Title Screen launches immediately when no modal is open
+  // Enter / Space launches & Escape opens Exit confirmation on Title Screen
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (hud.phase === 'title' && menuTab === null) {
-        if (e.code === 'Enter' || e.code === 'Space') {
+      if (hud.phase === 'title' && menuTab === null && !pendingVideoRevert) {
+        if (e.code === 'Escape') {
+          e.preventDefault();
+          setShowExitConfirm((v) => !v);
+          return;
+        }
+        if ((e.code === 'Enter' || e.code === 'Space') && !showExitConfirm) {
           e.preventDefault();
           handleStartGame();
         }
@@ -589,7 +827,36 @@ export default function App() {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [hud.phase, menuTab, handleStartGame]);
+  }, [hud.phase, menuTab, pendingVideoRevert, showExitConfirm, handleStartGame]);
+
+  const handleConfirmExitGame = useCallback(async () => {
+    if (exitingApp) return;
+    setExitingApp(true);
+    try {
+      persistSaveData(saveRef.current);
+      if (activeLocalProfileIdRef.current) {
+        await saveLocalProfileApi(activeLocalProfileIdRef.current, saveRef.current);
+      }
+      if (onlineUserRef.current) {
+        await syncSaveToSqlite(saveRef.current);
+      }
+      mpClient.leaveRoom();
+      mpClient.disconnect();
+      rtcClient.closeAll();
+      await stopCloudflaredTunnel().catch(() => {});
+      await stopLanHost().catch(() => {});
+    } finally {
+      if (window.metroDesktop?.quitApp) {
+        await window.metroDesktop.quitApp();
+      } else {
+        setExitingApp(false);
+        setShowExitConfirm(false);
+        setBrowserExitNotice(
+          'Progreso guardado de forma segura. En escritorio (.exe) esto cierra la aplicación automáticamente; en navegador puedes cerrar la pestaña.',
+        );
+      }
+    }
+  }, [exitingApp]);
 
   const handleToggleMute = useCallback(() => {
     const cur = saveRef.current;
@@ -717,6 +984,7 @@ export default function App() {
           serverOnline={serverOnline}
           onlineUser={onlineUser}
           mpRoomCode={mpRoom?.code ?? null}
+          hasSyncConflict={Boolean(pendingConflict)}
           onSelectMode={handleSelectMode}
           onSelectDistrict={handleSelectDistrict}
           onSelectTimeOfDay={handleSelectTimeOfDay}
@@ -733,7 +1001,29 @@ export default function App() {
           }}
           onToggleMute={handleToggleMute}
           onToggleLobbyMusic={handleToggleLobbyMusic}
+          onRequestExit={() => setShowExitConfirm(true)}
         />
+      )}
+
+      {/* Electron Local Server Crash / Restart Notification Banner */}
+      {desktopServerBanner && (
+        <div className="fixed bottom-4 right-4 z-50 max-w-md bg-[#0a0f1f] border border-rose-400/70 rounded-xl p-3.5 shadow-2xl flex items-center justify-between gap-3 text-xs">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            <div>
+              <div className="font-bold text-white">Servicio Local del Juego</div>
+              <div className="text-rose-200 mt-0.5">{desktopServerBanner.message}</div>
+            </div>
+          </div>
+          {desktopServerBanner.status !== 'restarting' && (
+            <button
+              onClick={() => void window.metroDesktop?.restartLocalServer()}
+              className="px-3 py-1.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold whitespace-nowrap cursor-pointer"
+            >
+              Reintentar
+            </button>
+          )}
+        </div>
       )}
 
       {/* Room Invite Toast while in Title Screen */}
@@ -838,14 +1128,25 @@ export default function App() {
           liveHud={hud}
           serverOnline={serverOnline}
           onlineUser={onlineUser}
+          activeLocalProfileId={activeLocalProfileId}
           mpConnected={mpConnected}
           mpSelfId={mpSelfId}
+          mpTargetUrl={mpTargetUrl}
           mpRoom={mpRoom}
           mpInvite={mpInvite}
+          mpNotice={mpNotice}
+          pendingConflict={pendingConflict}
+          pendingOnlineSave={pendingOnlineSave}
+          onResolveConflict={handleResolveConflict}
+          onDismissConflict={() => {
+            setPendingConflict(null);
+            setPendingOnlineSave(null);
+          }}
           onDismissInvite={() => setMpInvite(null)}
           previewBossId={previewBossId}
           onSelectBossPreview={(bossId) => setPreviewBossId(bossId)}
           onOnlineUserChange={(u) => setOnlineUser(u)}
+          onSwitchLocalProfile={handleSwitchLocalProfile}
           onUpdateSave={updateSave}
           onVideoChangeWithConfirm={handleVideoChangeWithConfirm}
           onRunBenchmark={handleRunBenchmark}
@@ -914,6 +1215,56 @@ export default function App() {
               {t(save.settings.language, 'common.confirm')}
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Clean Exit Confirmation Modal (saves progress + stops LAN/Tunnel/WS + quits Electron) */}
+      {showExitConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#040712]/80 p-4">
+          <div className="w-full max-w-md bg-[#0a1020] border border-rose-400/50 rounded-xl p-5 shadow-2xl space-y-4">
+            <div className="flex items-start gap-3">
+              <Power className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="font-display text-lg font-bold text-white">
+                  ¿Salir de METRO RUSH: NEON CITY?
+                </h3>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Se guardará tu progreso local y online, se cerrará tu sala multijugador / servidor LAN o túnel activo y se detendrán los servicios de forma segura.
+                </p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1">
+              <button
+                type="button"
+                disabled={exitingApp}
+                onClick={() => setShowExitConfirm(false)}
+                className="px-4 py-2 rounded-lg border border-white/15 text-xs font-semibold text-slate-200 hover:bg-white/10 cursor-pointer disabled:opacity-50"
+              >
+                Volver al Juego
+              </button>
+              <button
+                type="button"
+                disabled={exitingApp}
+                onClick={() => void handleConfirmExitGame()}
+                className="px-4 py-2 rounded-lg bg-rose-500 hover:bg-rose-400 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+              >
+                <Power className="w-3.5 h-3.5" />
+                {exitingApp ? 'Guardando y cerrando...' : 'Guardar y Salir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {browserExitNotice && (
+        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 z-50 max-w-lg bg-[#091224] border border-cyan-400/60 rounded-xl px-4 py-3 text-xs text-cyan-200 shadow-2xl flex items-center justify-between gap-3">
+          <span>{browserExitNotice}</span>
+          <button
+            onClick={() => setBrowserExitNotice(null)}
+            className="text-slate-300 hover:text-white font-bold cursor-pointer shrink-0"
+          >
+            Cerrar
+          </button>
         </div>
       )}
     </div>

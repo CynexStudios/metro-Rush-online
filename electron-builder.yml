@@ -1,0 +1,39 @@
+appId: com.metrorush.neoncity
+productName: Metro Rush Neon City
+copyright: Copyright © 2026 Jaderson Liriano — XynexDevs
+directories:
+  output: release
+  buildResources: build
+files:
+  - dist/**/*
+  - dist-electron/**/*
+  - public/**/*
+  - package.json
+  - "!**/node_modules/*/{CHANGELOG.md,README.md,README,readme.md,readme}"
+  - "!**/node_modules/.bin"
+  - "!src/**"
+  - "!electron/**"
+  - "!.backups/**"
+  - "!.online_store.json"
+asar: true
+asarUnpack:
+  - dist-electron/sql-wasm.wasm
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: build/icon.ico
+  artifactName: Metro-Rush-Neon-City-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Metro Rush Neon City
+  deleteAppDataOnUninstall: false
+linux:
+  target:
+    - dir
+  icon: build/icon.png

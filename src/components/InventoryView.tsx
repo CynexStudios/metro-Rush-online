@@ -173,86 +173,153 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
 
       <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5 items-start">
         <div>
-          {/* 1. SPECIAL OBJECTS */}
+          {/* 1. SPECIAL OBJECTS + 3D PET COMPANION */}
           {subTab === 'specials' && (
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <button
-                onClick={() =>
-                  setInspected({
-                    kind: 'special',
-                    itemId: 'revive_token_1',
-                    specialKind: 'revive',
-                    title: 'Tokens de Revivir',
-                    subtitle: `${save.reviveTokens} en inventario`,
-                    accentColor: '#10b981',
-                  })
-                }
-                className="p-5 rounded-xl bg-[#0b1224] border border-emerald-400/35 hover:border-emerald-300 text-left space-y-2.5 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
-                    <ShieldAlert className="w-4 h-4" /> Tokens de Revivir
-                  </span>
-                  <span className="font-mono-num text-2xl font-bold text-white">
-                    {save.reviveTokens}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Permiten continuar instantáneamente en caso de colisión o caída durante la carrera. Coste progresivo dentro de cada intento: 1, 2, 4, 8...
-                </p>
-              </button>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <button
+                  onClick={() =>
+                    setInspected({
+                      kind: 'special',
+                      itemId: 'revive_token_1',
+                      specialKind: 'revive',
+                      title: 'Tokens de Revivir',
+                      subtitle: `${save.reviveTokens} en inventario`,
+                      accentColor: '#10b981',
+                    })
+                  }
+                  className="p-5 rounded-xl bg-[#0b1224] border border-emerald-400/35 hover:border-emerald-300 text-left space-y-2.5 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                      <ShieldAlert className="w-4 h-4" /> Tokens de Revivir
+                    </span>
+                    <span className="font-mono-num text-2xl font-bold text-white">
+                      {save.reviveTokens}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Permiten continuar instantáneamente en caso de colisión o caída durante la carrera. Coste progresivo dentro de cada intento: 1, 2, 4, 8...
+                  </p>
+                </button>
 
-              <button
-                onClick={() =>
-                  setInspected({
-                    kind: 'special',
-                    itemId: 'talisman_1',
-                    specialKind: 'talisman',
-                    title: 'Talismanes de Autorrevivir',
-                    subtitle: `${save.talismans} en inventario`,
-                    accentColor: '#f59e0b',
-                  })
-                }
-                className="p-5 rounded-xl bg-[#0b1224] border border-amber-400/45 hover:border-amber-300 text-left space-y-2.5 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                    <Sparkles className="w-4 h-4" /> Talismanes
-                  </span>
-                  <span className="font-mono-num text-2xl font-bold text-white">
-                    {save.talismans}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Reliquia automática: se consume 1 al recibir un golpe letal, despeja obstáculos en 20m, te impulsa en el aire y activa escudo de 3.0s.
-                </p>
-              </button>
+                <button
+                  onClick={() =>
+                    setInspected({
+                      kind: 'special',
+                      itemId: 'talisman_1',
+                      specialKind: 'talisman',
+                      title: 'Talismanes de Autorrevivir',
+                      subtitle: `${save.talismans} en inventario`,
+                      accentColor: '#f59e0b',
+                    })
+                  }
+                  className="p-5 rounded-xl bg-[#0b1224] border border-amber-400/45 hover:border-amber-300 text-left space-y-2.5 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-amber-300 flex items-center gap-1.5">
+                      <Sparkles className="w-4 h-4" /> Talismanes
+                    </span>
+                    <span className="font-mono-num text-2xl font-bold text-white">
+                      {save.talismans}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Reliquia automática: se consume 1 al recibir un golpe letal, despeja obstáculos en 20m, te impulsa en el aire y activa escudo de 3.0s.
+                  </p>
+                </button>
 
-              <button
-                onClick={() =>
-                  setInspected({
-                    kind: 'special',
-                    itemId: 'ticket_pack_3',
-                    specialKind: 'tickets',
-                    title: 'Tiques de Mejora',
-                    subtitle: `${save.tickets} disponibles`,
-                    accentColor: '#22d3ee',
-                  })
-                }
-                className="p-5 rounded-xl bg-[#0b1224] border border-cyan-400/35 hover:border-cyan-300 text-left space-y-2.5 cursor-pointer"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
-                    <Ticket className="w-4 h-4" /> Tiques de Mejora
-                  </span>
-                  <span className="font-mono-num text-2xl font-bold text-white">
-                    {save.tickets}
-                  </span>
-                </div>
-                <p className="text-xs text-slate-300 leading-relaxed">
-                  Úsalos en el Garaje 3D para mejorar tus vehículos o en la Tienda para potenciar tus habilidades pasivas sin gastar monedas.
-                </p>
-              </button>
+                <button
+                  onClick={() =>
+                    setInspected({
+                      kind: 'special',
+                      itemId: 'ticket_pack_3',
+                      specialKind: 'tickets',
+                      title: 'Tiques de Mejora',
+                      subtitle: `${save.tickets} disponibles`,
+                      accentColor: '#22d3ee',
+                    })
+                  }
+                  className="p-5 rounded-xl bg-[#0b1224] border border-cyan-400/35 hover:border-cyan-300 text-left space-y-2.5 cursor-pointer"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                      <Ticket className="w-4 h-4" /> Tiques de Mejora
+                    </span>
+                    <span className="font-mono-num text-2xl font-bold text-white">
+                      {save.tickets}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-300 leading-relaxed">
+                    Úsalos en el Garaje 3D para mejorar tus vehículos o en la Tienda para potenciar tus habilidades pasivas sin gastar monedas.
+                  </p>
+                </button>
+              </div>
+
+              {/* Mascota 3D Acompañante: Zorro Cyber */}
+              {(() => {
+                const ownsFox = (save.ownedPets ?? ['fox_cyber']).includes('fox_cyber');
+                const foxEquipped = save.equippedPetId === 'fox_cyber';
+                return (
+                  <div
+                    onClick={() =>
+                      setInspected({
+                        kind: 'relic',
+                        itemId: 'fox',
+                        extraGlbId: 'fox',
+                        title: 'Zorro Cyber (.GLB)',
+                        subtitle: foxEquipped
+                          ? 'Equipado en lobby y carreras'
+                          : 'Desequipado (guardado en taquilla)',
+                        accentColor: '#f97316',
+                      })
+                    }
+                    className={`p-5 rounded-xl border flex flex-wrap items-center justify-between gap-4 cursor-pointer ${
+                      foxEquipped
+                        ? 'bg-[#0e1a33] border-amber-400/60'
+                        : 'bg-[#0b1224] border-white/10 hover:border-white/25'
+                    }`}
+                  >
+                    <div className="space-y-1 max-w-lg">
+                      <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
+                        <Sparkles className="w-4 h-4" />
+                        Mascota 3D Acompañante ·{' '}
+                        <span className={foxEquipped ? 'text-emerald-300' : 'text-slate-400'}>
+                          {foxEquipped ? 'Equipada' : 'Desequipada'}
+                        </span>
+                      </div>
+                      <div className="font-display text-lg font-bold text-white">
+                        Zorro Cyber (Fox.glb)
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed">
+                        Corre junto a tu corredor en el lobby 3D y durante las partidas. Puedes equiparlo o desequiparlo cuando prefieras correr en solitario.
+                      </p>
+                    </div>
+
+                    {ownsFox && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          audioEngine.playUiClick(true);
+                          onUpdateSave({
+                            ...save,
+                            ownedPets: save.ownedPets?.length ? save.ownedPets : ['fox_cyber'],
+                            equippedPetId: foxEquipped ? null : 'fox_cyber',
+                          });
+                        }}
+                        className={`px-4 py-2.5 rounded-lg font-display font-bold text-xs cursor-pointer whitespace-nowrap shrink-0 ${
+                          foxEquipped
+                            ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/60 text-rose-200'
+                            : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                        }`}
+                      >
+                        {foxEquipped ? 'DESEQUIPAR MASCOTA' : 'EQUIPAR MASCOTA'}
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
             </div>
           )}
 

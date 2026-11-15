@@ -1,25 +1,39 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import {
+  AlertTriangle,
   CheckCircle2,
+  Clock,
   Copy,
   Database,
   Download,
+  FolderOpen,
   Globe,
+  HardDrive,
   KeyRound,
+  Link2,
   LogOut,
   Network,
   Play,
   Plus,
+  Radio,
   RefreshCw,
   RotateCcw,
+  Search,
   Send,
+  Server,
+  Shield,
   ShieldCheck,
   Swords,
+  Terminal,
   Trash2,
   Upload,
+  UserCheck,
   UserPlus,
   Users,
+  UserX,
+  Wifi,
   WifiOff,
+  XCircle,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
@@ -29,29 +43,54 @@ import {
   getCharacterById,
   getDistrictById,
 } from '../game/data';
-import { resetLocalProgressionClean } from '../game/storage';
+import { createInitialSave, resetLocalProgressionClean } from '../game/storage';
 import {
+  AccountSyncConflict,
   BossId,
+  ConflictResolutionStrategy,
+  ConnectionQuality,
   DistrictId,
   GameMode,
+  InviteStatus,
+  LanHostState,
   LanguageCode,
+  LocalProfileSummary,
   MultiplayerRoomState,
+  NetworkConnectionMode,
+  PersistentInviteRecord,
   PlayerSaveData,
+  TunnelState,
 } from '../game/types';
+import { GAME_VERSION } from '../game/version';
 import { getCityLabel, getModeLabel, t } from '../i18n';
 import {
   addOnlineFriend,
+  buildAccountConflict,
+  checkServerOnline,
+  createLocalProfileApi,
   DatabaseDiagnosticsInfo,
+  deleteLocalProfileApi,
   exportAccountBackupJson,
+  exportLocalBackupJson,
   fetchDatabaseInfo,
+  fetchInvites,
+  fetchLanStatus,
   fetchMeOnline,
   fetchOnlineEvents,
   fetchPublicRooms,
   fetchRankings,
+  getLocalProfileApi,
+  getOnlineBackendUrl,
+  getTunnelStatus,
+  importLocalBackupNative,
+  linkAccountApi,
+  listLocalProfilesApi,
   loadSaveFromSqlite,
   loginOnlineUser,
   logoutOnlineUser,
+  mergeSavesWithoutDuplication,
   mpClient,
+  normalizeWsTargetUrl,
   OnlineRankingEntry,
   OnlineUser,
   PublicRoomListing,
@@ -59,48 +98,108 @@ import {
   recoverOnlinePassword,
   registerOnlineUser,
   resetServerTestRankings,
+  respondToInvite,
   RoomInviteNotice,
+  saveLocalProfileApi,
+  SearchedUserEntry,
+  searchOnlineUsers,
+  sendPersistentInvite,
+  setOnlineBackendUrl,
+  startCloudflaredTunnel,
+  startLanHost,
+  stopCloudflaredTunnel,
+  stopLanHost,
   syncSaveToSqlite,
   updateOnlineAvatar,
   WeeklyChallengeInfo,
 } from '../services/onlineClient';
+import { rtcClient, RtcPeerStatus } from '../services/rtcClient';
 
 interface OnlineHubViewProps {
   save: PlayerSaveData;
   serverOnline: boolean;
   onlineUser: OnlineUser | null;
+  activeLocalProfileId: string | null;
   mpConnected: boolean;
   mpSelfId: string | null;
+  mpTargetUrl: string;
   mpRoom: MultiplayerRoomState | null;
   mpInvite: RoomInviteNotice | null;
+  mpNotice: { text: string; isError?: boolean } | null;
+  pendingConflict: AccountSyncConflict | null;
+  pendingOnlineSave: PlayerSaveData | null;
+  onResolveConflict: (
+    strategy: ConflictResolutionStrategy,
+    mergedSave: PlayerSaveData,
+  ) => Promise<void>;
+  onDismissConflict: () => void;
   onDismissInvite: () => void;
   onOnlineUserChange: (user: OnlineUser | null) => void;
+  onSwitchLocalProfile: (profileId: string, nextSave: PlayerSaveData) => void;
   onReplaceSave: (next: PlayerSaveData) => void;
   onStartChallenge: (districtId: DistrictId, bossId?: BossId) => void;
 }
 
 type HubSection = 'multiplayer' | 'account' | 'rankings' | 'network_info';
+type NetTabMode = 'lan' | 'vpn' | 'tunnel' | 'webrtc';
 
 const MP_MODES: GameMode[] = ['endless', 'timetrial', 'parkour', 'freerun'];
+
+const INVITE_STATUS_META: Record<InviteStatus, { label: string; cls: string }> = {
+  sent: { label: 'Enviada', cls: 'text-cyan-300' },
+  pending: { label: 'Pendiente', cls: 'text-amber-300' },
+  accepted: { label: 'Aceptada', cls: 'text-emerald-300' },
+  rejected: { label: 'Rechazada', cls: 'text-rose-300' },
+  room_full: { label: 'Sala Llena', cls: 'text-amber-300' },
+  host_offline: { label: 'Anfitrión Desconectado', cls: 'text-slate-400' },
+  room_closed: { label: 'Sala Cerrada', cls: 'text-slate-400' },
+  cancelled: { label: 'Cancelada', cls: 'text-slate-400' },
+};
+
+function formatQualityLabel(q?: ConnectionQuality): { label: string; cls: string } {
+  if (q === 'excellent') return { label: 'Excelente', cls: 'text-emerald-300' };
+  if (q === 'good') return { label: 'Buena', cls: 'text-cyan-300' };
+  if (q === 'fair') return { label: 'Media', cls: 'text-amber-300' };
+  if (q === 'poor') return { label: 'Baja', cls: 'text-rose-300' };
+  return { label: 'Estable', cls: 'text-slate-300' };
+}
 
 export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   save,
   serverOnline,
   onlineUser,
+  activeLocalProfileId,
   mpConnected,
   mpSelfId,
+  mpTargetUrl,
   mpRoom,
   mpInvite,
+  mpNotice,
+  pendingConflict,
+  pendingOnlineSave,
+  onResolveConflict,
+  onDismissConflict,
   onDismissInvite,
   onOnlineUserChange,
+  onSwitchLocalProfile,
   onReplaceSave,
   onStartChallenge,
 }) => {
   const lang: LanguageCode = save.settings.language;
+  const isElectron = Boolean(window.metroDesktop?.isElectron);
 
   const [section, setSection] = useState<HubSection>('multiplayer');
+  const [netTab, setNetTab] = useState<NetTabMode>('lan');
 
-  // Auth & Recovery state
+  // Local Profiles state
+  const [localProfiles, setLocalProfiles] = useState<LocalProfileSummary[]>([]);
+  const [newProfileName, setNewProfileName] = useState('');
+  const [newProfileAvatar, setNewProfileAvatar] = useState(save.selectedCharacterId || 'kai');
+  const [profileNotice, setProfileNotice] = useState<string | null>(null);
+
+  // Online Backend URL & Auth
+  const [backendUrlInput, setBackendUrlInput] = useState(() => getOnlineBackendUrl());
+  const [backendPingResult, setBackendPingResult] = useState<string | null>(null);
   const [authMode, setAuthMode] = useState<'login' | 'register' | 'recover'>('login');
   const [identifier, setIdentifier] = useState(save.playerName || '');
   const [email, setEmail] = useState('');
@@ -113,10 +212,41 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   const [authSuccess, setAuthSuccess] = useState<string | null>(null);
   const [authLoading, setAuthLoading] = useState(false);
 
+  // Conflict state inside view (when clicking "Vincular Perfil")
+  const [localConflict, setLocalConflict] = useState<AccountSyncConflict | null>(null);
+  const [localConflictOnlineSave, setLocalConflictOnlineSave] = useState<PlayerSaveData | null>(null);
+
   // SQLite Sync & Diagnostics state
   const [dbInfo, setDbInfo] = useState<DatabaseDiagnosticsInfo | null>(null);
   const [syncNotice, setSyncNotice] = useState<string | null>(null);
   const [confirmCleanReset, setConfirmCleanReset] = useState(false);
+
+  // LAN / VPN / Tunnel state
+  const [lanState, setLanState] = useState<LanHostState | null>(null);
+  const [lanBindIp, setLanBindIp] = useState('0.0.0.0');
+  const [lanPort, setLanPort] = useState('3077');
+  const [lanBusy, setLanBusy] = useState(false);
+  const [lanError, setLanError] = useState<string | null>(null);
+  const [directJoinAddr, setDirectJoinAddr] = useState('');
+  const [vpnJoinAddr, setVpnJoinAddr] = useState('');
+  const [internetWsInput, setInternetWsInput] = useState('');
+  const [tunnelState, setTunnelState] = useState<TunnelState | null>(null);
+  const [tunnelBusy, setTunnelBusy] = useState(false);
+
+  // User search & persistent invites
+  const [userSearchQuery, setUserSearchQuery] = useState('');
+  const [userSearchResults, setUserSearchResults] = useState<SearchedUserEntry[]>([]);
+  const [userSearchBusy, setUserSearchBusy] = useState(false);
+  const [incomingInvites, setIncomingInvites] = useState<PersistentInviteRecord[]>([]);
+  const [outgoingInvites, setOutgoingInvites] = useState<PersistentInviteRecord[]>([]);
+
+  // WebRTC state
+  const [rtcPeers, setRtcPeers] = useState<RtcPeerStatus[]>([]);
+  const [rtcSummary, setRtcSummary] = useState(() => rtcClient.getTurnSummary());
+  const [showManualRtc, setShowManualRtc] = useState(false);
+  const [manualOfferOut, setManualOfferOut] = useState('');
+  const [manualRemoteIn, setManualRemoteIn] = useState('');
+  const [manualRtcMsg, setManualRtcMsg] = useState<string | null>(null);
 
   // Rankings & Events
   const [scope, setScope] = useState<RankingScope>('global');
@@ -135,9 +265,51 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   const [roomIsPublic, setRoomIsPublic] = useState(true);
   const [roomDistrict, setRoomDistrict] = useState<DistrictId>(save.selectedDistrictId);
   const [roomMode, setRoomMode] = useState<GameMode>('endless');
+  const [roomMaxPlayers, setRoomMaxPlayers] = useState<number>(6);
+  const [allowVehicles, setAllowVehicles] = useState(true);
+  const [allowAbilities, setAllowAbilities] = useState(true);
   const [joinCodeInput, setJoinCodeInput] = useState('');
   const [inviteUserInput, setInviteUserInput] = useState('');
-  const [mpNotice, setMpNotice] = useState<string | null>(null);
+  const [localMpMsg, setLocalMpMsg] = useState<string | null>(null);
+
+  const effectiveConflict = pendingConflict ?? localConflict;
+  const effectiveOnlineSave = pendingOnlineSave ?? localConflictOnlineSave;
+
+  const refreshLocalProfiles = useCallback(async () => {
+    const res = await listLocalProfilesApi();
+    if (res.ok) {
+      setLocalProfiles(res.profiles);
+    }
+  }, []);
+
+  const refreshLanState = useCallback(async () => {
+    const st = await fetchLanStatus();
+    if (st) {
+      setLanState(st);
+      if (st.running) {
+        setLanBindIp(st.bindAddress);
+        setLanPort(String(st.port));
+      }
+    }
+  }, []);
+
+  const refreshTunnelState = useCallback(async () => {
+    const tState = await getTunnelStatus();
+    setTunnelState(tState);
+  }, []);
+
+  const refreshInvitesList = useCallback(async () => {
+    if (!serverOnline || !onlineUser) {
+      setIncomingInvites([]);
+      setOutgoingInvites([]);
+      return;
+    }
+    const res = await fetchInvites();
+    if (res.ok) {
+      setIncomingInvites(res.incoming);
+      setOutgoingInvites(res.outgoing);
+    }
+  }, [serverOnline, onlineUser]);
 
   const loadRankings = useCallback(async () => {
     if (!serverOnline) return;
@@ -161,6 +333,24 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   }, [serverOnline]);
 
   useEffect(() => {
+    void refreshLocalProfiles();
+    void refreshLanState();
+    void refreshTunnelState();
+    void rtcClient.refreshIceConfig().then((cfg) => {
+      setRtcSummary({
+        hasTurn: cfg.hasTurn,
+        turnInfo: cfg.turnInfo,
+        serverCount: cfg.iceServers.length,
+      });
+    });
+    return rtcClient.subscribe(setRtcPeers);
+  }, [refreshLocalProfiles, refreshLanState, refreshTunnelState]);
+
+  useEffect(() => {
+    void refreshInvitesList();
+  }, [refreshInvitesList, mpRoom?.code]);
+
+  useEffect(() => {
     void loadRankings();
   }, [loadRankings]);
 
@@ -179,6 +369,341 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       });
     }
   }, [serverOnline, onlineUser]);
+
+  const handleStartLanHost = async (preferredBind?: string) => {
+    setLanError(null);
+    const parsedPort = Number(lanPort);
+    if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
+      setLanError('El puerto debe estar entre 1024 y 65535.');
+      return false;
+    }
+    const bindTarget = preferredBind ?? lanBindIp;
+    setLanBusy(true);
+    const res = await startLanHost(bindTarget, parsedPort);
+    setLanBusy(false);
+    if (!res.ok) {
+      setLanError(res.error || 'No se pudo iniciar el servidor de partida.');
+      return false;
+    }
+    if (res.state) setLanState(res.state);
+    audioEngine.playClaimReward();
+
+    // Always connect the host client over local loopback (127.0.0.1) when bound to 0.0.0.0 or a NIC
+    const hostConnectIp =
+      bindTarget !== '0.0.0.0' && bindTarget.startsWith('127.')
+        ? bindTarget
+        : '127.0.0.1';
+    const ok = await mpClient.connectAsync({
+      targetUrl: `ws://${hostConnectIp}:${parsedPort}/ws`,
+      guestName: onlineUser?.username || save.playerName,
+    });
+    setLocalMpMsg(
+      ok
+        ? `Servidor de partida activo en puerto ${parsedPort}. Conectado como anfitrión local (127.0.0.1:${parsedPort}).`
+        : `Servidor activo en puerto ${parsedPort}, pero falló la conexión del cliente local.`,
+    );
+    return ok;
+  };
+
+  const handleStopLanHost = async () => {
+    setLanBusy(true);
+    const res = await stopLanHost();
+    setLanBusy(false);
+    if (res.state) setLanState(res.state);
+    await stopCloudflaredTunnel();
+    await refreshTunnelState();
+    await mpClient.connectAsync({
+      targetUrl: '',
+      guestName: onlineUser?.username || save.playerName,
+    });
+    setLocalMpMsg('Servidor LAN y túneles detenidos.');
+  };
+
+  const handleStartTunnel = async () => {
+    setTunnelBusy(true);
+    setLanError(null);
+    const parsedPort = Number(lanPort) || 3077;
+    if (!lanState?.running) {
+      const startedHost = await handleStartLanHost('0.0.0.0');
+      if (!startedHost) {
+        setTunnelBusy(false);
+        return;
+      }
+    }
+    const res = await startCloudflaredTunnel(parsedPort);
+    setTunnelState(res.state);
+    setTunnelBusy(false);
+    if (res.ok && res.state.wssUrl) {
+      audioEngine.playClaimReward();
+      setLocalMpMsg(
+        `Túnel público activo: ${res.state.wssUrl}. Compártelo con tus amigos junto al código de sala.`,
+      );
+    } else {
+      setLocalMpMsg(res.error || res.state.error || 'No se pudo iniciar cloudflared.');
+    }
+  };
+
+  const handleStopTunnel = async () => {
+    setTunnelBusy(true);
+    const res = await stopCloudflaredTunnel();
+    setTunnelState(res.state);
+    setTunnelBusy(false);
+    setLocalMpMsg('Túnel público detenido.');
+  };
+
+  const handleConnectCustomEndpoint = async (rawAddr: string, optionalCode?: string) => {
+    const clean = rawAddr.trim();
+    if (!clean) {
+      setLocalMpMsg('Introduce una dirección IP:Puerto o URL WebSocket/Túnel.');
+      return;
+    }
+    const wsUrl = normalizeWsTargetUrl(clean);
+    audioEngine.playUiClick(true);
+    setLocalMpMsg(`Conectando a ${wsUrl}...`);
+    const ok = await mpClient.connectAsync({
+      targetUrl: wsUrl,
+      guestName: onlineUser?.username || save.playerName,
+    });
+    if (!ok) {
+      setLocalMpMsg(
+        `No se pudo conectar a ${wsUrl}. Verifica la IP/túnel, el código y que el firewall permita el puerto.`,
+      );
+      return;
+    }
+    setLocalMpMsg(`Conectado a ${wsUrl}.`);
+    if (optionalCode) {
+      mpClient.joinRoom(optionalCode.trim().toUpperCase(), save.selectedCharacterId);
+    }
+  };
+
+  const handleCreateRoomAction = async (modeKind: NetworkConnectionMode) => {
+    audioEngine.playUiClick(true);
+    const payload = {
+      name: roomNameInput.trim() || undefined,
+      isPublic: roomIsPublic,
+      districtId: roomDistrict,
+      mode: roomMode,
+      characterId: save.selectedCharacterId,
+      maxPlayers: roomMaxPlayers,
+      connectionMode: modeKind,
+      rules: {
+        allowVehicles,
+        allowAbilities,
+        difficulty: save.settings.difficulty,
+        targetDistance: null,
+      },
+    };
+    const ok = await mpClient.connectAsync({
+      guestName: onlineUser?.username || save.playerName,
+    });
+    if (!ok) {
+      setLocalMpMsg('No hay conexión activa al servidor WebSocket para crear la sala.');
+      return;
+    }
+    mpClient.createRoom(payload);
+  };
+
+  const handleJoinRoomAction = async (code: string) => {
+    const clean = code.trim().toUpperCase();
+    if (!clean) return;
+    audioEngine.playUiClick(true);
+    const ok = await mpClient.connectAsync({
+      guestName: onlineUser?.username || save.playerName,
+    });
+    if (!ok) {
+      setLocalMpMsg('No se pudo conectar al servidor WebSocket para entrar a la sala.');
+      return;
+    }
+    mpClient.joinRoom(clean, save.selectedCharacterId);
+  };
+
+  const handleSearchUsers = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    if (!serverOnline) return;
+    setUserSearchBusy(true);
+    const res = await searchOnlineUsers(userSearchQuery);
+    setUserSearchBusy(false);
+    if (res.ok) {
+      setUserSearchResults(res.users);
+    }
+  };
+
+  const handleSendPersistentInvite = async (targetUser: { id?: string; username: string }) => {
+    if (!mpRoom) {
+      setLocalMpMsg('Primero crea o únete a una sala para invitar jugadores.');
+      return;
+    }
+    mpClient.inviteFriend(targetUser.username);
+    if (onlineUser && serverOnline) {
+      const shareWs =
+        tunnelState?.running && tunnelState.wssUrl
+          ? tunnelState.wssUrl
+          : lanState?.running && nonInternalIps[0]
+            ? `ws://${nonInternalIps[0].address}:${lanState.port}/ws`
+            : mpTargetUrl;
+      const res = await sendPersistentInvite({
+        toUserId: targetUser.id,
+        toUsername: targetUser.username,
+        roomCode: mpRoom.code,
+        districtId: mpRoom.districtId,
+        mode: mpRoom.mode,
+        targetWsUrl: shareWs,
+      });
+      setLocalMpMsg(
+        res.ok
+          ? res.message || `Invitación enviada a ${targetUser.username}.`
+          : `Invitación en tiempo real enviada a ${targetUser.username} (${res.error || 'sin respaldo persistente'}).`,
+      );
+      void refreshInvitesList();
+    } else {
+      setLocalMpMsg(`Invitación enviada por sala activa a ${targetUser.username}.`);
+    }
+  };
+
+  const handleCreateLocalProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = newProfileName.trim();
+    if (cleanName.length < 2) {
+      setProfileNotice('El nombre del perfil local debe tener al menos 2 caracteres.');
+      return;
+    }
+    const freshSave: PlayerSaveData = {
+      ...createInitialSave(),
+      playerName: cleanName,
+      avatarId: newProfileAvatar,
+      selectedCharacterId: newProfileAvatar,
+    };
+    const res = await createLocalProfileApi({
+      name: cleanName,
+      avatarId: newProfileAvatar,
+      save: freshSave,
+    });
+    if (!res.ok || !res.profile) {
+      setProfileNotice(res.error || 'No se pudo crear el perfil local.');
+      return;
+    }
+    audioEngine.playClaimReward();
+    setNewProfileName('');
+    setProfileNotice(`Perfil local "${cleanName}" creado y activado.`);
+    onSwitchLocalProfile(res.profile.id, freshSave);
+    void refreshLocalProfiles();
+  };
+
+  const handleSelectLocalProfile = async (id: string) => {
+    if (activeLocalProfileId) {
+      await saveLocalProfileApi(activeLocalProfileId, save);
+    }
+    const res = await getLocalProfileApi(id);
+    if (!res.ok || !res.save) {
+      setProfileNotice(res.error || 'No se pudo cargar el perfil local.');
+      return;
+    }
+    audioEngine.playUiClick(true);
+    onSwitchLocalProfile(id, res.save);
+    setProfileNotice(`Perfil local "${res.profile?.name}" cargado.`);
+  };
+
+  const handleDeleteLocalProfile = async (id: string, name: string) => {
+    if (localProfiles.length <= 1) {
+      setProfileNotice('Debe permanecer al menos un perfil local en el equipo.');
+      return;
+    }
+    const res = await deleteLocalProfileApi(id);
+    if (!res.ok) {
+      setProfileNotice(res.error || 'No se pudo eliminar el perfil.');
+      return;
+    }
+    audioEngine.playUiClick();
+    setProfileNotice(`Perfil "${name}" eliminado (con respaldo automático previo).`);
+    const list = await listLocalProfilesApi();
+    if (list.ok) {
+      setLocalProfiles(list.profiles);
+      if (activeLocalProfileId === id && list.profiles[0]) {
+        const nextLoaded = await getLocalProfileApi(list.profiles[0].id);
+        if (nextLoaded.ok && nextLoaded.save) {
+          onSwitchLocalProfile(list.profiles[0].id, nextLoaded.save);
+        }
+      }
+    }
+  };
+
+  const handleTriggerAccountLink = async () => {
+    if (!onlineUser) {
+      setSyncNotice('Inicia sesión primero en una cuenta online para vincular.');
+      return;
+    }
+    const cloudRes = await loadSaveFromSqlite();
+    const onlineSave = cloudRes.ok && cloudRes.hasSave && cloudRes.save ? cloudRes.save : null;
+    const conflict = buildAccountConflict({
+      localProfileId: activeLocalProfileId || 'local_default',
+      localSave: save,
+      onlineUser,
+      onlineSave,
+    });
+    if (conflict.hasConflict && onlineSave) {
+      setLocalConflict(conflict);
+      setLocalConflictOnlineSave(onlineSave);
+    } else {
+      const merged = onlineSave ? mergeSavesWithoutDuplication(save, onlineSave) : save;
+      const txId = `lnk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const res = await linkAccountApi({
+        localProfileId: activeLocalProfileId || 'local_default',
+        strategy: 'merge',
+        mergedSave: merged,
+        summary: { mode: 'no_conflict_auto' },
+        txId,
+      });
+      if (res.ok) {
+        audioEngine.playClaimReward();
+        onReplaceSave(merged);
+        setSyncNotice(`Perfil local vinculado con ${onlineUser.username}.`);
+        void refreshLocalProfiles();
+      } else {
+        setSyncNotice(res.error || 'No se pudo vincular el perfil.');
+      }
+    }
+  };
+
+  const handleResolveConflictAction = async (strategy: ConflictResolutionStrategy) => {
+    if (!effectiveConflict) return;
+    const onlineSave = effectiveOnlineSave ?? save;
+    let chosen: PlayerSaveData;
+    if (strategy === 'keep_local') {
+      chosen = save;
+    } else if (strategy === 'keep_online') {
+      chosen = onlineSave;
+    } else {
+      chosen = mergeSavesWithoutDuplication(save, onlineSave);
+    }
+
+    if (pendingConflict) {
+      await onResolveConflict(strategy, chosen);
+    } else {
+      const txId = `lnk_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      await linkAccountApi({
+        localProfileId: effectiveConflict.localProfileId,
+        strategy,
+        mergedSave: chosen,
+        summary: {
+          local: effectiveConflict.localSummary,
+          online: effectiveConflict.onlineSummary,
+        },
+        txId,
+      });
+      onReplaceSave(chosen);
+      setLocalConflict(null);
+      setLocalConflictOnlineSave(null);
+      void refreshLocalProfiles();
+    }
+    audioEngine.playClaimReward();
+    setSyncNotice(
+      strategy === 'keep_local'
+        ? 'Conflicto resuelto: se conservó el progreso local.'
+        : strategy === 'keep_online'
+          ? 'Conflicto resuelto: se aplicó el progreso de la cuenta online.'
+          : 'Conflicto resuelto: progresos local y online combinados sin duplicar recompensas.',
+    );
+  };
 
   const handleAuthSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -225,10 +750,21 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       }
       setPassword('');
       setConfirmPassword('');
-      await syncSaveToSqlite({ ...save, playerName: res.user.username, avatarId: res.user.avatarId });
-      mpClient.connect(res.user.username);
+      const syncedSave = { ...save, playerName: res.user.username, avatarId: res.user.avatarId };
+      await syncSaveToSqlite(syncedSave);
+      if (activeLocalProfileId) {
+        await linkAccountApi({
+          localProfileId: activeLocalProfileId,
+          strategy: 'keep_local',
+          mergedSave: syncedSave,
+          summary: { origin: 'register' },
+          txId: `reg_${Date.now()}`,
+        });
+      }
+      mpClient.connect({ guestName: res.user.username });
       void loadDbAndRooms();
       void loadRankings();
+      void refreshLocalProfiles();
       return;
     }
 
@@ -241,22 +777,37 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     audioEngine.playUiClick(true);
     onOnlineUserChange(res.user);
     setPassword('');
+
     const cloudRes = await loadSaveFromSqlite();
     if (cloudRes.ok && cloudRes.hasSave && cloudRes.save) {
-      onReplaceSave(cloudRes.save);
-      setSyncNotice('Progreso recuperado automáticamente desde SQLite.');
+      const conflict = buildAccountConflict({
+        localProfileId: activeLocalProfileId || 'local_default',
+        localSave: save,
+        onlineUser: res.user,
+        onlineSave: cloudRes.save,
+      });
+      if (conflict.hasConflict) {
+        setLocalConflict(conflict);
+        setLocalConflictOnlineSave(cloudRes.save);
+        setSyncNotice('Detectado progreso tanto local como online. Elige cómo sincronizar abajo.');
+      } else if ((save.stats?.totalRuns ?? 0) === 0) {
+        onReplaceSave(cloudRes.save);
+        setSyncNotice('Progreso recuperado automáticamente desde tu cuenta online.');
+      }
     }
-    mpClient.connect(res.user.username);
+    mpClient.connect({ guestName: res.user.username });
     void loadDbAndRooms();
     void loadRankings();
   };
 
   const handleManualSync = async () => {
-    setSyncNotice('Sincronizando con SQLite...');
+    setSyncNotice('Sincronizando con cuenta online...');
     const res = await syncSaveToSqlite(save);
     if (res.ok) {
       audioEngine.playClaimReward();
-      setSyncNotice(`Progreso guardado en SQLite (${new Date(res.updatedAt || Date.now()).toLocaleTimeString()}).`);
+      setSyncNotice(
+        `Progreso sincronizado (${new Date(res.updatedAt || Date.now()).toLocaleTimeString()}).`,
+      );
       void loadDbAndRooms();
     } else {
       setSyncNotice(res.error || 'Error al sincronizar.');
@@ -268,18 +819,52 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     if (res.ok && res.hasSave && res.save) {
       audioEngine.playClaimReward();
       onReplaceSave(res.save);
-      setSyncNotice('Partida cargada desde SQLite correctamente.');
+      setSyncNotice('Partida cargada desde la cuenta online.');
     } else if (res.ok && !res.hasSave) {
-      setSyncNotice('Esta cuenta aún no tiene un guardado sincronizado en SQLite.');
+      setSyncNotice('Esta cuenta online aún no tiene progreso guardado.');
     } else {
-      setSyncNotice(res.error || 'No se pudo leer desde SQLite.');
+      setSyncNotice(res.error || 'No se pudo leer desde el servidor.');
     }
+  };
+
+  const handleExportLocalBackup = async () => {
+    const res = await exportLocalBackupJson(save);
+    if (res.ok) {
+      audioEngine.playClaimReward();
+      setProfileNotice(res.message || 'Respaldo local guardado.');
+    } else {
+      setProfileNotice(res.error || 'No se pudo exportar.');
+    }
+  };
+
+  const handleImportLocalNative = async () => {
+    const res = await importLocalBackupNative();
+    if (!res.ok || !res.save) {
+      setProfileNotice(res.error || 'Importación cancelada.');
+      return;
+    }
+    audioEngine.playClaimReward();
+    onReplaceSave(res.save);
+    setProfileNotice(`Respaldo "${res.fileName}" restaurado en el perfil actual.`);
   };
 
   const handleExportAccountJson = async () => {
     const res = await exportAccountBackupJson();
     if (!res.ok || !res.content) {
       setSyncNotice(res.error || 'Error al exportar.');
+      return;
+    }
+    if (window.metroDesktop?.exportBackupFile) {
+      const nativeRes = await window.metroDesktop.exportBackupFile(
+        res.filename || 'metro-rush-online-backup.json',
+        res.content,
+      );
+      if (nativeRes.ok) {
+        audioEngine.playClaimReward();
+        setSyncNotice(`Respaldo guardado en ${nativeRes.filePath}`);
+      } else if (!nativeRes.canceled) {
+        setSyncNotice(nativeRes.error || 'No se pudo guardar el respaldo.');
+      }
       return;
     }
     const blob = new Blob([res.content], { type: 'application/json' });
@@ -290,7 +875,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     a.click();
     URL.revokeObjectURL(url);
     audioEngine.playClaimReward();
-    setSyncNotice('Respaldo JSON de cuenta SQLite descargado.');
+    setSyncNotice('Respaldo JSON descargado.');
   };
 
   const handleCleanTestReset = async () => {
@@ -303,7 +888,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     audioEngine.playUiClick(true);
     setSyncNotice(
       res.ok
-        ? `Datos de prueba limpiados (${res.backupCreated}). Ranking y progreso listos para partida real.`
+        ? `Datos de prueba limpiados (${res.backupCreated}). Ranking y progreso listos.`
         : 'Progreso local limpiado.',
     );
     void loadDbAndRooms();
@@ -334,21 +919,24 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   const allReady = Boolean(
     mpRoom && mpRoom.players.length >= 1 && mpRoom.players.every((p) => p.ready),
   );
+  const nonInternalIps = (lanState?.interfaces ?? []).filter((i) => !i.internal);
+  const lanOnlyIps = nonInternalIps.filter((i) => i.kind !== 'vpn');
+  const vpnOnlyIps = nonInternalIps.filter((i) => i.kind === 'vpn');
 
   return (
     <div className="space-y-5">
-      {/* Header Status Row */}
+      {/* Header Status Row (Clean unboxed metadata, tabular numbers) */}
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
         <div>
           <h3 className="font-display text-xl font-bold text-white">
             {t(lang, 'online.title')}
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
-            Salas multijugador en tiempo real por WebSocket, cuentas SQLite locales en PC y clasificaciones verificadas.
+          <p className="text-xs text-slate-400 mt-0.5 font-mono-num">
+            Versión v{GAME_VERSION} · Perfil Local Offline + Cuentas Online + Multijugador LAN e Internet
           </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 text-xs">
+        <div className="flex flex-wrap items-center gap-3 text-xs font-mono-num">
           <span
             className={`flex items-center gap-1.5 font-semibold ${
               serverOnline ? 'text-emerald-300' : 'text-amber-300'
@@ -356,20 +944,116 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
           >
             {serverOnline ? (
               <>
-                <ShieldCheck className="w-4 h-4" /> Servidor Express/SQLite Activo
+                <ShieldCheck className="w-4 h-4" /> SQLite Local Activo
               </>
             ) : (
               <>
-                <WifiOff className="w-4 h-4" /> {t(lang, 'common.offline')}
+                <WifiOff className="w-4 h-4" /> Solo Navegador
               </>
             )}
           </span>
           <span className="text-slate-600">·</span>
           <span className={mpConnected ? 'text-cyan-300 font-semibold' : 'text-slate-400'}>
-            WebSocket: {mpConnected ? 'Conectado' : 'En espera'}
+            Sala WS: {mpConnected ? 'Conectado' : 'Desconectado'}
           </span>
         </div>
       </div>
+
+      {/* Urgent Notice / Kick / Host Closed / Version Mismatch */}
+      {(mpNotice || localMpMsg) && (
+        <div
+          className={`p-3 rounded-xl border text-xs flex items-center justify-between gap-2 ${
+            mpNotice?.isError
+              ? 'bg-rose-950/50 border-rose-400/60 text-rose-200'
+              : 'bg-[#0b182e] border-cyan-400/50 text-cyan-200'
+          }`}
+        >
+          <span>{mpNotice?.text || localMpMsg}</span>
+          {localMpMsg && (
+            <button
+              onClick={() => setLocalMpMsg(null)}
+              className="text-slate-400 hover:text-white cursor-pointer"
+            >
+              Cerrar
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Conflict Resolution Panel (visible anywhere in hub if triggered on boot/login) */}
+      {effectiveConflict && (
+        <div className="p-4 rounded-xl bg-[#0e172c] border border-amber-400/60 space-y-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <AlertTriangle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <div className="font-display font-bold text-sm text-white">
+                  Conflicto de Progreso al Vincular Cuenta
+                </div>
+                <p className="text-xs text-slate-300 mt-0.5">
+                  Tienes progreso avanzado tanto en tu perfil local (<strong className="text-white">{effectiveConflict.localName}</strong>) como en tu cuenta online (<strong className="text-cyan-300">{effectiveConflict.onlineUsername}</strong>). Ningún dato se sobrescribirá sin tu elección.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                setLocalConflict(null);
+                setLocalConflictOnlineSave(null);
+                onDismissConflict();
+              }}
+              className="text-xs text-slate-400 hover:text-white cursor-pointer"
+            >
+              Decidir luego
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs font-mono-num">
+            <div className="p-3 rounded-lg bg-[#070b17] border border-white/10 space-y-1">
+              <div className="font-bold text-amber-300 font-sans">
+                Perfil Local: {effectiveConflict.localName}
+              </div>
+              <div className="text-slate-300">
+                Nivel {effectiveConflict.localSummary.level} · {effectiveConflict.localSummary.coins.toLocaleString('es-ES')} Monedas · {effectiveConflict.localSummary.gems} Gemas
+              </div>
+              <div className="text-slate-400">
+                {effectiveConflict.localSummary.totalRuns} carreras · Mejor: {effectiveConflict.localSummary.bestScore.toLocaleString('es-ES')} pts · {effectiveConflict.localSummary.unlockedCount} desbloqueados
+              </div>
+            </div>
+            <div className="p-3 rounded-lg bg-[#070b17] border border-cyan-500/30 space-y-1">
+              <div className="font-bold text-cyan-300 font-sans">
+                Cuenta Online: {effectiveConflict.onlineUsername}
+              </div>
+              <div className="text-slate-300">
+                Nivel {effectiveConflict.onlineSummary.level} · {effectiveConflict.onlineSummary.coins.toLocaleString('es-ES')} Monedas · {effectiveConflict.onlineSummary.gems} Gemas
+              </div>
+              <div className="text-slate-400">
+                {effectiveConflict.onlineSummary.totalRuns} carreras · Mejor: {effectiveConflict.onlineSummary.bestScore.toLocaleString('es-ES')} pts · {effectiveConflict.onlineSummary.unlockedCount} desbloqueados
+              </div>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void handleResolveConflictAction('merge')}
+              className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs cursor-pointer whitespace-nowrap"
+            >
+              Combinar sin Duplicar (Recomendado)
+            </button>
+            <button
+              onClick={() => void handleResolveConflictAction('keep_local')}
+              className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-xs cursor-pointer whitespace-nowrap"
+            >
+              Conservar Progreso Local
+            </button>
+            <button
+              onClick={() => void handleResolveConflictAction('keep_online')}
+              className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold text-xs cursor-pointer whitespace-nowrap"
+            >
+              Conservar Progreso Online
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Incoming Invite Notice */}
       {mpInvite && (
@@ -386,9 +1070,8 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
           </div>
           <div className="flex gap-2">
             <button
-              onClick={() => {
-                mpClient.connect(onlineUser?.username || save.playerName);
-                mpClient.joinRoom(mpInvite.code, save.selectedCharacterId);
+              onClick={async () => {
+                await handleJoinRoomAction(mpInvite.code);
                 onDismissInvite();
                 setSection('multiplayer');
               }}
@@ -410,10 +1093,10 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       <div className="flex flex-wrap gap-2">
         {(
           [
-            ['multiplayer', 'Multijugador en Vivo', Users],
-            ['account', 'Cuenta y SQLite PC', Database],
+            ['multiplayer', 'Multijugador LAN / Internet', Users],
+            ['account', 'Cuentas Local + Online', Database],
             ['rankings', 'Clasificaciones y Retos', Globe],
-            ['network_info', 'Red y Servidores PC', Network],
+            ['network_info', 'Arquitectura de Red PC', Network],
           ] as [HubSection, string, React.ComponentType<{ className?: string }>][]
         ).map(([id, label, Icon]) => (
           <button
@@ -422,7 +1105,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
               audioEngine.playUiClick();
               setSection(id);
             }}
-            className={`px-3.5 py-2 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`px-3.5 py-2 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               section === id
                 ? 'bg-cyan-400 text-slate-950 border-cyan-400'
                 : 'bg-[#0b1224] text-slate-300 border-white/10 hover:text-white'
@@ -434,192 +1117,724 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
         ))}
       </div>
 
-      {/* SECTION 1: REAL WEBSOCKET MULTIPLAYER ROOMS */}
+      {/* SECTION 1: MULTIPLAYER (4 MODES: LAN / VPN / TUNNEL / WEBRTC + AUTHORITATIVE LOBBY + REAL INVITES) */}
       {section === 'multiplayer' && (
         <div className="space-y-4">
           {!mpRoom ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {/* Create Room */}
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/30 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-display font-bold text-base text-white">
-                    Crear Sala Multijugador
-                  </div>
-                  <button
-                    onClick={() => mpClient.connect(onlineUser?.username || save.playerName)}
-                    className="text-xs text-cyan-300 hover:underline cursor-pointer"
-                  >
-                    {mpConnected ? 'WS Listo' : 'Conectar WS'}
-                  </button>
+            <>
+              {/* 4 Connection Mode Selector */}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap gap-1.5 bg-[#070b17] p-1 rounded-lg border border-white/10">
+                  {(
+                    [
+                      ['lan', 'Red Local (LAN)', Wifi],
+                      ['vpn', 'VPN Virtual (Radmin/ZeroTier)', Shield],
+                      ['tunnel', 'Túnel Gratuito (cloudflared/playit)', Terminal],
+                      ['webrtc', 'WebRTC P2P Directo', Radio],
+                    ] as [NetTabMode, string, React.ComponentType<{ className?: string }>][]
+                  ).map(([id, label, Icon]) => (
+                    <button
+                      key={id}
+                      onClick={() => {
+                        audioEngine.playUiClick();
+                        setNetTab(id);
+                      }}
+                      className={`px-3 py-1.5 rounded-md text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+                        netTab === id
+                          ? 'bg-cyan-400 text-slate-950'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      <Icon className="w-3.5 h-3.5" />
+                      {label}
+                    </button>
+                  ))}
                 </div>
 
-                <input
-                  type="text"
-                  placeholder="Nombre de la sala (opcional)"
-                  value={roomNameInput}
-                  onChange={(e) => setRoomNameInput(e.target.value)}
-                  className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-cyan-400"
-                />
-
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <select
-                    value={roomDistrict}
-                    onChange={(e) => setRoomDistrict(e.target.value as DistrictId)}
-                    className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white"
-                  >
-                    {DISTRICTS.map((d) => (
-                      <option key={d.id} value={d.id}>
-                        {getCityLabel(lang, d.id).name}
-                      </option>
-                    ))}
-                  </select>
-                  <select
-                    value={roomMode}
-                    onChange={(e) => setRoomMode(e.target.value as GameMode)}
-                    className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white"
-                  >
-                    {MP_MODES.map((m) => (
-                      <option key={m} value={m}>
-                        {getModeLabel(lang, m).label}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center justify-between text-xs">
-                  <label className="flex items-center gap-2 text-slate-200 cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={roomIsPublic}
-                      onChange={(e) => setRoomIsPublic(e.target.checked)}
-                      className="accent-cyan-400"
-                    />
-                    Sala Pública (visible en lista)
-                  </label>
-                  <button
-                    disabled={!serverOnline}
-                    onClick={() => {
-                      audioEngine.playUiClick(true);
-                      if (!mpClient.isConnected()) {
-                        mpClient.connect(onlineUser?.username || save.playerName);
-                        setTimeout(() => {
-                          mpClient.createRoom({
-                            name: roomNameInput.trim() || undefined,
-                            isPublic: roomIsPublic,
-                            districtId: roomDistrict,
-                            mode: roomMode,
-                            characterId: save.selectedCharacterId,
-                            maxPlayers: 6,
-                          });
-                        }, 250);
-                      } else {
-                        mpClient.createRoom({
-                          name: roomNameInput.trim() || undefined,
-                          isPublic: roomIsPublic,
-                          districtId: roomDistrict,
-                          mode: roomMode,
-                          characterId: save.selectedCharacterId,
-                          maxPlayers: 6,
-                        });
-                      }
-                    }}
-                    className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 text-slate-950 font-display font-bold flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Plus className="w-4 h-4" /> Crear Sala
-                  </button>
+                <div className="text-[11px] font-mono-num text-slate-400 truncate max-w-md">
+                  Destino activo: <span className="text-cyan-300">{mpTargetUrl}</span>
                 </div>
               </div>
 
-              {/* Join by Code + Public Rooms */}
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="font-display font-bold text-base text-white">
-                    Unirse por Código o Sala Pública
-                  </div>
-                  <button
-                    onClick={() => void loadDbAndRooms()}
-                    className="p-1.5 rounded bg-[#070b17] border border-white/10 text-slate-300 hover:text-cyan-300 cursor-pointer"
-                    title="Refrescar salas"
-                  >
-                    <RefreshCw className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    placeholder="Código de sala (ej. A4K9P2)"
-                    value={joinCodeInput}
-                    onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
-                    maxLength={8}
-                    className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num uppercase text-white outline-none focus:border-cyan-400"
-                  />
-                  <button
-                    disabled={!joinCodeInput.trim() || !serverOnline}
-                    onClick={() => {
-                      audioEngine.playUiClick(true);
-                      if (!mpClient.isConnected()) {
-                        mpClient.connect(onlineUser?.username || save.playerName);
-                        setTimeout(
-                          () => mpClient.joinRoom(joinCodeInput.trim(), save.selectedCharacterId),
-                          250,
-                        );
-                      } else {
-                        mpClient.joinRoom(joinCodeInput.trim(), save.selectedCharacterId);
-                      }
-                    }}
-                    className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 text-xs font-bold cursor-pointer"
-                  >
-                    Entrar
-                  </button>
-                </div>
-
-                <div className="space-y-1.5 max-h-40 overflow-y-auto">
-                  {publicRooms.length === 0 ? (
-                    <div className="text-xs text-slate-400 py-3 text-center border border-dashed border-white/10 rounded-lg">
-                      No hay salas públicas abiertas ahora mismo. Crea una para correr con otros jugadores.
-                    </div>
-                  ) : (
-                    publicRooms.map((r) => (
-                      <div
-                        key={r.code}
-                        className="flex items-center justify-between p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-xs"
+              {/* MODE 1: RED LOCAL (LAN) */}
+              {netTab === 'lan' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/35 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                        <Server className="w-4 h-4 text-cyan-400" /> Alojar Partida LAN en este PC
+                      </div>
+                      <span
+                        className={`text-[11px] font-mono-num font-bold ${
+                          lanState?.running ? 'text-emerald-300' : 'text-slate-400'
+                        }`}
                       >
-                        <div>
-                          <div className="font-bold text-white">
-                            {r.name} · <span className="font-mono-num text-cyan-300">{r.code}</span>
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            Anfitrión: {r.hostName} · {getCityLabel(lang, r.districtId).name} ·{' '}
-                            {r.playerCount}/{r.maxPlayers}
-                          </div>
-                        </div>
+                        {lanState?.running ? `Activo :${lanState.port}` : 'Detenido'}
+                      </span>
+                    </div>
+
+                    <p className="text-xs text-slate-300">
+                      Abre un servidor autoritativo en tu Wi‑Fi o cable local. Tú te conectas automáticamente por loopback local y tus amigos introducen tu IP LAN + código de sala.
+                    </p>
+
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <select
+                        value={lanBindIp}
+                        onChange={(e) => setLanBindIp(e.target.value)}
+                        disabled={Boolean(lanState?.running)}
+                        className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white disabled:opacity-50"
+                      >
+                        <option value="0.0.0.0">Todas las interfaces (0.0.0.0)</option>
+                        {(lanState?.interfaces ?? []).map((iface) => (
+                          <option key={`${iface.name}-${iface.address}`} value={iface.address}>
+                            {iface.label || iface.name}: {iface.address}
+                          </option>
+                        ))}
+                      </select>
+                      <input
+                        type="number"
+                        min={1024}
+                        max={65535}
+                        value={lanPort}
+                        disabled={Boolean(lanState?.running)}
+                        onChange={(e) => setLanPort(e.target.value)}
+                        placeholder="Puerto (ej. 3077)"
+                        className="bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white disabled:opacity-50"
+                      />
+                    </div>
+
+                    {lanError && <div className="text-xs text-rose-300">{lanError}</div>}
+
+                    <div className="flex flex-wrap gap-2">
+                      {!lanState?.running ? (
                         <button
-                          onClick={() => {
-                            audioEngine.playUiClick(true);
-                            mpClient.connect(onlineUser?.username || save.playerName);
-                            setTimeout(
-                              () => mpClient.joinRoom(r.code, save.selectedCharacterId),
-                              200,
-                            );
-                          }}
-                          className="px-3 py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
+                          disabled={lanBusy}
+                          onClick={() => void handleStartLanHost()}
+                          className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 text-slate-950 font-bold text-xs cursor-pointer"
                         >
-                          Unirse
+                          {lanBusy ? 'Abriendo puerto...' : 'Iniciar Servidor LAN'}
+                        </button>
+                      ) : (
+                        <button
+                          disabled={lanBusy}
+                          onClick={() => void handleStopLanHost()}
+                          className="px-4 py-2 rounded-lg bg-rose-500/20 border border-rose-400/50 hover:bg-rose-500/30 text-rose-200 font-bold text-xs cursor-pointer"
+                        >
+                          Cerrar Servidor LAN
+                        </button>
+                      )}
+                      <button
+                        onClick={() => void refreshLanState()}
+                        className="px-3 py-2 rounded-lg bg-[#070b17] border border-white/10 text-slate-300 hover:text-white text-xs cursor-pointer"
+                      >
+                        Detectar IPs
+                      </button>
+                    </div>
+
+                    {lanState?.running && (
+                      <div className="p-2.5 rounded-lg bg-[#070b17] border border-emerald-400/40 text-[11px] font-mono-num text-emerald-200 space-y-1">
+                        <div>IPs LAN para compartir con amigos en el mismo router:</div>
+                        {(lanOnlyIps.length > 0 ? lanOnlyIps : nonInternalIps).map((i) => (
+                          <div key={i.address} className="flex items-center justify-between gap-2 text-white font-bold">
+                            <span>
+                              {i.address}:{lanState.port} ({i.label || i.name})
+                            </span>
+                            <button
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(`${i.address}:${lanState.port}`);
+                                setLocalMpMsg(`Copiado ${i.address}:${lanState.port}`);
+                              }}
+                              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] text-cyan-300 cursor-pointer"
+                            >
+                              Copiar
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Join by Direct LAN IP:Port */}
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+                    <div className="font-display font-bold text-base text-white">
+                      Unirse a Anfitrión LAN (IP:Puerto)
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Introduce la IP local y puerto del jugador anfitrión (por ejemplo <span className="font-mono-num text-slate-200">192.168.1.45:3077</span>) y el código de sala.
+                    </p>
+                    <input
+                      type="text"
+                      value={directJoinAddr}
+                      onChange={(e) => setDirectJoinAddr(e.target.value)}
+                      placeholder="IP:Puerto del anfitrión (ej. 192.168.1.45:3077)"
+                      className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        placeholder="Código de sala (opcional al conectar)"
+                        className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num uppercase text-white outline-none focus:border-cyan-400"
+                      />
+                      <button
+                        onClick={() =>
+                          void handleConnectCustomEndpoint(
+                            directJoinAddr || `${window.location.host}`,
+                            joinCodeInput.trim() || undefined,
+                          )
+                        }
+                        className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 text-xs font-bold cursor-pointer whitespace-nowrap"
+                      >
+                        Conectar LAN
+                      </button>
+                    </div>
+                    {joinCodeInput.trim() && mpConnected && (
+                      <button
+                        onClick={() => void handleJoinRoomAction(joinCodeInput)}
+                        className="w-full py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs cursor-pointer"
+                      >
+                        Entrar a Sala {joinCodeInput.trim()}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 2: VPN VIRTUAL (RADMIN VPN / ZEROTIER / TAILSCALE / HAMACHI) */}
+              {netTab === 'vpn' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-emerald-500/35 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-emerald-400" /> Red VPN Virtual (Sin abrir puertos)
+                      </div>
+                      <button
+                        onClick={() => void refreshLanState()}
+                        className="text-xs text-cyan-300 hover:underline cursor-pointer"
+                      >
+                        Refrescar VPN
+                      </button>
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Si tú y tus amigos estáis en la misma red virtual de <strong className="text-white">Radmin VPN</strong>, <strong className="text-white">ZeroTier</strong>, <strong className="text-white">Tailscale</strong> o <strong className="text-white">Hamachi</strong>, inicia el servidor LAN (0.0.0.0) y comparte la IP virtual detectada abajo.
+                    </p>
+
+                    <div className="p-3 rounded-lg bg-[#070b17] border border-white/10 space-y-2 text-xs">
+                      <div className="font-semibold text-emerald-300">
+                        Interfaces VPN detectadas en este equipo ({vpnOnlyIps.length}):
+                      </div>
+                      {vpnOnlyIps.length === 0 ? (
+                        <div className="text-slate-400">
+                          No se detectó ningún adaptador Radmin/ZeroTier/Tailscale/Hamachi activo en este PC. Abre tu VPN y pulsa «Refrescar VPN».
+                        </div>
+                      ) : (
+                        vpnOnlyIps.map((v) => (
+                          <div
+                            key={v.address}
+                            className="flex items-center justify-between gap-2 font-mono-num text-white"
+                          >
+                            <span>
+                              {v.address}:{lanState?.port || lanPort} · {v.label || v.name}
+                            </span>
+                            <button
+                              onClick={() => {
+                                void navigator.clipboard?.writeText(
+                                  `${v.address}:${lanState?.port || lanPort}`,
+                                );
+                                setLocalMpMsg(`IP VPN copiada: ${v.address}:${lanState?.port || lanPort}`);
+                              }}
+                              className="px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] text-cyan-300 cursor-pointer"
+                            >
+                              Copiar IP VPN
+                            </button>
+                          </div>
+                        ))
+                      )}
+                    </div>
+
+                    <div className="flex flex-wrap gap-2">
+                      {!lanState?.running ? (
+                        <button
+                          disabled={lanBusy}
+                          onClick={() => void handleStartLanHost('0.0.0.0')}
+                          className="px-4 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs cursor-pointer"
+                        >
+                          Alojar Partida para VPN (Puerto {lanPort})
+                        </button>
+                      ) : (
+                        <button
+                          disabled={lanBusy}
+                          onClick={() => void handleStopLanHost()}
+                          className="px-4 py-2 rounded-lg bg-rose-500/20 border border-rose-400/50 text-rose-200 font-bold text-xs cursor-pointer"
+                        >
+                          Cerrar Servidor ({lanState.port})
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+                    <div className="font-display font-bold text-base text-white">
+                      Unirse a Amigo por VPN Virtual
+                    </div>
+                    <p className="text-xs text-slate-400">
+                      Pega la IP virtual que aparece junto al nombre de tu amigo en Radmin/ZeroTier/Tailscale (p. ej. <span className="font-mono-num text-slate-200">26.42.19.8:3077</span> o <span className="font-mono-num text-slate-200">100.80.12.4:3077</span>).
+                    </p>
+                    <input
+                      type="text"
+                      value={vpnJoinAddr}
+                      onChange={(e) => setVpnJoinAddr(e.target.value)}
+                      placeholder="IP_VPN:Puerto (ej. 26.42.19.8:3077)"
+                      className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        placeholder="Código de sala (opcional)"
+                        className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num uppercase text-white outline-none focus:border-cyan-400"
+                      />
+                      <button
+                        onClick={() =>
+                          void handleConnectCustomEndpoint(
+                            vpnJoinAddr,
+                            joinCodeInput.trim() || undefined,
+                          )
+                        }
+                        className="px-4 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-xs cursor-pointer whitespace-nowrap"
+                      >
+                        Conectar VPN
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 3: TÚNEL GRATUITO INTERNET (CLOUDFLARED AUTO + PLAYIT.GG GUIDE) */}
+              {netTab === 'tunnel' && (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/35 space-y-3">
+                    <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                      <Terminal className="w-4 h-4 text-cyan-400" /> Alojar por Internet con Túnel Gratuito
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Si tus amigos no están en tu casa ni en VPN, puedes exponer tu partida por Internet sin abrir puertos del router usando <strong className="text-white">cloudflared</strong> (automático en Windows si está instalado) o <strong className="text-white">playit.gg</strong>.
+                    </p>
+
+                    <div className="p-3 rounded-lg bg-[#070b17] border border-white/10 space-y-2 text-xs">
+                      <div className="flex items-center justify-between">
+                        <span className="font-semibold text-white">
+                          Cloudflare Quick Tunnel (cloudflared)
+                        </span>
+                        <span
+                          className={`font-mono-num text-[11px] font-bold ${
+                            tunnelState?.running
+                              ? 'text-emerald-300'
+                              : tunnelState?.available
+                                ? 'text-cyan-300'
+                                : 'text-amber-300'
+                          }`}
+                        >
+                          {tunnelState?.running
+                            ? 'Túnel Activo'
+                            : tunnelState?.available
+                              ? 'Detectado en sistema'
+                              : 'No detectado / Solo Desktop'}
+                        </span>
+                      </div>
+                      {tunnelState?.wssUrl && (
+                        <div className="flex items-center justify-between gap-2 p-2 rounded bg-emerald-950/40 border border-emerald-400/40 font-mono-num text-emerald-200">
+                          <span className="truncate">{tunnelState.wssUrl}</span>
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(tunnelState.wssUrl || '');
+                              setLocalMpMsg('URL pública WSS del túnel copiada.');
+                            }}
+                            className="px-2 py-0.5 rounded bg-emerald-400 text-slate-950 font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            Copiar WSS
+                          </button>
+                        </div>
+                      )}
+                      {tunnelState?.error && (
+                        <div className="text-[11px] text-amber-300">{tunnelState.error}</div>
+                      )}
+                      <div className="flex flex-wrap gap-2">
+                        {!tunnelState?.running ? (
+                          <button
+                            disabled={tunnelBusy || !isElectron}
+                            onClick={() => void handleStartTunnel()}
+                            className="px-3.5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-45 text-slate-950 font-bold cursor-pointer"
+                          >
+                            {tunnelBusy
+                              ? 'Abriendo túnel...'
+                              : 'Iniciar Túnel Público (cloudflared)'}
+                          </button>
+                        ) : (
+                          <button
+                            disabled={tunnelBusy}
+                            onClick={() => void handleStopTunnel()}
+                            className="px-3.5 py-2 rounded-lg bg-rose-500/20 border border-rose-400/50 text-rose-200 font-bold cursor-pointer"
+                          >
+                            Detener Túnel
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="p-3 rounded-lg bg-[#070b17] border border-white/10 text-[11px] text-slate-300 space-y-1">
+                      <div className="font-bold text-white">Alternativa manual gratuita con playit.gg:</div>
+                      <div>1. Inicia tu Servidor LAN arriba (puerto {lanPort}).</div>
+                      <div>2. En playit.gg crea un túnel TCP apuntando a <span className="font-mono-num text-cyan-300">127.0.0.1:{lanPort}</span>.</div>
+                      <div>3. Comparte la dirección generada junto con tu código de 6 letras.</div>
+                    </div>
+                  </div>
+
+                  {/* Client Connect to Internet Tunnel */}
+                  <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+                    <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                      <Globe className="w-4 h-4 text-cyan-400" /> Conectar a Túnel o Servidor Internet
+                    </div>
+                    <p className="text-xs text-slate-300">
+                      Pega aquí la URL <span className="font-mono-num text-cyan-300">wss://...</span> de cloudflared, playit.gg o dirección pública del anfitrión.
+                    </p>
+                    <input
+                      type="text"
+                      value={internetWsInput}
+                      onChange={(e) => setInternetWsInput(e.target.value)}
+                      placeholder="wss://subdominio.trycloudflare.com o host.playit.gg:puerto"
+                      className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
+                    />
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={joinCodeInput}
+                        onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                        maxLength={8}
+                        placeholder="Código de sala (opcional)"
+                        className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num uppercase text-white outline-none focus:border-cyan-400"
+                      />
+                      <button
+                        onClick={() =>
+                          void handleConnectCustomEndpoint(
+                            internetWsInput,
+                            joinCodeInput.trim() || undefined,
+                          )
+                        }
+                        className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold text-xs cursor-pointer whitespace-nowrap"
+                      >
+                        Conectar Túnel
+                      </button>
+                    </div>
+                    <button
+                      onClick={() =>
+                        void mpClient.connectAsync({
+                          targetUrl: '',
+                          guestName: onlineUser?.username || save.playerName,
+                        })
+                      }
+                      className="px-3 py-1.5 rounded-lg bg-[#070b17] border border-white/15 text-slate-300 hover:text-white text-xs cursor-pointer"
+                    >
+                      Volver a Servidor Local
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* MODE 4: WEBRTC P2P DIRECTO (STUN/TURN + DATACHANNEL) */}
+              {netTab === 'webrtc' && (
+                <div className="p-4 rounded-xl bg-[#0b1224] border border-fuchsia-500/35 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-display font-bold text-base text-white flex items-center gap-2">
+                      <Radio className="w-4 h-4 text-fuchsia-400" /> WebRTC P2P Directo (STUN/TURN + DataChannel)
+                    </div>
+                    <button
+                      onClick={() => setShowManualRtc((v) => !v)}
+                      className="text-xs text-cyan-300 hover:underline cursor-pointer"
+                    >
+                      {showManualRtc ? 'Ocultar SDP Manual' : 'Intercambio Manual Offer/Answer'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-slate-300">
+                    {rtcSummary.turnInfo} ({rtcSummary.serverCount} servidores ICE configurados). Cuando estableces un canal DataChannel abierto con otro corredor, la telemetría de carrera también se envía P2P con latencia reducida manteniendo validación del anfitrión.
+                  </p>
+
+                  {showManualRtc && (
+                    <div className="space-y-2 pt-2 border-t border-white/10 text-xs">
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={async () => {
+                            try {
+                              const offer = await rtcClient.createManualOffer();
+                              setManualOfferOut(offer);
+                              setManualRtcMsg('Oferta WebRTC generada. Envíala al otro jugador.');
+                            } catch (e) {
+                              setManualRtcMsg(e instanceof Error ? e.message : 'Error WebRTC');
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-cyan-400 text-slate-950 font-bold cursor-pointer"
+                        >
+                          1. Generar Offer
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              const answer = await rtcClient.acceptManualOfferAndCreateAnswer(
+                                manualRemoteIn,
+                              );
+                              setManualOfferOut(answer);
+                              setManualRtcMsg('Answer generado. Devuélvelo al anfitrión.');
+                            } catch (e) {
+                              setManualRtcMsg(e instanceof Error ? e.message : 'Offer inválido');
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-fuchsia-400 text-slate-950 font-bold cursor-pointer"
+                        >
+                          2. Aceptar Offer y Crear Answer
+                        </button>
+                        <button
+                          onClick={async () => {
+                            try {
+                              await rtcClient.applyManualAnswer(manualRemoteIn);
+                              setManualRtcMsg('Answer aplicado. Esperando canal DataChannel...');
+                            } catch (e) {
+                              setManualRtcMsg(e instanceof Error ? e.message : 'Answer inválido');
+                            }
+                          }}
+                          className="px-3 py-1.5 rounded bg-emerald-400 text-slate-950 font-bold cursor-pointer"
+                        >
+                          3. Aplicar Answer
                         </button>
                       </div>
-                    ))
+                      {manualOfferOut && (
+                        <textarea
+                          readOnly
+                          rows={2}
+                          value={manualOfferOut}
+                          className="w-full bg-[#070b17] border border-white/15 rounded p-2 text-[10px] font-mono-num text-cyan-200"
+                        />
+                      )}
+                      <textarea
+                        rows={2}
+                        value={manualRemoteIn}
+                        onChange={(e) => setManualRemoteIn(e.target.value)}
+                        placeholder="Pega aquí el Offer o Answer JSON recibido..."
+                        className="w-full bg-[#070b17] border border-white/15 rounded p-2 text-[10px] font-mono-num text-white"
+                      />
+                      {manualRtcMsg && <div className="text-[11px] text-cyan-300">{manualRtcMsg}</div>}
+                    </div>
+                  )}
+
+                  {rtcPeers.length > 0 && (
+                    <div className="space-y-1 text-[11px] font-mono-num">
+                      {rtcPeers.map((rp) => (
+                        <div key={rp.peerId} className="text-emerald-300">
+                          Peer {rp.peerId.slice(0, 8)}: {rp.state} · ICE {rp.iceState} · Canal{' '}
+                          {rp.channelOpen ? 'Abierto' : 'Cerrando'}
+                          {rp.rttMs ? ` · ${rp.rttMs}ms` : ''}
+                        </div>
+                      ))}
+                    </div>
                   )}
                 </div>
+              )}
+
+              {/* Create Room & Public/Code Join Row */}
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/30 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-display font-bold text-base text-white">
+                      Crear Sala Autoritativa (v{GAME_VERSION})
+                    </div>
+                    <button
+                      onClick={() =>
+                        void mpClient.connectAsync({
+                          guestName: onlineUser?.username || save.playerName,
+                        })
+                      }
+                      className="text-xs text-cyan-300 hover:underline cursor-pointer"
+                    >
+                      {mpConnected ? 'Conectado' : 'Reconectar'}
+                    </button>
+                  </div>
+
+                  <input
+                    type="text"
+                    placeholder="Nombre de la sala (opcional)"
+                    value={roomNameInput}
+                    onChange={(e) => setRoomNameInput(e.target.value)}
+                    className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs text-white outline-none focus:border-cyan-400"
+                  />
+
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <select
+                      value={roomDistrict}
+                      onChange={(e) => setRoomDistrict(e.target.value as DistrictId)}
+                      className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white"
+                    >
+                      {DISTRICTS.map((d) => (
+                        <option key={d.id} value={d.id}>
+                          {getCityLabel(lang, d.id).name}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={roomMode}
+                      onChange={(e) => setRoomMode(e.target.value as GameMode)}
+                      className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white"
+                    >
+                      {MP_MODES.map((m) => (
+                        <option key={m} value={m}>
+                          {getModeLabel(lang, m).label}
+                        </option>
+                      ))}
+                    </select>
+                    <select
+                      value={roomMaxPlayers}
+                      onChange={(e) => setRoomMaxPlayers(Number(e.target.value))}
+                      className="bg-[#070b17] border border-white/15 rounded-lg px-2.5 py-2 text-white font-mono-num"
+                    >
+                      {[2, 3, 4, 6, 8].map((n) => (
+                        <option key={n} value={n}>
+                          Máx {n} jug.
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-4 text-xs text-slate-200">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={roomIsPublic}
+                        onChange={(e) => setRoomIsPublic(e.target.checked)}
+                        className="accent-cyan-400"
+                      />
+                      Pública
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowVehicles}
+                        onChange={(e) => setAllowVehicles(e.target.checked)}
+                        className="accent-cyan-400"
+                      />
+                      Vehículos
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={allowAbilities}
+                        onChange={(e) => setAllowAbilities(e.target.checked)}
+                        className="accent-cyan-400"
+                      />
+                      Habilidades
+                    </label>
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button
+                      onClick={() =>
+                        void handleCreateRoomAction(
+                          netTab === 'lan' || netTab === 'vpn'
+                            ? 'lan'
+                            : netTab === 'webrtc'
+                              ? 'internet_webrtc'
+                              : 'internet_ws',
+                        )
+                      }
+                      className="px-4 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-display font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Plus className="w-4 h-4" /> Crear Sala{' '}
+                      {netTab === 'lan'
+                        ? 'LAN'
+                        : netTab === 'vpn'
+                          ? 'VPN'
+                          : netTab === 'webrtc'
+                            ? 'WebRTC'
+                            : 'Internet'}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Join by Code + Public Rooms */}
+                <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="font-display font-bold text-base text-white">
+                      Unirse por Código o Sala Abierta
+                    </div>
+                    <button
+                      onClick={() => void loadDbAndRooms()}
+                      className="p-1.5 rounded bg-[#070b17] border border-white/10 text-slate-300 hover:text-cyan-300 cursor-pointer"
+                      title="Refrescar salas"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      placeholder="Código de sala (ej. A4K9P2)"
+                      value={joinCodeInput}
+                      onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+                      maxLength={8}
+                      className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num uppercase text-white outline-none focus:border-cyan-400"
+                    />
+                    <button
+                      disabled={!joinCodeInput.trim()}
+                      onClick={() => void handleJoinRoomAction(joinCodeInput)}
+                      className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:opacity-40 text-slate-950 text-xs font-bold cursor-pointer"
+                    >
+                      Entrar
+                    </button>
+                  </div>
+
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                    {publicRooms.length === 0 ? (
+                      <div className="text-xs text-slate-400 py-3 text-center border border-dashed border-white/10 rounded-lg">
+                        No hay salas públicas listadas en el servidor actual.
+                      </div>
+                    ) : (
+                      publicRooms.map((r) => (
+                        <div
+                          key={r.code}
+                          className="flex items-center justify-between p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-xs"
+                        >
+                          <div>
+                            <div className="font-bold text-white">
+                              {r.name} · <span className="font-mono-num text-cyan-300">{r.code}</span>
+                            </div>
+                            <div className="text-[11px] text-slate-400 font-mono-num">
+                              Anfitrión: {r.hostName} · {getCityLabel(lang, r.districtId).name} ·{' '}
+                              {r.playerCount}/{r.maxPlayers} · v{r.gameVersion || GAME_VERSION}
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => void handleJoinRoomAction(r.code)}
+                            className="px-3 py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
+                          >
+                            Unirse
+                          </button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
-            </div>
+            </>
           ) : (
             /* Active Room Lobby / Live Standings */
             <div className="p-5 rounded-xl bg-[#0b1224] border border-cyan-400/50 space-y-4">
               <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/10 pb-3">
                 <div>
-                  <div className="text-xs text-cyan-300 font-semibold">
+                  <div className="text-xs text-cyan-300 font-mono-num font-semibold">
                     Sala Activa · {mpRoom.isPublic ? 'Pública' : 'Privada'} ·{' '}
+                    {mpRoom.connectionMode === 'lan' ? 'LAN/VPN' : 'Internet'} · v{mpRoom.gameVersion || GAME_VERSION} ·{' '}
                     {mpRoom.status === 'lobby'
                       ? 'En Lobby'
                       : mpRoom.status === 'racing'
@@ -633,7 +1848,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                     <button
                       onClick={() => {
                         void navigator.clipboard?.writeText(mpRoom.code);
-                        setMpNotice(`Código ${mpRoom.code} copiado.`);
+                        setLocalMpMsg(`Código ${mpRoom.code} copiado al portapapeles.`);
                       }}
                       className="px-2.5 py-1 rounded bg-[#070b17] border border-cyan-400/40 font-mono-num text-xs font-bold text-cyan-300 flex items-center gap-1 cursor-pointer"
                     >
@@ -654,7 +1869,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                         : 'bg-white/10 hover:bg-white/20 text-white'
                     }`}
                   >
-                    {selfPlayerInRoom?.ready ? 'Listo ✓' : 'Marcar Listo'}
+                    {selfPlayerInRoom?.ready ? 'Listo' : 'Marcar Listo'}
                   </button>
 
                   {isHost && mpRoom.status !== 'racing' && (
@@ -674,6 +1889,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                     onClick={() => {
                       audioEngine.playUiClick();
                       mpClient.leaveRoom();
+                      rtcClient.closeAll();
                     }}
                     className="px-3.5 py-2 rounded-lg border border-rose-400/40 text-rose-200 hover:bg-rose-500/20 text-xs font-semibold cursor-pointer"
                   >
@@ -682,10 +1898,10 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                 </div>
               </div>
 
-              {/* Host Configuration + Friend Invite */}
+              {/* Host Configuration + Rules + Invite */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
                 <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-slate-400">Mapa / Modo:</span>
+                  <span className="text-slate-400">Configuración:</span>
                   {isHost && mpRoom.status === 'lobby' ? (
                     <>
                       <select
@@ -714,11 +1930,24 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                           </option>
                         ))}
                       </select>
+                      <label className="flex items-center gap-1 text-slate-300 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={mpRoom.rules?.allowVehicles ?? true}
+                          onChange={(e) =>
+                            mpClient.updateRoomConfig({
+                              rules: { allowVehicles: e.target.checked },
+                            })
+                          }
+                          className="accent-cyan-400"
+                        />
+                        Vehículos
+                      </label>
                     </>
                   ) : (
                     <span className="text-white font-semibold">
                       {getCityLabel(lang, mpRoom.districtId).name} ·{' '}
-                      {getModeLabel(lang, mpRoom.mode).label}
+                      {getModeLabel(lang, mpRoom.mode).label} · Máx {mpRoom.maxPlayers}
                     </span>
                   )}
                 </div>
@@ -726,7 +1955,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                 <div className="flex gap-2">
                   <input
                     type="text"
-                    placeholder="Invitar jugador conectado (usuario)"
+                    placeholder="Invitar amigo (usuario registrado)"
                     value={inviteUserInput}
                     onChange={(e) => setInviteUserInput(e.target.value)}
                     className="flex-1 bg-[#070b17] border border-white/15 rounded px-2.5 py-1.5 text-white"
@@ -734,8 +1963,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                   <button
                     onClick={() => {
                       if (!inviteUserInput.trim()) return;
-                      mpClient.inviteFriend(inviteUserInput.trim());
-                      setMpNotice(`Invitación enviada a ${inviteUserInput.trim()}.`);
+                      void handleSendPersistentInvite({ username: inviteUserInput.trim() });
                       setInviteUserInput('');
                     }}
                     className="px-3 py-1.5 rounded bg-white/10 hover:bg-white/20 text-cyan-300 font-semibold flex items-center gap-1 cursor-pointer"
@@ -745,57 +1973,423 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                 </div>
               </div>
 
-              {mpNotice && <div className="text-xs text-cyan-300">{mpNotice}</div>}
-
-              {/* Room Players List */}
+              {/* Room Players List with Ping, Quality, Reconnect & Kick */}
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
                 {mpRoom.players.map((p) => {
                   const ch = getCharacterById(p.characterId);
+                  const qual = formatQualityLabel(p.connectionQuality);
                   return (
                     <div
                       key={p.userId}
-                      className={`p-3 rounded-lg border text-xs flex items-center justify-between ${
+                      className={`p-3 rounded-lg border text-xs flex items-center justify-between gap-2 ${
                         p.userId === mpSelfId
                           ? 'bg-cyan-500/15 border-cyan-400/60'
                           : 'bg-[#070b17] border-white/10'
                       }`}
                     >
-                      <div>
-                        <div className="font-bold text-white">
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">
                           {p.username} {p.isHost ? '(Anfitrión)' : ''}
                         </div>
-                        <div className="text-[11px] text-slate-400">
+                        <div className="text-[11px] text-slate-400 truncate">
                           {ch.name} ·{' '}
-                          {p.finished
-                            ? `Meta #${p.placement ?? '-'} · ${p.score} pts`
-                            : p.paused
-                              ? 'En Pausa'
-                              : p.ready
-                                ? 'Listo'
-                                : 'Esperando'}
+                          {p.reconnecting
+                            ? 'Reconectando (45s)...'
+                            : p.finished
+                              ? `Meta #${p.placement ?? '-'} · ${p.score} pts`
+                              : p.paused
+                                ? 'En Pausa'
+                                : p.ready
+                                  ? 'Listo'
+                                  : 'Esperando'}
+                        </div>
+                        <div className="text-[10px] font-mono-num flex items-center gap-1.5 mt-0.5">
+                          <span className={qual.cls}>{qual.label}</span>
+                          {typeof p.pingMs === 'number' && (
+                            <span className="text-slate-400">· {p.pingMs} ms</span>
+                          )}
                         </div>
                       </div>
-                      <span
-                        className={`font-mono-num font-bold ${
-                          p.ready ? 'text-emerald-300' : 'text-amber-300'
-                        }`}
-                      >
-                        {p.distance > 0 ? `${p.distance}m` : p.ready ? 'OK' : '...'}
-                      </span>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <span
+                          className={`font-mono-num font-bold ${
+                            p.ready ? 'text-emerald-300' : 'text-amber-300'
+                          }`}
+                        >
+                          {p.distance > 0 ? `${p.distance}m` : p.ready ? 'OK' : '...'}
+                        </span>
+                        {isHost && p.userId !== mpSelfId && (
+                          <button
+                            onClick={() => mpClient.kickPlayer(p.userId)}
+                            title={`Expulsar a ${p.username}`}
+                            className="p-1.5 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 cursor-pointer"
+                          >
+                            <UserX className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
               </div>
             </div>
           )}
+
+          {/* Real User Search + Persistent Room Invitations Inbox/Outbox */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Search Registered Users */}
+            <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="font-display font-bold text-sm text-white flex items-center gap-2">
+                  <Search className="w-4 h-4 text-cyan-400" />
+                  Buscar Jugadores Registrados
+                </div>
+                <span className="text-[11px] text-slate-400">
+                  {onlineUser ? `Conectado como ${onlineUser.username}` : 'Sin sesión online'}
+                </span>
+              </div>
+
+              <p className="text-[11px] text-slate-400">
+                Para buscar e invitar amigos entre distintas computadoras por Internet, ambas copias deben apuntar el «Servidor de Cuentas Online» (en Cuentas) a la misma URL de servidor compartida.
+              </p>
+
+              <form onSubmit={handleSearchUsers} className="flex gap-2">
+                <input
+                  type="text"
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  placeholder="Buscar por usuario o apodo..."
+                  className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-1.5 text-white outline-none focus:border-cyan-400"
+                />
+                <button
+                  type="submit"
+                  disabled={!serverOnline || userSearchBusy}
+                  className="px-3.5 py-1.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-45 text-slate-950 font-bold cursor-pointer"
+                >
+                  {userSearchBusy ? '...' : 'Buscar'}
+                </button>
+              </form>
+
+              <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                {userSearchResults.length === 0 ? (
+                  <div className="text-slate-400 py-2 text-center border border-dashed border-white/10 rounded-lg">
+                    Escribe un nombre y pulsa Buscar para ver corredores registrados.
+                  </div>
+                ) : (
+                  userSearchResults.map((u) => (
+                    <div
+                      key={u.id}
+                      className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 flex items-center justify-between gap-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="font-bold text-white truncate">
+                          {u.displayName || u.username}{' '}
+                          <span className="text-slate-400 font-normal">@{u.username}</span>
+                        </div>
+                        <div className="text-[11px] font-mono-num text-slate-400">
+                          {u.isOnline ? (
+                            <span className="text-emerald-300 font-semibold">En línea</span>
+                          ) : (
+                            <span>Desconectado</span>
+                          )}{' '}
+                          · Mejor: {u.bestScore.toLocaleString('es-ES')} pts
+                        </div>
+                      </div>
+                      <button
+                        disabled={!mpRoom}
+                        onClick={() => void handleSendPersistentInvite({ id: u.id, username: u.username })}
+                        title={mpRoom ? 'Invitar a la sala actual' : 'Crea una sala primero'}
+                        className="px-3 py-1.5 rounded bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 font-bold shrink-0 cursor-pointer disabled:cursor-not-allowed"
+                      >
+                        Invitar
+                      </button>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Persistent Invitations Inbox & Outbox */}
+            <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <div className="font-display font-bold text-sm text-white flex items-center gap-2">
+                  <Send className="w-4 h-4 text-fuchsia-400" />
+                  Invitaciones Persistentes ({incomingInvites.length + outgoingInvites.length})
+                </div>
+                <button
+                  onClick={() => void refreshInvitesList()}
+                  className="text-slate-400 hover:text-cyan-300 cursor-pointer"
+                  title="Actualizar invitaciones"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {!onlineUser ? (
+                <div className="text-slate-400 py-4 text-center border border-dashed border-white/10 rounded-lg">
+                  Inicia sesión en una Cuenta Online para recibir y rastrear invitaciones persistentes.
+                </div>
+              ) : incomingInvites.length === 0 && outgoingInvites.length === 0 ? (
+                <div className="text-slate-400 py-4 text-center border border-dashed border-white/10 rounded-lg">
+                  No tienes invitaciones recibidas ni enviadas todavía.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-52 overflow-y-auto">
+                  {incomingInvites.map((inv) => {
+                    const meta = INVITE_STATUS_META[inv.status] ?? {
+                      label: inv.status,
+                      cls: 'text-slate-300',
+                    };
+                    const actionable = inv.status === 'sent' || inv.status === 'pending';
+                    return (
+                      <div
+                        key={inv.id}
+                        className="p-2.5 rounded-lg bg-[#070b17] border border-cyan-500/30 space-y-1.5"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="font-bold text-white">
+                            De {inv.fromUsername} · Sala {inv.roomCode}
+                          </span>
+                          <span className={`font-semibold ${meta.cls}`}>{meta.label}</span>
+                        </div>
+                        <div className="text-[11px] text-slate-400">
+                          {getCityLabel(lang, inv.districtId).name} · {getModeLabel(lang, inv.mode).label}
+                        </div>
+                        {actionable && (
+                          <div className="flex gap-2 pt-1">
+                            <button
+                              onClick={async () => {
+                                await respondToInvite(inv.id, 'accept');
+                                await handleConnectCustomEndpoint(inv.targetWsUrl || '', inv.roomCode);
+                                void refreshInvitesList();
+                              }}
+                              className="px-3 py-1 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
+                            >
+                              Aceptar y Unirse
+                            </button>
+                            <button
+                              onClick={async () => {
+                                await respondToInvite(inv.id, 'reject');
+                                void refreshInvitesList();
+                              }}
+                              className="px-2.5 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-200 cursor-pointer flex items-center gap-1"
+                            >
+                              <XCircle className="w-3 h-3" /> Rechazar
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+
+                  {outgoingInvites.map((inv) => {
+                    const meta = INVITE_STATUS_META[inv.status] ?? {
+                      label: inv.status,
+                      cls: 'text-slate-300',
+                    };
+                    const canCancel = inv.status === 'sent' || inv.status === 'pending';
+                    return (
+                      <div
+                        key={inv.id}
+                        className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 flex items-center justify-between gap-2"
+                      >
+                        <div className="min-w-0">
+                          <div className="font-semibold text-white truncate">
+                            Para {inv.toUsername} · Sala {inv.roomCode}
+                          </div>
+                          <div className={`text-[11px] font-semibold flex items-center gap-1 ${meta.cls}`}>
+                            <Clock className="w-3 h-3" /> {meta.label}
+                          </div>
+                        </div>
+                        {canCancel && (
+                          <button
+                            onClick={async () => {
+                              await respondToInvite(inv.id, 'cancel');
+                              void refreshInvitesList();
+                            }}
+                            className="px-2.5 py-1 rounded border border-white/15 text-slate-300 hover:text-rose-200 shrink-0 cursor-pointer"
+                          >
+                            Cancelar
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
-      {/* SECTION 2: SQLITE ACCOUNT, RECOVERY, SYNC & CLEAN RESET */}
+      {/* SECTION 2: DUAL ACCOUNTS (OFFLINE LOCAL PROFILES + ONLINE ACCOUNTS + SYNC + BACKUP) */}
       {section === 'account' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Account Auth / Profile */}
+          {/* Column 1: Offline Local Profiles & Native Backups */}
           <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="font-display font-bold text-sm text-white flex items-center gap-2">
+                <HardDrive className="w-4 h-4 text-emerald-400" />
+                Perfiles Locales (100% Offline en PC)
+              </div>
+              <span className="text-[11px] font-mono-num text-slate-400">
+                {localProfiles.length} perfil(es)
+              </span>
+            </div>
+
+            <p className="text-xs text-slate-400">
+              Tu progreso local funciona siempre sin Internet ni cuenta online y se guarda fuera de la carpeta del programa.
+            </p>
+
+            {/* Local Profiles List */}
+            <div className="space-y-1.5 max-h-48 overflow-y-auto">
+              {localProfiles.map((prof) => {
+                const isActive = prof.id === activeLocalProfileId;
+                return (
+                  <div
+                    key={prof.id}
+                    className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+                      isActive
+                        ? 'bg-emerald-500/15 border-emerald-400/60'
+                        : 'bg-[#070b17] border-white/10'
+                    }`}
+                  >
+                    <div className="min-w-0">
+                      <div className="font-bold text-white truncate flex items-center gap-1.5">
+                        {prof.name}
+                        {isActive && (
+                          <span className="text-[10px] text-emerald-300 font-semibold">
+                            · Activo
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono-num text-slate-400">
+                        Nv {prof.level} · {prof.coins.toLocaleString('es-ES')} M · {prof.totalRuns} carreras
+                        {prof.linkedOnlineUsername
+                          ? ` · Vinculado a ${prof.linkedOnlineUsername}`
+                          : ' · Solo Local'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {!isActive && (
+                        <button
+                          onClick={() => void handleSelectLocalProfile(prof.id)}
+                          className="px-2.5 py-1 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
+                        >
+                          Usar
+                        </button>
+                      )}
+                      {localProfiles.length > 1 && (
+                        <button
+                          onClick={() => void handleDeleteLocalProfile(prof.id, prof.name)}
+                          className="p-1.5 rounded bg-white/5 hover:bg-rose-500/25 text-slate-300 hover:text-rose-200 cursor-pointer"
+                          title="Eliminar perfil"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Create New Local Profile */}
+            <form onSubmit={handleCreateLocalProfile} className="flex gap-2 pt-1">
+              <input
+                type="text"
+                placeholder="Nuevo perfil local (ej. Invitado_Casa)"
+                value={newProfileName}
+                onChange={(e) => setNewProfileName(e.target.value)}
+                maxLength={22}
+                className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-400"
+              />
+              <select
+                value={newProfileAvatar}
+                onChange={(e) => setNewProfileAvatar(e.target.value)}
+                className="bg-[#070b17] border border-white/15 rounded-lg px-2 py-1.5 text-xs text-white"
+              >
+                {CHARACTERS.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="submit"
+                disabled={!serverOnline}
+                className="px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-slate-950 text-xs font-bold cursor-pointer whitespace-nowrap"
+              >
+                + Crear
+              </button>
+            </form>
+
+            {/* Backup Export / Import / Folder */}
+            <div className="pt-2 border-t border-white/10 flex flex-wrap gap-2">
+              <button
+                onClick={() => void handleExportLocalBackup()}
+                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5 text-cyan-300" /> Exportar Respaldo JSON
+              </button>
+              {isElectron && (
+                <>
+                  <button
+                    onClick={() => void handleImportLocalNative()}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-emerald-300" /> Importar Respaldo JSON
+                  </button>
+                  <button
+                    onClick={() => void window.metroDesktop?.openBackupsFolder()}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <FolderOpen className="w-3.5 h-3.5 text-amber-300" /> Carpeta de Datos
+                  </button>
+                </>
+              )}
+            </div>
+
+            {profileNotice && <div className="text-xs text-cyan-300">{profileNotice}</div>}
+
+            {dbInfo && (
+              <div className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-[11px] font-mono-num text-slate-300 space-y-1 break-all">
+                <div>Motor SQLite: {dbInfo.engine || 'sqlite'} (esquema v{dbInfo.schemaVersion ?? 2})</div>
+                <div>Archivo BD: {dbInfo.dbPath} ({Math.round(dbInfo.sizeBytes / 1024)} KB)</div>
+              </div>
+            )}
+          </div>
+
+          {/* Column 2: Online Account + Configurable Central Backend + Linking */}
+          <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
+            {/* Optional Central Online Server URL */}
+            <div className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 space-y-1.5">
+              <div className="flex items-center justify-between text-[11px] text-slate-400">
+                <span>Servidor de Cuentas Online (opcional, vacío = servidor local)</span>
+                {backendPingResult && <span className="text-cyan-300">{backendPingResult}</span>}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={backendUrlInput}
+                  onChange={(e) => setBackendUrlInput(e.target.value)}
+                  placeholder="https://tu-servidor-online.com (o vacío para usar este PC)"
+                  className="flex-1 bg-[#0b1224] border border-white/15 rounded px-2.5 py-1 text-xs font-mono-num text-white"
+                />
+                <button
+                  onClick={async () => {
+                    const saved = setOnlineBackendUrl(backendUrlInput);
+                    setBackendUrlInput(saved);
+                    const up = await checkServerOnline(true);
+                    setBackendPingResult(up ? 'Conectado' : 'Sin respuesta');
+                  }}
+                  className="px-3 py-1 rounded bg-white/10 hover:bg-white/20 text-xs font-semibold text-cyan-300 cursor-pointer"
+                >
+                  Guardar y Probar
+                </button>
+              </div>
+            </div>
+
             {!onlineUser ? (
               <form onSubmit={handleAuthSubmit} className="space-y-3">
                 <div className="flex items-center justify-between gap-2">
@@ -837,7 +2431,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                     type="text"
                     placeholder={
                       authMode === 'register'
-                        ? 'Nombre de usuario (3-20 caracteres)'
+                        ? 'Nombre de usuario (3-18 caracteres)'
                         : 'Usuario o correo electrónico'
                     }
                     value={identifier}
@@ -850,7 +2444,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                   {authMode === 'register' && (
                     <input
                       type="email"
-                      placeholder="Correo electrónico (ej. corredor@pc.local)"
+                      placeholder="Correo electrónico"
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
                       required
@@ -912,24 +2506,22 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                   </div>
                 )}
 
-                {authError && (
-                  <div className="text-xs text-rose-300 font-medium">{authError}</div>
-                )}
+                {authError && <div className="text-xs text-rose-300 font-medium">{authError}</div>}
                 {authSuccess && (
                   <div className="text-xs text-emerald-300 font-medium">{authSuccess}</div>
                 )}
 
                 <button
                   type="submit"
-                  disabled={authLoading || !serverOnline}
+                  disabled={authLoading}
                   className="w-full py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 text-slate-950 font-display font-bold text-xs cursor-pointer"
                 >
                   {authLoading
-                    ? 'Procesando en SQLite...'
+                    ? 'Conectando...'
                     : authMode === 'login'
-                      ? 'Iniciar Sesión'
+                      ? 'Iniciar Sesión Online'
                       : authMode === 'register'
-                        ? 'Registrar Cuenta en SQLite'
+                        ? 'Registrar Cuenta Online'
                         : 'Restablecer Contraseña'}
                 </button>
               </form>
@@ -947,8 +2539,8 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                     </div>
                   </div>
                   <button
-                    onClick={() => {
-                      logoutOnlineUser();
+                    onClick={async () => {
+                      await logoutOnlineUser();
                       onOnlineUserChange(null);
                     }}
                     className="px-3 py-1.5 rounded-lg border border-white/15 hover:border-rose-400 text-xs text-slate-300 hover:text-rose-200 flex items-center gap-1.5 cursor-pointer"
@@ -968,6 +2560,33 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                     </div>
                   </div>
                 )}
+
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void handleTriggerAccountLink()}
+                    className="px-3 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Link2 className="w-3.5 h-3.5" /> Vincular / Sincronizar Perfil Local
+                  </button>
+                  <button
+                    onClick={() => void handleManualSync()}
+                    className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Upload className="w-3.5 h-3.5" /> Subir Progreso
+                  </button>
+                  <button
+                    onClick={() => void handleLoadFromSqlite()}
+                    className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Download className="w-3.5 h-3.5" /> Descargar
+                  </button>
+                  <button
+                    onClick={() => void handleExportAccountJson()}
+                    className="px-3 py-2 rounded-lg bg-white/10 hover:bg-white/20 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <UserCheck className="w-3.5 h-3.5" /> Exportar Cuenta
+                  </button>
+                </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-2 border-t border-white/10">
                   <div className="flex items-center justify-between gap-2 text-xs">
@@ -1017,77 +2636,29 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                 )}
               </div>
             )}
-          </div>
 
-          {/* SQLite Save Sync + Export + Clean Test Reset */}
-          <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="font-display font-bold text-sm text-white flex items-center gap-2">
-                <Database className="w-4 h-4 text-cyan-400" />
-                Almacenamiento Persistente SQLite
-              </div>
-              {dbInfo && (
-                <span className="font-mono-num text-[11px] text-cyan-300">
-                  {dbInfo.userCount} cuentas · {dbInfo.runCount} partidas
-                </span>
-              )}
-            </div>
+            {syncNotice && <div className="text-xs text-cyan-300">{syncNotice}</div>}
 
-            {dbInfo && (
-              <div className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-[11px] font-mono-num text-slate-300 space-y-1 break-all">
-                <div>BD SQLite: {dbInfo.dbPath}</div>
-                <div>Respaldos: {dbInfo.backupDir} ({Math.round(dbInfo.sizeBytes / 1024)} KB)</div>
-              </div>
-            )}
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                disabled={!onlineUser}
-                onClick={() => void handleManualSync()}
-                className="px-3.5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-40 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Upload className="w-3.5 h-3.5" /> Guardar Progreso en SQLite
-              </button>
-              <button
-                disabled={!onlineUser}
-                onClick={() => void handleLoadFromSqlite()}
-                className="px-3.5 py-2 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-40 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Download className="w-3.5 h-3.5" /> Cargar desde SQLite
-              </button>
-              <button
-                disabled={!onlineUser}
-                onClick={() => void handleExportAccountJson()}
-                className="px-3.5 py-2 rounded-lg border border-white/15 hover:border-cyan-400 disabled:opacity-40 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                Exportar Cuenta JSON
-              </button>
-            </div>
-
-            {syncNotice && (
-              <div className="text-xs text-cyan-300 font-medium">{syncNotice}</div>
-            )}
-
-            {/* Clean Test Data Reset */}
-            <div className="pt-2.5 border-t border-white/10 space-y-2">
+            {/* Clean Test Reset */}
+            <div className="pt-2 border-t border-white/10">
               {!confirmCleanReset ? (
                 <button
                   onClick={() => setConfirmCleanReset(true)}
-                  className="px-3.5 py-2 rounded-lg border border-rose-400/40 hover:bg-rose-500/15 text-rose-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                  className="text-[11px] text-rose-300 hover:underline flex items-center gap-1 cursor-pointer"
                 >
-                  <Trash2 className="w-3.5 h-3.5" /> Limpiar Datos de Prueba / Reiniciar Rankings
+                  <Trash2 className="w-3 h-3" /> Reiniciar Datos de Prueba / Ranking
                 </button>
               ) : (
-                <div className="p-3 rounded-lg bg-rose-950/35 border border-rose-500/45 space-y-2 text-xs">
-                  <div className="text-rose-200 font-semibold">
-                    Esto respalda los datos actuales y deja las tablas de récords e historial local limpias (con un usuario nuevo en Nv.1 y 0 carreras). ¿Confirmar?
+                <div className="p-2.5 rounded-lg bg-rose-950/35 border border-rose-400/40 text-xs space-y-2">
+                  <div className="text-rose-200">
+                    Creará un respaldo automático previo y limpiará las partidas y rankings de prueba.
                   </div>
                   <div className="flex gap-2">
                     <button
                       onClick={() => void handleCleanTestReset()}
-                      className="px-3.5 py-1.5 rounded bg-rose-500 hover:bg-rose-400 text-white font-bold flex items-center gap-1 cursor-pointer"
+                      className="px-3 py-1.5 rounded bg-rose-500 text-white font-bold flex items-center gap-1 cursor-pointer"
                     >
-                      <RotateCcw className="w-3.5 h-3.5" /> Confirmar Limpieza
+                      <RotateCcw className="w-3 h-3" /> Confirmar Limpieza
                     </button>
                     <button
                       onClick={() => setConfirmCleanReset(false)}
@@ -1109,7 +2680,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
           {eventsInfo && (
             <div className="p-4 rounded-xl bg-[#0b1224] border border-fuchsia-500/30 flex flex-wrap items-center justify-between gap-3">
               <div>
-                <div className="text-[11px] font-bold text-fuchsia-300">
+                <div className="text-[11px] font-bold text-fuchsia-300 font-mono-num">
                   {t(lang, 'online.challenges')} · +{eventsInfo.weeklyChallenge.rewardCoins} M · +
                   {eventsInfo.weeklyChallenge.rewardGems} G
                 </div>
@@ -1262,12 +2833,12 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                 </div>
               ) : (
                 <div className="p-6 text-center text-xs text-slate-400">
-                  No hay registros todavía. Completa una carrera conectado para registrar tu marca real.
+                  No hay registros todavía. Completa una carrera con tu cuenta online para registrar tu marca.
                 </div>
               )
             ) : (
               <div className="p-4 text-xs text-amber-300">
-                Conecta con el servidor local/dedicado para ver las tablas reales de SQLite.
+                Conecta con un servidor para consultar la clasificación global.
               </div>
             )}
           </div>
@@ -1302,42 +2873,42 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
         </div>
       )}
 
-      {/* SECTION 4: HONEST PC NETWORKING & SQLITE ARCHITECTURE GUIDE */}
+      {/* SECTION 4: HONEST PC & MULTIPLAYER ARCHITECTURE */}
       {section === 'network_info' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
           <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/30 space-y-2">
             <div className="font-display font-bold text-sm text-cyan-300">
-              1. SQLite Local en tu PC
+              1. Guardado Persistente en Windows
             </div>
             <p className="text-slate-300 leading-relaxed">
-              Las cuentas, contraseñas cifradas, recuperación y progresos se guardan de forma persistente en un archivo SQLite real fuera de los temporales del código (<code className="text-cyan-200">~/.metro-rush-neon-city/userdata.db</code>).
+              Tus perfiles locales y base SQLite (<code className="text-cyan-200">userdata.db</code>) se almacenan en la carpeta de datos del usuario (<code className="text-white">%APPDATA%\Metro Rush Neon City\data</code>), separada del directorio de instalación.
             </p>
             <p className="text-slate-400 leading-relaxed">
-              Importante: SQLite local por sí sola guarda los datos en la computadora donde corre el servidor; no replica automáticamente entre PCs aisladas sin un servidor común.
+              Así, desinstalar o actualizar el instalador <code className="text-white">.exe</code> no borra tus partidas ni tu progreso.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0b1224] border border-emerald-500/30 space-y-2">
             <div className="font-display font-bold text-sm text-emerald-300">
-              2. Servidor Dedicado y LAN
+              2. Partidas Alojadas por Jugadores (LAN/Túnel)
             </div>
             <p className="text-slate-300 leading-relaxed">
-              Este mismo servidor Express + WebSocket (<code className="text-emerald-200">/ws</code>) gestiona salas, telemetría de corredores en tiempo real a 20Hz y rankings compartidos para todos los clientes conectados a la misma instancia.
+              El jugador anfitrión ejecuta el servidor autoritativo en su PC (valida velocidades máximas, puntuaciones, premios y desconexiones de 45s). Para jugar fuera de casa sin abrir puertos del router, basta exponer el puerto con un túnel como <strong className="text-white">playit.gg</strong>.
             </p>
-            <p className="text-slate-400 leading-relaxed">
-              En red local (LAN), tus amigos pueden conectarse directamente desde su navegador apuntando a <code className="text-white">http://TU_IP_LOCAL:3000</code>.
+            <p className="text-amber-300/90 leading-relaxed">
+              Limitación real: cuando un jugador aloja la partida en su propio PC, tiene control físico sobre ese proceso. Aunque validamos a todos los clientes conectados, un anfitrión malicioso que modifique su propio binario podría alterar sus recompensas locales.
             </p>
           </div>
 
           <div className="p-4 rounded-xl bg-[#0b1224] border border-fuchsia-500/30 space-y-2">
             <div className="font-display font-bold text-sm text-fuchsia-300">
-              3. Acceso Externo con Túnel (playit.gg)
+              3. Cuentas Online y Servidores TURN
             </div>
             <p className="text-slate-300 leading-relaxed">
-              Si quieres jugar con amigos fuera de tu red sin contratar hosting ni abrir puertos del router, ejecuta el servidor en tu PC y expón el puerto <code className="text-white">3000</code> mediante un túnel TCP/HTTP como <strong className="text-white">playit.gg</strong>.
+              Sin un servidor central público desplegado aparte, las cuentas online viven en el servidor SQLite al que te conectes (local o tu servidor propio configurado arriba).
             </p>
             <p className="text-slate-400 leading-relaxed">
-              Quienes entren a tu URL de playit.gg compartirán salas WebSocket, cuentas y tablas SQLite alojadas en tu propia computadora.
+              WebRTC incluye STUN público gratuito; sin embargo, si dos jugadores están tras routers NAT simétricos estrictos y no usan túnel TCP, la conexión P2P directa requeriría un servidor <strong className="text-white">TURN</strong> externo (infraestructura dedicada con coste de ancho de banda).
             </p>
           </div>
         </div>

@@ -313,7 +313,7 @@ export const DISTRICTS: DistrictDef[] = [
     musicRootHz: 103.83,
     specialFeature: 'Arcos históricos, mercados cubiertos y farolillos flotantes',
     signatureEnemies: ['ground_bot', 'security_bot', 'scout'],
-    signatureBoss: 'iron_hunter',
+    signatureBoss: 'cryo_leviathan',
     landmarkType: 'lanterns',
   },
   {
@@ -375,7 +375,7 @@ export const DISTRICTS: DistrictDef[] = [
     musicRootHz: 123.47,
     specialFeature: 'Azoteas suspendidas, abismos abiertos y tirolinas de altura',
     signatureEnemies: ['tactical', 'pursuit', 'swarm'],
-    signatureBoss: 'titan_drone',
+    signatureBoss: 'volt_archon',
     landmarkType: 'skybridge',
   },
   {
@@ -473,25 +473,54 @@ export const DISTRICTS: DistrictDef[] = [
   },
 ];
 
+export const ORDERED_BOSS_IDS: BossId[] = [
+  'titan_drone',
+  'iron_hunter',
+  'overseer',
+  'neon_wraith',
+  'cryo_leviathan',
+  'volt_archon',
+  'the_sentinel',
+  'omega_core',
+];
+
+export function isBossUnlocked(bossId: BossId, defeatedBosses: BossId[]): boolean {
+  const idx = ORDERED_BOSS_IDS.indexOf(bossId);
+  if (idx <= 0) return true;
+  if (defeatedBosses.includes(bossId)) return true;
+  const prevId = ORDERED_BOSS_IDS[idx - 1];
+  return defeatedBosses.includes(prevId);
+}
+
+export function getUnlockedBossIds(defeatedBosses: BossId[]): BossId[] {
+  return ORDERED_BOSS_IDS.filter((id) => isBossUnlocked(id, defeatedBosses));
+}
+
+export function getBossUnlockRequirement(bossId: BossId): BossDef | null {
+  const idx = ORDERED_BOSS_IDS.indexOf(bossId);
+  if (idx <= 0) return null;
+  return BOSSES.find((b) => b.id === ORDERED_BOSS_IDS[idx - 1]) ?? null;
+}
+
 export const BOSSES: BossDef[] = [
   {
     id: 'titan_drone',
     name: 'TITAN DRONE',
-    title: 'Fortaleza Aérea de Asalto',
+    title: '01 · Fortaleza Aérea de Asalto',
     cityId: 'downtown',
-    description: 'Aeronave cuadri-turbina gigante que patrulla Neon Downtown y Skyline Zero en una arena de combate despejada con 4 fases de ataque aéreo.',
+    description: 'Aeronave cuadri-turbina gigante que patrulla Neon Downtown en una arena despejada con 4 fases progresivas de asalto aéreo.',
     hpSegments: 4,
     phases: [
       'Fase 1: Barrido Láser Orbital',
-      'Fase 2: Salvas Triples de Carril',
+      'Fase 2: Salvas Dobles de Carril',
       'Fase 3: Bombardeo de Calzada',
       'Fase 4: Sobrecarga de Turbinas',
     ],
     phaseDetails: [
       'Barre un carril con haz telegrafiado tras alerta visual.',
       'Dispara misiles de plasma paralelos por 2 carriles simultáneos.',
-      'Destruye secciones de calzada forzando salto o cambio de carril.',
-      'Ataques combinados rápidos con celdas EMP de sobrecarga.',
+      'Onda expansiva combinada con proyectil teledirigido.',
+      'Ataques triples rápidos con turbinas en máxima potencia.',
     ],
     counterHint: 'Lee las alertas rojas de carril, esquiva los proyectiles y captura celdas EMP cian.',
     rewardCoins: 1800,
@@ -500,11 +529,36 @@ export const BOSSES: BossDef[] = [
     secondaryColor: '#ef4444',
   },
   {
+    id: 'iron_hunter',
+    name: 'IRON HUNTER',
+    title: '02 · Perseguidor Mecánico Terrestre',
+    cityId: 'industrial',
+    description: 'Bestia cuadrúpeda blindada de fundición que embiste carriles enteros y desata ondas sísmicas sobre el asfalto.',
+    hpSegments: 4,
+    phases: [
+      'Fase 1: Embiste de Carril',
+      'Fase 2: Minas Térmicas en Pista',
+      'Fase 3: Onda Sísmica Terrestre',
+      'Fase 4: Furia de Fundición',
+    ],
+    phaseDetails: [
+      'Carga golpes terrestres sobre el carril del corredor.',
+      'Alterna ráfagas de carriles laterales con disparos térmicos.',
+      'Golpea el suelo enviando ondas bajas que exigen salto.',
+      'Embiste doble seguido de pulso sísmico de alta presión.',
+    ],
+    counterHint: 'Salta las ondas sísmicas y mantén velocidad para alcanzar los nodos EMP.',
+    rewardCoins: 2000,
+    rewardGems: 28,
+    primaryColor: '#f97316',
+    secondaryColor: '#facc15',
+  },
+  {
     id: 'overseer',
     name: 'OVERSEER',
-    title: 'Núcleo Robótico de Vigilancia',
+    title: '03 · Núcleo Robótico de Vigilancia',
     cityId: 'underground',
-    description: 'Ojo cibernético orbital con anillos giroscópicos que altera la arquitectura del túnel y activa trampas sincronizadas.',
+    description: 'Ojo cibernético orbital con anillos giroscópicos que altera la profundidad del túnel y dispara láseres cruzados.',
     hpSegments: 4,
     phases: [
       'Fase 1: Escaneo de Láser Bajo',
@@ -513,9 +567,9 @@ export const BOSSES: BossDef[] = [
       'Fase 4: Matriz de Cierre Total',
     ],
     phaseDetails: [
-      'Emite haces horizontales bajos que exigen salto preciso.',
-      'Proyectiles telegrafiados combinados con trampas de suelo.',
-      'Pulso sísmico que recorre los tres carriles salvo brechas aéreas.',
+      'Emite haces horizontales en el carril fijado.',
+      'Combina haces láser con proyectiles de flanco.',
+      'Pulso expansivo en los tres carriles salvo salto alto.',
       'Escaneo cruzado rápido antes del colapso final del núcleo.',
     ],
     counterHint: 'Usa Slow-Mo [C] durante las ondas rápidas y recoge celdas EMP centrales.',
@@ -525,36 +579,11 @@ export const BOSSES: BossDef[] = [
     secondaryColor: '#38bdf8',
   },
   {
-    id: 'iron_hunter',
-    name: 'IRON HUNTER',
-    title: 'Perseguidor Mecánico Terrestre',
-    cityId: 'industrial',
-    description: 'Bestia cuadrúpeda blindada de fundición que embiste carriles enteros, siembra minas eléctricas y destruye la pista tras su paso.',
-    hpSegments: 4,
-    phases: [
-      'Fase 1: Embiste de Carril',
-      'Fase 2: Minas Térmicas en Pista',
-      'Fase 3: Onda Sísmica Terrestre',
-      'Fase 4: Furia de Fundición',
-    ],
-    phaseDetails: [
-      'Marca un carril en naranja y dispara embestidas de plasma.',
-      'Despliega trampas eléctricas sincronizadas entre carriles.',
-      'Golpea el suelo enviando ondas bajas que se superan saltando.',
-      'Alterna destrucciones de carril con descargas triples.',
-    ],
-    counterHint: 'Salta las ondas sísmicas y mantén velocidad para alcanzar los nodos EMP.',
-    rewardCoins: 2000,
-    rewardGems: 28,
-    primaryColor: '#f97316',
-    secondaryColor: '#facc15',
-  },
-  {
     id: 'neon_wraith',
     name: 'NEON WRAITH',
-    title: 'Unidad Fantasma Supersónica',
+    title: '04 · Unidad Fantasma Supersónica',
     cityId: 'beach',
-    description: 'Interceptor humanoide flotante que se teletransporta entre carriles lanzando cortes de plasma y trampas sobre la costa.',
+    description: 'Interceptor humanoide flotante que cambia de carril a velocidad sónica lanzando cortes de marea y ráfagas holográficas.',
     hpSegments: 4,
     phases: [
       'Fase 1: Espejismo Doble',
@@ -563,34 +592,84 @@ export const BOSSES: BossDef[] = [
       'Fase 4: Velocidad Hipersónica',
     ],
     phaseDetails: [
-      'Lanza proyectiles gemelos tras cambiar bruscamente de posición.',
-      'Rayos horizontales a media altura ideales para deslizarse [S].',
-      'Genera trampas luminosas en 2 carriles dejando una ruta limpia.',
-      'Ráfagas alternadas de proyectiles y ondas de plasma.',
+      'Lanza ataques de carril rápidos tras cambiar bruscamente de posición.',
+      'Cortes paralelos en carriles adyacentes.',
+      'Alterna golpes de carril y ondas de plasma marinas.',
+      'Ráfagas encadenadas a máxima velocidad de persecución.',
     ],
-    counterHint: 'Deslízate bajo los cortes de marea o activa tu Habilidad [F] en la fase final.',
+    counterHint: 'Deslízate bajo los cortes o activa tu Habilidad [F] en la fase final.',
     rewardCoins: 2400,
     rewardGems: 35,
     primaryColor: '#2dd4bf',
     secondaryColor: '#fb7185',
   },
   {
+    id: 'cryo_leviathan',
+    name: 'CRYO LEVIATHAN',
+    title: '05 · Serpiente Criogénica Orbital',
+    cityId: 'oldcity',
+    description: 'Leviatán articulado de cámaras criogénicas que serpentea sobre los tres carriles congelando la ruta con pulsos helados.',
+    hpSegments: 4,
+    phases: [
+      'Fase 1: Coletazo Criogénico',
+      'Fase 2: Cristales de Escarcha',
+      'Fase 3: Tormenta Boreal',
+      'Fase 4: Cero Absoluto',
+    ],
+    phaseDetails: [
+      'Oscila lateralmente disparando lanzas de hielo concentradas.',
+      'Cubre dos carriles con proyectiles criogénicos alternados.',
+      'Libera ondas de escarcha bajas que requieren doble salto.',
+      'Secuencia serpenteante veloz con láser orbital y onda helada.',
+    ],
+    counterHint: 'Sigue el movimiento de su cabeza articulada para anticipar el carril libre.',
+    rewardCoins: 2650,
+    rewardGems: 38,
+    primaryColor: '#38bdf8',
+    secondaryColor: '#a5f3fc',
+  },
+  {
+    id: 'volt_archon',
+    name: 'VOLT ARCHON',
+    title: '06 · Arconte de Alta Tensión',
+    cityId: 'skyline',
+    description: 'Centinela aéreo con bobinas Tesla giratorias que electrifica los viaductos de Skyline Zero con descargas escalonadas.',
+    hpSegments: 4,
+    phases: [
+      'Fase 1: Arco Voltaico',
+      'Fase 2: Bobinas Cruzadas',
+      'Fase 3: Descarga en Cadena',
+      'Fase 4: Tormenta Electromagnética',
+    ],
+    phaseDetails: [
+      'Descargas láser verticales sobre el carril del corredor.',
+      'Dispara esferas de plasma eléctrico por dos carriles.',
+      'Combina rayos laterales con pulsos sísmicos de suelo.',
+      'Sobrecarga total de bobinas con ataques alternos de alta cadencia.',
+    ],
+    counterHint: 'Aprovecha las plataformas y captura celdas EMP apenas carguen en el centro.',
+    rewardCoins: 2950,
+    rewardGems: 42,
+    primaryColor: '#facc15',
+    secondaryColor: '#6366f1',
+  },
+  {
     id: 'the_sentinel',
     name: 'THE SENTINEL',
-    title: 'Guardián Cuántico Supremo',
+    title: '07 · Guardián Cuántico de Defensa',
     cityId: 'future',
-    description: 'La máquina definitiva del Future District. Despeja la arena cuántica para desencadenar 4 fases de láseres, destrucción de pista y ondas.',
+    description: 'La máquina de defensa suprema de Future District. Despeja la arena cuántica para desencadenar 4 fases de láseres y ondas.',
     hpSegments: 4,
     phases: [
       'Fase 1: Matriz Cuántica',
-      'Fase 2: Destrucción de Segmentos',
+      'Fase 2: Ruptura de Segmentos',
       'Fase 3: Tormenta de Proyectiles',
       'Fase 4: Protocolo Apocalipsis',
     ],
     phaseDetails: [
       'Proyectiles cuánticos alternos de alta precisión.',
-      'Colapsa carriles señalizados forzando parkour continuo.',
-      'Láseres orbitales + ondas expansivas escalonadas.',
+      'Láseres dobles que obligan a cambiar de carril constantemente.',
+      'Láseres orbitales combinados con ondas expansivas.',
       'Todas las mecánicas en secuencia frenética hasta romper su núcleo.',
     ],
     counterHint: 'Encadena saltos dobles y Slow-Mo para capturar las 4 celdas EMP de su escudo.',
@@ -598,6 +677,31 @@ export const BOSSES: BossDef[] = [
     rewardGems: 50,
     primaryColor: '#e879f9',
     secondaryColor: '#60a5fa',
+  },
+  {
+    id: 'omega_core',
+    name: 'OMEGA CORE',
+    title: '08 · Reactor Singularidad Final',
+    cityId: 'future',
+    description: 'El jefe final absoluto de METRO RUSH: un reactor hiperdimensional con triple anillo giroscópico que exige dominio total.',
+    hpSegments: 4,
+    phases: [
+      'Fase 1: Ignición Dimensional',
+      'Fase 2: Colapso Orbital',
+      'Fase 3: Resonancia Crítica',
+      'Fase 4: Singularidad Omega',
+    ],
+    phaseDetails: [
+      'Haces dimensionales telegrafiados con ráfagas rápidas.',
+      'Barrido doble de carril más pulso expansivo.',
+      'Lluvia sincronizada de proyectiles cuánticos y láseres.',
+      'Fusión total de láseres, ondas sísmicas y ráfagas continuas.',
+    ],
+    counterHint: 'Reserva tu Habilidad [F] y Slow-Mo [C] para sobrevivir a la Fase 4 y capturar el último EMP.',
+    rewardCoins: 4500,
+    rewardGems: 75,
+    primaryColor: '#f43f5e',
+    secondaryColor: '#fbbf24',
   },
 ];
 

@@ -70,10 +70,13 @@ export type EnemyClass =
 
 export type BossId =
   | 'titan_drone'
-  | 'overseer'
   | 'iron_hunter'
+  | 'overseer'
   | 'neon_wraith'
-  | 'the_sentinel';
+  | 'cryo_leviathan'
+  | 'volt_archon'
+  | 'the_sentinel'
+  | 'omega_core';
 
 export type DynamicEventType =
   | 'power_outage'
@@ -217,6 +220,7 @@ export interface UpgradeRecord {
 export interface MatchRecord {
   id: string;
   date: string;
+  timestampMs?: number;
   mode: GameMode;
   districtId: DistrictId;
   characterId: string;
@@ -579,6 +583,16 @@ export interface BestRunRecord {
 
 export type PlayerModelStyle = 'procedural' | 'xbot' | 'robot' | 'soldier' | 'custom';
 
+export type NetworkConnectionMode = 'lan' | 'internet_ws' | 'internet_webrtc';
+export type ConnectionQuality = 'excellent' | 'good' | 'fair' | 'poor';
+
+export interface RoomRulesConfig {
+  allowVehicles: boolean;
+  allowAbilities: boolean;
+  difficulty: DifficultyLevel;
+  targetDistance: number | null;
+}
+
 export interface MultiplayerPlayerTelemetry {
   userId: string;
   username: string;
@@ -594,6 +608,8 @@ export interface MultiplayerPlayerTelemetry {
   paused: boolean;
   finished: boolean;
   placement?: number;
+  pingMs?: number;
+  validated?: boolean;
 }
 
 export interface MultiplayerRoomPlayer {
@@ -605,12 +621,19 @@ export interface MultiplayerRoomPlayer {
   isHost: boolean;
   paused: boolean;
   finished: boolean;
+  connected?: boolean;
+  reconnecting?: boolean;
+  pingMs?: number;
+  connectionQuality?: ConnectionQuality;
   distance: number;
   score: number;
   placement: number | null;
+  rewardCoins?: number;
+  rewardGems?: number;
 }
 
 export interface MultiplayerRoomState {
+  id?: string;
   code: string;
   name: string;
   hostId: string;
@@ -619,8 +642,109 @@ export interface MultiplayerRoomState {
   mode: GameMode;
   status: 'lobby' | 'racing' | 'finished';
   maxPlayers: number;
+  gameVersion?: string;
+  connectionMode?: NetworkConnectionMode;
+  rules?: RoomRulesConfig;
   startedAtMs: number | null;
   players: MultiplayerRoomPlayer[];
+}
+
+export interface LanInterfaceInfo {
+  name: string;
+  address: string;
+  family: string;
+  internal: boolean;
+  kind?: 'lan' | 'vpn' | 'virtual' | 'loopback';
+  label?: string;
+}
+
+export interface LanHostState {
+  running: boolean;
+  port: number;
+  bindAddress: string;
+  interfaces: LanInterfaceInfo[];
+  roomCode: string | null;
+  playerCount: number;
+  error: string | null;
+}
+
+export interface TunnelState {
+  running: boolean;
+  available: boolean;
+  binaryPath: string | null;
+  publicUrl: string | null;
+  wssUrl: string | null;
+  provider: 'cloudflared' | 'none';
+  error: string | null;
+}
+
+export type InviteStatus =
+  | 'sent'
+  | 'pending'
+  | 'accepted'
+  | 'rejected'
+  | 'room_full'
+  | 'host_offline'
+  | 'room_closed'
+  | 'cancelled';
+
+export interface PersistentInviteRecord {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  toUserId: string;
+  toUsername: string;
+  roomCode: string;
+  districtId: DistrictId;
+  mode: GameMode;
+  targetWsUrl: string;
+  status: InviteStatus;
+  message: string;
+  createdAt: string;
+  updatedAt: string;
+  expiresAtMs: number;
+}
+
+export interface LocalProfileSummary {
+  id: string;
+  name: string;
+  avatarId: string;
+  level: number;
+  coins: number;
+  gems: number;
+  totalRuns: number;
+  bestScore: number;
+  linkedOnlineUserId: string | null;
+  linkedOnlineUsername: string | null;
+  lastLinkedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type ConflictResolutionStrategy = 'keep_local' | 'keep_online' | 'merge';
+
+export interface AccountSyncConflict {
+  localProfileId: string;
+  localName: string;
+  onlineUserId: string;
+  onlineUsername: string;
+  localSummary: {
+    level: number;
+    coins: number;
+    gems: number;
+    totalRuns: number;
+    bestScore: number;
+    unlockedCount: number;
+  };
+  onlineSummary: {
+    level: number;
+    coins: number;
+    gems: number;
+    totalRuns: number;
+    bestScore: number;
+    unlockedCount: number;
+  };
+  hasConflict: boolean;
 }
 
 export interface PlayerSaveData {
@@ -655,6 +779,8 @@ export interface PlayerSaveData {
   weeklyResetAt: number;
   completedEvents: string[];
   defeatedBosses: BossId[];
+  ownedPets?: string[];
+  equippedPetId?: string | null;
   unlockedAchievements: string[];
   storyChapter: number;
   tutorialCompleted: boolean;

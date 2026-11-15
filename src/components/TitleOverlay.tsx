@@ -4,24 +4,31 @@ import {
   Backpack,
   BarChart3,
   Bell,
+  BookOpen,
   Calendar,
   Car,
   Compass,
   FastForward,
   Globe,
   GraduationCap,
+  Infinity as InfinityIcon,
   Info,
   Map as MapIcon,
   Music,
   Play,
+  Power,
   Settings,
   ShoppingBag,
   Shuffle,
   Sun,
+  Swords,
   Target,
+  Timer,
   User,
+  UserCheck,
   Volume2,
   VolumeX,
+  Zap,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
@@ -44,6 +51,7 @@ interface TitleOverlayProps {
   serverOnline: boolean;
   onlineUser: OnlineUser | null;
   mpRoomCode?: string | null;
+  hasSyncConflict?: boolean;
   onSelectMode: (mode: GameMode) => void;
   onSelectDistrict: (districtId: DistrictId) => void;
   onSelectTimeOfDay: (time: TimeOfDay) => void;
@@ -55,6 +63,7 @@ interface TitleOverlayProps {
   onOpenTab: (tab: MenuTab) => void;
   onToggleMute: () => void;
   onToggleLobbyMusic: () => void;
+  onRequestExit: () => void;
 }
 
 const GAME_MODE_IDS: GameMode[] = [
@@ -66,6 +75,47 @@ const GAME_MODE_IDS: GameMode[] = [
   'freerun',
 ];
 
+const MODE_META: Record<
+  GameMode,
+  { Icon: React.ComponentType<{ className?: string }>; accentText: string; activeBorder: string }
+> = {
+  endless: {
+    Icon: InfinityIcon,
+    accentText: 'text-cyan-300',
+    activeBorder: 'bg-cyan-500/20 border-cyan-400 text-white',
+  },
+  story: {
+    Icon: BookOpen,
+    accentText: 'text-fuchsia-300',
+    activeBorder: 'bg-fuchsia-500/20 border-fuchsia-400 text-white',
+  },
+  timetrial: {
+    Icon: Timer,
+    accentText: 'text-amber-300',
+    activeBorder: 'bg-amber-500/20 border-amber-400 text-white',
+  },
+  parkour: {
+    Icon: Zap,
+    accentText: 'text-emerald-300',
+    activeBorder: 'bg-emerald-500/20 border-emerald-400 text-white',
+  },
+  bosschase: {
+    Icon: Swords,
+    accentText: 'text-rose-300',
+    activeBorder: 'bg-rose-500/20 border-rose-400 text-white',
+  },
+  freerun: {
+    Icon: Compass,
+    accentText: 'text-sky-300',
+    activeBorder: 'bg-sky-500/20 border-sky-400 text-white',
+  },
+  tutorial: {
+    Icon: GraduationCap,
+    accentText: 'text-emerald-300',
+    activeBorder: 'bg-emerald-500/20 border-emerald-400 text-white',
+  },
+};
+
 const QUICK_TIMES: TimeOfDay[] = ['dynamic', 'dawn', 'noon', 'dusk', 'night'];
 
 export const TitleOverlay: React.FC<TitleOverlayProps> = ({
@@ -73,6 +123,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   serverOnline,
   onlineUser,
   mpRoomCode,
+  hasSyncConflict,
   onSelectMode,
   onSelectDistrict,
   onSelectTimeOfDay,
@@ -84,6 +135,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   onOpenTab,
   onToggleMute,
   onToggleLobbyMusic,
+  onRequestExit,
 }) => {
   const [selectedStoryChapter, setSelectedStoryChapter] = useState<number>(
     () => Math.min(5, Math.max(1, save.storyChapter || 1)),
@@ -113,19 +165,33 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
 
   return (
     <div className="pointer-events-none fixed inset-0 z-20 flex flex-col justify-between p-4 lg:p-6">
-      {/* Top Bar: Profile + Level/XP + Currencies + Audio/Online/Settings */}
+      {/* Top Bar: Profile + Level/XP + Currencies + Audio/Online/Settings/Exit */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="pointer-events-auto flex flex-wrap items-center gap-3 bg-[#070b17]/95 border border-white/15 rounded-xl px-4 py-2 text-xs">
           <button
-            onClick={() => navClick('online')}
+            onClick={() => navClick('profile')}
+            title="Abrir Perfil de Usuario"
             className="flex items-center gap-2 text-left hover:text-cyan-300 transition-colors cursor-pointer"
           >
+            <UserCheck className="w-4 h-4 text-cyan-400 shrink-0" />
             <span className="font-display font-bold text-white text-sm">
-              {onlineUser ? onlineUser.username : save.playerName}
+              {onlineUser ? onlineUser.displayName || onlineUser.username : save.playerName}
             </span>
             <span className="text-slate-500">·</span>
-            <span className={onlineUser ? 'text-emerald-300 font-semibold' : 'text-slate-400'}>
-              {onlineUser ? 'Cuenta SQLite' : 'Perfil Local'}
+            <span
+              className={
+                hasSyncConflict
+                  ? 'text-amber-300 font-semibold'
+                  : onlineUser
+                    ? 'text-emerald-300 font-semibold'
+                    : 'text-slate-400'
+              }
+            >
+              {hasSyncConflict
+                ? 'Conflicto de Sincronización'
+                : onlineUser
+                  ? 'Cuenta Online'
+                  : 'Perfil Local (Offline)'}
             </span>
           </button>
 
@@ -165,6 +231,14 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
               {totalNotifications} Recompensas
             </button>
           )}
+
+          <button
+            onClick={() => navClick('profile')}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#070b17]/95 border border-cyan-400/40 text-xs font-semibold text-cyan-200 hover:border-cyan-300 cursor-pointer whitespace-nowrap"
+          >
+            <UserCheck className="w-4 h-4 text-cyan-400" />
+            Perfil
+          </button>
 
           <button
             onClick={() => navClick('online')}
@@ -228,12 +302,23 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
             <Info className="w-4 h-4 text-slate-300" />
             {t(lang, 'nav.credits')}
           </button>
+
+          <button
+            onClick={() => {
+              audioEngine.playUiClick();
+              onRequestExit();
+            }}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-[#160b14]/95 border border-rose-400/55 text-xs font-bold text-rose-200 hover:bg-rose-500/20 cursor-pointer whitespace-nowrap"
+          >
+            <Power className="w-4 h-4 text-rose-400" />
+            Salir del Juego
+          </button>
         </div>
       </div>
 
-      {/* Middle Row: Left Launch Console (leaves central 3D hero viewport clear!) + Right Lobby Intel */}
+      {/* Middle Row: Left Narrow Corner Launch Console (leaves central 3D hero & fox completely unobstructed!) + Right Lobby Intel */}
       <div className="my-auto flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="max-w-[475px] pointer-events-auto">
+        <div className="max-w-[390px] w-full pointer-events-auto">
           <svg
             viewBox="0 0 460 112"
             className="w-full max-w-[375px] mb-2"
@@ -305,12 +390,13 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
               </button>
             </div>
 
-            {/* Mode Selector */}
-            <div>
-              <div className="grid grid-cols-3 gap-1.5">
+            {/* Vertical Corner Mode Selector with Icons & Accents */}
+            <div className="space-y-1.5">
+              <div className="grid grid-cols-2 gap-1.5">
                 {GAME_MODE_IDS.map((mId) => {
                   const active = save.selectedMode === mId;
                   const mLabel = getModeLabel(lang, mId);
+                  const { Icon, accentText, activeBorder } = MODE_META[mId];
                   return (
                     <button
                       key={mId}
@@ -318,20 +404,21 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
                         audioEngine.playUiClick();
                         onSelectMode(mId);
                       }}
-                      className={`px-2.5 py-1.5 rounded-lg text-left border transition-colors cursor-pointer ${
+                      className={`px-2.5 py-2 rounded-lg text-left border flex items-center gap-2 transition-colors cursor-pointer ${
                         active
-                          ? 'bg-cyan-500/20 border-cyan-400 text-white'
+                          ? activeBorder
                           : 'bg-[#0c1324] border-white/10 text-slate-300 hover:border-white/25'
                       }`}
                     >
-                      <div className="text-[11px] font-bold whitespace-nowrap truncate">
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${accentText}`} />
+                      <span className="text-[11px] font-bold whitespace-nowrap truncate">
                         {mLabel.label}
-                      </div>
+                      </span>
                     </button>
                   );
                 })}
               </div>
-              <div className="mt-1.5 text-xs text-slate-400">
+              <div className="text-xs text-slate-400">
                 {getModeLabel(lang, save.selectedMode).desc}
               </div>
             </div>
@@ -577,6 +664,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
               ['inventory', t(lang, 'nav.inventory'), Backpack, 0],
               ['stats', t(lang, 'nav.stats'), BarChart3, 0],
               ['online', t(lang, 'nav.online'), Globe, 0],
+              ['profile', 'Perfil de Usuario', UserCheck, 0],
             ] as [MenuTab, string, React.ComponentType<{ className?: string }>, number][]
           ).map(([tab, label, Icon, badgeCount]) => (
             <button
@@ -593,10 +681,20 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
               )}
             </button>
           ))}
+          <button
+            onClick={() => {
+              audioEngine.playUiClick();
+              onRequestExit();
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold text-rose-200 bg-rose-500/15 border border-rose-400/40 hover:bg-rose-500/25 transition-colors cursor-pointer whitespace-nowrap shrink-0"
+          >
+            <Power className="w-3.5 h-3.5 text-rose-400" />
+            <span>Salir del Juego</span>
+          </button>
         </div>
 
         <div className="text-[11px] text-slate-300 font-mono-num tracking-tight text-center bg-[#06080f]/92 px-4 py-1 rounded">
-          WASD Mover · Espacio Doble Salto · S Deslizar · Shift Impulso · C Slow-Mo · E Gancho · F Habilidad · Esc Pausa
+          WASD Mover · Espacio Doble Salto · S Deslizar · Shift Impulso · C Slow-Mo · E Gancho · F Habilidad · Esc Pausa / Salir
         </div>
       </div>
     </div>

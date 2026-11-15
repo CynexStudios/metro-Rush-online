@@ -59,3 +59,17 @@
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(56, 189, 248, 0.65);
 }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-menu-enter {
+    animation: none !important;
+  }
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+}
+

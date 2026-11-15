@@ -3,29 +3,61 @@ import crypto from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import express, { NextFunction, Request, Response } from 'express';
-import { WebSocket, WebSocketServer } from 'ws';
+import { WebSocketServer } from 'ws';
 import {
   addUserFriend,
+  backupDatabaseSnapshot,
+  changeUserPassword,
   cleanResetTestRankingsAndStats,
+  closeInvitationsForRoomCode,
+  closeSqlite,
+  createAuthSession,
+  createLocalProfile,
+  createOrDedupeRoomInvitation,
   createUserAccount,
+  deleteLocalProfile,
   findUserById,
   findUserByIdentifier,
   getDatabaseDiagnostics,
+  getIdempotentTx,
+  getInvitationById,
+  getLocalProfile,
   getPlayerSaveJson,
   getUserRunHistory,
   hashSecret,
+  initSqlite,
   insertVerifiedRun,
   isRunIdUsed,
+  linkLocalProfileToOnline,
+  listInvitationsForUser,
+  listLocalProfiles,
+  listUserAuthSessions,
   queryRankings,
-  recordMultiplayerMatch,
+  recordIdempotentTx,
   recoverUserPassword,
+  revokeAllUserAuthSessions,
+  revokeAuthSessionByRefreshToken,
+  searchUsersByQuery,
   SqliteRunRow,
   SqliteUserRow,
+  touchUserLastSeen,
+  updateInvitationStatus,
+  updateLocalProfileSave,
   updateUserAvatar,
+  updateUserProfileDetails,
   upsertPlayerSaveJson,
+  verifyAndRotateRefreshSession,
 } from './src/db/sqlite';
+import { GAME_VERSION } from './src/game/version';
+import {
+  AuthoritativeRoomManager,
+  getLanHostStatus,
+  listLocalNetworkInterfaces,
+  startLanMatchHostServer,
+  stopLanMatchHostServer,
+} from './src/net/matchHost';
 
-const PORT = Number(process.env.PORT || 3000);
+const DEFAULT_PORT = Number(process.env.PORT || 3000);
 const IS_PROD = process.env.NODE_ENV === 'production';
 const SESSION_SECRET =
   process.env.SESSION_SECRET ||
@@ -103,13 +135,28 @@ function getAuthUser(req: Request): SqliteUserRow | null {
   return findUserById(payload.uid);
 }
 
+const ACCESS_TOKEN_TTL_MS = 4 * 60 * 60 * 1000; // 4h access token paired with 30d rotating SQLite refresh session
+
+const ORDERED_BOSS_IDS = [
+  'titan_drone',
+  'iron_hunter',
+  'overseer',
+  'neon_wraith',
+  'cryo_leviathan',
+  'volt_archon',
+  'the_sentinel',
+  'omega_core',
+] as const;
+
 function sanitizeUser(u: SqliteUserRow) {
   return {
     id: u.id,
     username: u.username,
+    displayName: u.displayName || u.username,
     email: u.email,
     avatarId: u.avatarId,
     createdAt: u.createdAt,
+    lastSeenAt: u.lastSeenAt,
     friends: u.friends,
     totalRuns: u.totalRuns,
     bestScore: u.bestScore,
@@ -117,146 +164,50 @@ function sanitizeUser(u: SqliteUserRow) {
   };
 }
 
-/* ---------------- REAL-TIME WEBSOCKET MULTIPLAYER ROOMS ---------------- */
-
-interface RoomPeer {
-  ws: WebSocket;
-  userId: string;
-  username: string;
-  avatarId: string;
-  characterId: string;
-  ready: boolean;
-  isHost: boolean;
-  paused: boolean;
-  finished: boolean;
-  x: number;
-  y: number;
-  z: number;
-  lane: number;
-  distance: number;
-  score: number;
-  action: string;
-  placement: number | null;
+export interface RunningAppServer {
+  port: number;
+  close: () => Promise<void>;
 }
 
-interface ServerRoom {
-  code: string;
-  name: string;
-  hostId: string;
-  isPublic: boolean;
-  districtId: string;
-  mode: string;
-  status: 'lobby' | 'racing' | 'finished';
-  maxPlayers: number;
-  startedAtMs: number | null;
-  finishCounter: number;
-  peers: Map<string, RoomPeer>;
-}
-
-const activeRooms = new Map<string, ServerRoom>();
-const onlineSocketsByUser = new Map<string, Set<WebSocket>>();
-
-function generateRoomCode(): string {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let out = '';
-  for (let i = 0; i < 6; i++) {
-    out += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return activeRooms.has(out) ? generateRoomCode() : out;
-}
-
-function serializeRoom(room: ServerRoom) {
-  return {
-    code: room.code,
-    name: room.name,
-    hostId: room.hostId,
-    isPublic: room.isPublic,
-    districtId: room.districtId,
-    mode: room.mode,
-    status: room.status,
-    maxPlayers: room.maxPlayers,
-    startedAtMs: room.startedAtMs,
-    players: Array.from(room.peers.values()).map((p) => ({
-      userId: p.userId,
-      username: p.username,
-      avatarId: p.avatarId,
-      characterId: p.characterId,
-      ready: p.ready,
-      isHost: p.isHost,
-      paused: p.paused,
-      finished: p.finished,
-      distance: Math.floor(p.distance),
-      score: Math.floor(p.score),
-      placement: p.placement,
-    })),
-  };
-}
-
-function sendWs(ws: WebSocket, event: string, payload: unknown): void {
-  if (ws.readyState === WebSocket.OPEN) {
-    ws.send(JSON.stringify({ event, payload }));
-  }
-}
-
-function broadcastRoom(room: ServerRoom, event: string, payload: unknown): void {
-  for (const peer of room.peers.values()) {
-    sendWs(peer.ws, event, payload);
-  }
-}
-
-function broadcastRoomTelemetry(room: ServerRoom): void {
-  const players = Array.from(room.peers.values()).map((p) => ({
-    userId: p.userId,
-    username: p.username,
-    avatarId: p.avatarId,
-    characterId: p.characterId,
-    x: p.x,
-    y: p.y,
-    z: p.z,
-    lane: p.lane,
-    distance: Math.floor(p.distance),
-    score: Math.floor(p.score),
-    action: p.action,
-    paused: p.paused,
-    finished: p.finished,
-    placement: p.placement ?? undefined,
-  }));
-  broadcastRoom(room, 'room:telemetry', { code: room.code, players });
-}
-
-function leaveCurrentRoom(ws: WebSocket, peerUserId: string, currentCode: string | null): void {
-  if (!currentCode) return;
-  const room = activeRooms.get(currentCode);
-  if (!room) return;
-  const existing = room.peers.get(peerUserId);
-  if (existing && existing.ws === ws) {
-    room.peers.delete(peerUserId);
-  }
-  if (room.peers.size === 0) {
-    activeRooms.delete(currentCode);
-    return;
-  }
-  if (room.hostId === peerUserId) {
-    const nextHost = room.peers.values().next().value as RoomPeer | undefined;
-    if (nextHost) {
-      nextHost.isHost = true;
-      room.hostId = nextHost.userId;
-    }
-  }
-  broadcastRoom(room, 'room:state', serializeRoom(room));
-}
-
-async function bootstrap() {
+export async function startAppServer(options?: {
+  port?: number;
+  host?: string;
+  distDir?: string;
+  forceProdStatic?: boolean;
+}): Promise<RunningAppServer> {
+  const dbEngine = await initSqlite();
   const app = express();
-  app.use(express.json({ limit: '512kb' }));
+  app.use(express.json({ limit: '1mb' }));
+
+  // Allow cross-origin calls when Electron renderer talks to an external central server
+  app.use((req, res, next) => {
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    if (req.method === 'OPTIONS') {
+      res.status(204).end();
+      return;
+    }
+    next();
+  });
+
+  const roomManager = new AuthoritativeRoomManager();
+  roomManager.onRoomClosed = (roomCode, reason) => {
+    closeInvitationsForRoomCode(roomCode, reason);
+  };
+
+  /* ---------------- HEALTH & DIAGNOSTICS ---------------- */
 
   app.get('/api/health', (_req, res) => {
     const dbStats = getDatabaseDiagnostics();
     res.json({
       ok: true,
-      mode: IS_PROD ? 'production' : 'development',
-      dbEngine: 'sqlite',
+      mode: IS_PROD || options?.forceProdStatic ? 'production' : 'development',
+      dbEngine,
+      gameVersion: GAME_VERSION,
+      schemaVersion: dbStats.schemaVersion,
       users: dbStats.userCount,
+      localProfiles: dbStats.localProfileCount,
       runs: dbStats.runCount,
     });
   });
@@ -268,9 +219,216 @@ async function bootstrap() {
       ...info,
       authenticatedAs: auth ? auth.username : null,
       persistenceNote:
-        'Base de datos SQLite local persistente guardada fuera de la carpeta del proyecto.',
+        'Base de datos SQLite persistente ubicada en el directorio de datos del usuario (sobrevive reinicios y actualizaciones).',
     });
   });
+
+  /* ---------------- ICE / STUN / TURN DISCOVERY ---------------- */
+
+  app.get('/api/rtc/ice-config', (_req, res) => {
+    const iceServers: Array<{
+      urls: string | string[];
+      username?: string;
+      credential?: string;
+    }> = [
+      { urls: 'stun:stun.l.google.com:19302' },
+      { urls: 'stun:stun1.l.google.com:19302' },
+    ];
+    let hasTurn = false;
+    if (process.env.METRO_RUSH_TURN_URL) {
+      hasTurn = true;
+      iceServers.push({
+        urls: process.env.METRO_RUSH_TURN_URL,
+        username: process.env.METRO_RUSH_TURN_USER || undefined,
+        credential: process.env.METRO_RUSH_TURN_CREDENTIAL || undefined,
+      });
+    }
+    res.json({
+      iceServers,
+      hasTurn,
+      turnInfo: hasTurn
+        ? 'Servidor TURN activo para retransmisión tras NAT estricto.'
+        : 'Usando STUN público gratuito. Si ambos routers bloquean P2P directo, usa un túnel (playit.gg) o configura un servidor TURN.',
+    });
+  });
+
+  /* ---------------- LAN HOST MANAGEMENT ---------------- */
+
+  app.get('/api/lan/status', (_req, res) => {
+    res.json({
+      ...getLanHostStatus(),
+      interfaces: listLocalNetworkInterfaces(),
+      gameVersion: GAME_VERSION,
+    });
+  });
+
+  app.post('/api/lan/start', async (req, res) => {
+    const bindAddress = String(req.body?.bindAddress || '0.0.0.0');
+    const port = Number(req.body?.port || 3077);
+    const result = await startLanMatchHostServer({ bindAddress, port });
+    if (!result.ok) {
+      res.status(400).json({ ok: false, error: result.error, state: result.state });
+      return;
+    }
+    res.json({ ok: true, state: result.state });
+  });
+
+  app.post('/api/lan/stop', async (_req, res) => {
+    const state = await stopLanMatchHostServer();
+    res.json({ ok: true, state });
+  });
+
+  /* ---------------- LOCAL PROFILES (OFFLINE-FIRST IN SQLITE) ---------------- */
+
+  app.get('/api/local-profiles', (_req, res) => {
+    const rows = listLocalProfiles();
+    const summaries = rows.map((r) => {
+      let parsed: Record<string, unknown> = {};
+      try {
+        parsed = JSON.parse(r.saveJson) as Record<string, unknown>;
+      } catch {
+        parsed = {};
+      }
+      const stats = (parsed.stats as Record<string, unknown> | undefined) ?? {};
+      return {
+        id: r.id,
+        name: r.name,
+        avatarId: r.avatarId,
+        level: Number(parsed.level ?? 1),
+        coins: Number(parsed.coins ?? 0),
+        gems: Number(parsed.gems ?? 0),
+        totalRuns: Number(stats.totalRuns ?? 0),
+        bestScore: Number(stats.bestScore ?? 0),
+        linkedOnlineUserId: r.linkedOnlineUserId,
+        linkedOnlineUsername: r.linkedOnlineUsername,
+        lastLinkedAt: r.lastLinkedAt,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    });
+    res.json({ profiles: summaries });
+  });
+
+  app.get('/api/local-profiles/:id', (req, res) => {
+    const profile = getLocalProfile(String(req.params.id));
+    if (!profile) {
+      res.status(404).json({ error: 'Perfil local no encontrado.' });
+      return;
+    }
+    try {
+      res.json({
+        profile: {
+          ...profile,
+          save: JSON.parse(profile.saveJson),
+        },
+      });
+    } catch {
+      res.status(500).json({ error: 'El guardado del perfil local está corrupto.' });
+    }
+  });
+
+  app.post('/api/local-profiles', (req, res) => {
+    const name = String(req.body?.name ?? '').trim();
+    const avatarId = String(req.body?.avatarId ?? 'kai').slice(0, 24);
+    const save = req.body?.save;
+    if (name.length < 2 || name.length > 22) {
+      res.status(400).json({ error: 'El nombre local debe tener entre 2 y 22 caracteres.' });
+      return;
+    }
+    if (!save || typeof save !== 'object') {
+      res.status(400).json({ error: 'Datos de guardado iniciales inválidos.' });
+      return;
+    }
+    const created = createLocalProfile({
+      id: req.body?.id ? String(req.body.id) : undefined,
+      name,
+      avatarId,
+      saveObj: save,
+    });
+    res.status(201).json({
+      profile: {
+        ...created,
+        save: JSON.parse(created.saveJson),
+      },
+    });
+  });
+
+  app.put('/api/local-profiles/:id', (req, res) => {
+    const id = String(req.params.id);
+    const save = req.body?.save;
+    if (!save || typeof save !== 'object') {
+      res.status(400).json({ error: 'Datos de guardado inválidos.' });
+      return;
+    }
+    const updated = updateLocalProfileSave({
+      id,
+      saveObj: save,
+      name: req.body?.name ? String(req.body.name) : undefined,
+      avatarId: req.body?.avatarId ? String(req.body.avatarId) : undefined,
+    });
+    if (!updated) {
+      res.status(404).json({ error: 'Perfil local no encontrado.' });
+      return;
+    }
+    res.json({ ok: true, updatedAt: updated.updatedAt });
+  });
+
+  app.delete('/api/local-profiles/:id', (req, res) => {
+    const id = String(req.params.id);
+    backupDatabaseSnapshot(`pre-delete-local-${id.slice(0, 8)}`);
+    const removed = deleteLocalProfile(id);
+    if (!removed) {
+      res.status(404).json({ error: 'Perfil local no encontrado.' });
+      return;
+    }
+    res.json({ ok: true });
+  });
+
+  /* ---------------- ACCOUNT LINKING & CONFLICT RESOLUTION ---------------- */
+
+  app.post('/api/local-profiles/link', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión en una cuenta online primero.' });
+      return;
+    }
+    const localProfileId = String(req.body?.localProfileId ?? '');
+    const strategy = String(req.body?.strategy ?? 'merge');
+    const txId = String(req.body?.txId ?? '');
+    const mergedSave = req.body?.mergedSave;
+    const summary = req.body?.summary ?? {};
+
+    if (!localProfileId || !mergedSave || typeof mergedSave !== 'object') {
+      res.status(400).json({ error: 'Faltan datos para vincular el perfil.' });
+      return;
+    }
+    if (txId) {
+      const existing = getIdempotentTx(txId);
+      if (existing.found) {
+        res.json({ ok: true, deduplicated: true, result: existing.result });
+        return;
+      }
+    }
+
+    backupDatabaseSnapshot('pre-account-link');
+    const resLink = linkLocalProfileToOnline({
+      localProfileId,
+      onlineUserId: user.id,
+      onlineUsername: user.username,
+      strategy,
+      mergedSaveObj: mergedSave,
+      summary,
+    });
+    const out = {
+      ok: true,
+      linkedAt: resLink.linkedAt,
+      linkedOnlineUsername: user.username,
+    };
+    if (txId) recordIdempotentTx(txId, 'account_link', out);
+    res.json(out);
+  });
+
+  /* ---------------- ONLINE ACCOUNTS (AUTH + SYNC + BACKUP) ---------------- */
 
   app.post('/api/auth/register', rateLimit(20), (req, res) => {
     const username = String(req.body?.username ?? '').trim();
@@ -286,21 +444,15 @@ async function bootstrap() {
       return;
     }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      res.status(400).json({
-        error: 'Introduce un correo electrónico válido.',
-      });
+      res.status(400).json({ error: 'Introduce un correo electrónico válido.' });
       return;
     }
     if (password.length < 6) {
-      res.status(400).json({
-        error: 'La contraseña debe tener al menos 6 caracteres.',
-      });
+      res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres.' });
       return;
     }
     if (password !== confirmPassword) {
-      res.status(400).json({
-        error: 'Las contraseñas no coinciden.',
-      });
+      res.status(400).json({ error: 'Las contraseñas no coinciden.' });
       return;
     }
     if (findUserByIdentifier(username)) {
@@ -322,10 +474,17 @@ async function bootstrap() {
     const token = signToken({
       uid: user.id,
       username: user.username,
-      exp: Date.now() + 14 * 86400_000,
+      exp: Date.now() + ACCESS_TOKEN_TTL_MS,
+    });
+    const session = createAuthSession({
+      userId: user.id,
+      deviceLabel: String(req.headers['user-agent'] || 'Metro Rush Client').slice(0, 60),
     });
     res.status(201).json({
       token,
+      refreshToken: session.refreshToken,
+      sessionId: session.sessionId,
+      expiresAtMs: session.expiresAtMs,
       user: sanitizeUser(user),
       recoveryCode,
     });
@@ -351,9 +510,119 @@ async function bootstrap() {
     const token = signToken({
       uid: user.id,
       username: user.username,
-      exp: Date.now() + 14 * 86400_000,
+      exp: Date.now() + ACCESS_TOKEN_TTL_MS,
     });
-    res.json({ token, user: sanitizeUser(user) });
+    const session = createAuthSession({
+      userId: user.id,
+      deviceLabel: String(req.body?.deviceLabel || req.headers['user-agent'] || 'Metro Rush Desktop').slice(0, 60),
+    });
+    res.json({
+      token,
+      refreshToken: session.refreshToken,
+      sessionId: session.sessionId,
+      expiresAtMs: session.expiresAtMs,
+      user: sanitizeUser(user),
+    });
+  });
+
+  app.post('/api/auth/refresh', rateLimit(40), (req, res) => {
+    const refreshToken = String(req.body?.refreshToken ?? '').trim();
+    if (!refreshToken) {
+      res.status(400).json({ error: 'Refresh token requerido.' });
+      return;
+    }
+    const rot = verifyAndRotateRefreshSession(refreshToken);
+    if (!rot.ok || !rot.user || !rot.newRefreshToken) {
+      res.status(401).json({ error: rot.error || 'Sesión expirada o revocada.' });
+      return;
+    }
+    const token = signToken({
+      uid: rot.user.id,
+      username: rot.user.username,
+      exp: Date.now() + ACCESS_TOKEN_TTL_MS,
+    });
+    res.json({
+      token,
+      refreshToken: rot.newRefreshToken,
+      sessionId: rot.sessionId,
+      expiresAtMs: rot.expiresAtMs,
+      user: sanitizeUser(rot.user),
+    });
+  });
+
+  app.post('/api/auth/logout', (req, res) => {
+    const refreshToken = String(req.body?.refreshToken ?? '').trim();
+    if (refreshToken) {
+      revokeAuthSessionByRefreshToken(refreshToken);
+    }
+    res.json({ ok: true });
+  });
+
+  app.post('/api/auth/logout-all', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión primero.' });
+      return;
+    }
+    const revoked = revokeAllUserAuthSessions(user.id);
+    res.json({ ok: true, revokedCount: revoked });
+  });
+
+  app.get('/api/auth/sessions', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Sesión no válida.' });
+      return;
+    }
+    res.json({ sessions: listUserAuthSessions(user.id) });
+  });
+
+  app.post('/api/auth/change-password', rateLimit(15), (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión primero.' });
+      return;
+    }
+    const currentPassword = String(req.body?.currentPassword ?? '');
+    const newPassword = String(req.body?.newPassword ?? '');
+    const result = changeUserPassword({
+      userId: user.id,
+      currentPassword,
+      newPassword,
+    });
+    if (!result.ok) {
+      res.status(400).json({ error: result.error });
+      return;
+    }
+    const session = createAuthSession({
+      userId: user.id,
+      deviceLabel: 'Sesión actual (post cambio de clave)',
+    });
+    const token = signToken({
+      uid: user.id,
+      username: user.username,
+      exp: Date.now() + ACCESS_TOKEN_TTL_MS,
+    });
+    res.json({
+      ok: true,
+      token,
+      refreshToken: session.refreshToken,
+      message: 'Contraseña actualizada y sesiones anteriores cerradas por seguridad.',
+    });
+  });
+
+  app.post('/api/auth/profile', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión primero.' });
+      return;
+    }
+    const displayName =
+      typeof req.body?.displayName === 'string' ? req.body.displayName : undefined;
+    const avatarId =
+      typeof req.body?.avatarId === 'string' ? req.body.avatarId : undefined;
+    const updated = updateUserProfileDetails(user.id, { displayName, avatarId });
+    res.json({ user: updated ? sanitizeUser(updated) : sanitizeUser(user) });
   });
 
   app.post('/api/auth/recover', rateLimit(15), (req, res) => {
@@ -378,6 +647,7 @@ async function bootstrap() {
       res.status(401).json({ error: 'Sesión no válida.' });
       return;
     }
+    touchUserLastSeen(user.id);
     const history = getUserRunHistory(user.id, 25);
     const saveRecord = getPlayerSaveJson(user.id);
     res.json({
@@ -416,11 +686,20 @@ async function bootstrap() {
       return;
     }
     const save = req.body?.save;
+    const txId = req.body?.txId ? String(req.body.txId) : '';
     if (!save || typeof save !== 'object') {
       res.status(400).json({ error: 'Datos de guardado inválidos.' });
       return;
     }
+    if (txId) {
+      const existing = getIdempotentTx(txId);
+      if (existing.found) {
+        res.json({ ok: true, deduplicated: true, updatedAt: new Date().toISOString() });
+        return;
+      }
+    }
     const updatedAt = upsertPlayerSaveJson(user.id, save);
+    if (txId) recordIdempotentTx(txId, 'profile_sync', { updatedAt });
     res.json({ ok: true, updatedAt });
   });
 
@@ -433,7 +712,8 @@ async function bootstrap() {
     const saveRow = getPlayerSaveJson(user.id);
     const history = getUserRunHistory(user.id, 100);
     const payload = {
-      format: 'metro-rush-sqlite-backup-v1',
+      format: 'metro-rush-sqlite-backup-v2',
+      gameVersion: GAME_VERSION,
       exportedAt: new Date().toISOString(),
       account: sanitizeUser(user),
       save: saveRow.saveJson ? JSON.parse(saveRow.saveJson) : null,
@@ -444,6 +724,11 @@ async function bootstrap() {
       `attachment; filename="metro-rush-backup-${user.username}.json"`,
     );
     res.json(payload);
+  });
+
+  app.post('/api/db/snapshot', (_req, res) => {
+    const dest = backupDatabaseSnapshot('manual');
+    res.json({ ok: true, backupFile: path.basename(dest) });
   });
 
   app.post('/api/db/reset-test', rateLimit(10), (req, res) => {
@@ -481,6 +766,217 @@ async function bootstrap() {
     }
     res.json({ user: sanitizeUser(result.user) });
   });
+
+  /* ---------------- USER SEARCH & PERSISTENT INVITATIONS ---------------- */
+
+  app.get('/api/users/search', rateLimit(60), (req, res) => {
+    const q = String(req.query.q ?? '').trim();
+    const authUser = getAuthUser(req);
+    const found = searchUsersByQuery(q, 20)
+      .filter((u) => !authUser || u.id !== authUser.id)
+      .map((u) => ({
+        id: u.id,
+        username: u.username,
+        displayName: u.displayName || u.username,
+        avatarId: u.avatarId,
+        totalRuns: u.totalRuns,
+        bestScore: u.bestScore,
+        bestDistance: u.bestDistance,
+        lastSeenAt: u.lastSeenAt,
+        isOnline: roomManager.isUserOnline(u.id),
+      }));
+
+    // Also include connected guests/LAN peers if matching query and not already listed
+    const seenIds = new Set(found.map((x) => x.id));
+    for (const peerProf of roomManager.onlineUserProfiles.values()) {
+      if (authUser && peerProf.id === authUser.id) continue;
+      if (seenIds.has(peerProf.id)) continue;
+      if (!q || peerProf.username.toLowerCase().includes(q.toLowerCase())) {
+        found.push({
+          id: peerProf.id,
+          username: peerProf.username,
+          displayName: peerProf.username,
+          avatarId: 'kai',
+          totalRuns: 0,
+          bestScore: 0,
+          bestDistance: 0,
+          lastSeenAt: new Date().toISOString(),
+          isOnline: true,
+        });
+      }
+    }
+
+    res.json({ users: found });
+  });
+
+  app.get('/api/invites', (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión online para gestionar invitaciones.' });
+      return;
+    }
+    const { incoming, outgoing } = listInvitationsForUser(user.id);
+    // Sync active rooms status for invites created on this server instance
+    const syncRoomStatus = (inv: ReturnType<typeof getInvitationById>) => {
+      if (!inv) return inv;
+      if (inv.status === 'sent' || inv.status === 'pending') {
+        const room = roomManager.activeRooms.get(inv.roomCode);
+        if (room && room.peers.size >= room.maxPlayers) {
+          return updateInvitationStatus(inv.id, 'room_full') ?? inv;
+        }
+      }
+      return inv;
+    };
+    res.json({
+      incoming: incoming.map(syncRoomStatus),
+      outgoing: outgoing.map(syncRoomStatus),
+    });
+  });
+
+  app.post('/api/invites', rateLimit(30), (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Inicia sesión online para enviar invitaciones.' });
+      return;
+    }
+    const targetUserId = String(req.body?.toUserId ?? '').trim();
+    const targetUsername = String(req.body?.toUsername ?? '').trim();
+    const roomCode = String(req.body?.roomCode ?? '').trim().toUpperCase();
+    const districtId = String(req.body?.districtId ?? 'downtown');
+    const mode = String(req.body?.mode ?? 'endless');
+    const targetWsUrl = String(req.body?.targetWsUrl ?? '').trim();
+    const message = String(req.body?.message ?? '').trim().slice(0, 140);
+
+    if (!roomCode || roomCode.length < 4) {
+      res.status(400).json({ error: 'Debes crear o estar dentro de una sala antes de invitar.' });
+      return;
+    }
+
+    const target =
+      (targetUserId ? findUserById(targetUserId) : null) ||
+      (targetUsername ? findUserByIdentifier(targetUsername) : null);
+
+    if (!target) {
+      res.status(404).json({
+        error: `El usuario "${targetUsername || targetUserId}" no existe en este servidor online.`,
+      });
+      return;
+    }
+    if (target.id === user.id) {
+      res.status(400).json({ error: 'No puedes enviarte una invitación a ti mismo.' });
+      return;
+    }
+
+    const activeRoom = roomManager.activeRooms.get(roomCode);
+    if (activeRoom && activeRoom.peers.size >= activeRoom.maxPlayers) {
+      res.status(409).json({ error: 'La sala está llena; no se pueden invitar más jugadores.' });
+      return;
+    }
+
+    const targetOnline = roomManager.isUserOnline(target.id);
+    const { invite, deduplicated } = createOrDedupeRoomInvitation({
+      fromUserId: user.id,
+      fromUsername: user.username,
+      toUserId: target.id,
+      toUsername: target.username,
+      roomCode,
+      districtId,
+      mode,
+      targetWsUrl,
+      status: targetOnline ? 'pending' : 'sent',
+      message,
+    });
+
+    if (targetOnline) {
+      roomManager.sendToUser(target.id, 'room:invited', {
+        inviteId: invite.id,
+        code: invite.roomCode,
+        fromUsername: user.username,
+        districtId: invite.districtId,
+        mode: invite.mode,
+        targetWsUrl: invite.targetWsUrl,
+      });
+    }
+
+    res.status(deduplicated ? 200 : 201).json({
+      ok: true,
+      invite,
+      deduplicated,
+      deliveredRealtime: targetOnline,
+      message: targetOnline
+        ? `Invitación entregada en tiempo real a ${target.username}.`
+        : `Invitación guardada para ${target.username} (se mostrará al conectarse).`,
+    });
+  });
+
+  app.post('/api/invites/:id/respond', rateLimit(30), (req, res) => {
+    const user = getAuthUser(req);
+    if (!user) {
+      res.status(401).json({ error: 'Sesión requerida.' });
+      return;
+    }
+    const inv = getInvitationById(String(req.params.id));
+    if (!inv) {
+      res.status(404).json({ error: 'Invitación no encontrada.' });
+      return;
+    }
+    const action = String(req.body?.action ?? '');
+    if (action === 'cancel') {
+      if (inv.fromUserId !== user.id) {
+        res.status(403).json({ error: 'Solo quien envió la invitación puede cancelarla.' });
+        return;
+      }
+      const updated = updateInvitationStatus(inv.id, 'cancelled');
+      res.json({ ok: true, invite: updated });
+      return;
+    }
+
+    if (inv.toUserId !== user.id) {
+      res.status(403).json({ error: 'Esta invitación pertenece a otro jugador.' });
+      return;
+    }
+
+    if (action === 'reject') {
+      const updated = updateInvitationStatus(inv.id, 'rejected');
+      roomManager.sendToUser(inv.fromUserId, 'room:info', {
+        message: `${user.username} rechazó tu invitación a la sala ${inv.roomCode}.`,
+      });
+      res.json({ ok: true, invite: updated });
+      return;
+    }
+
+    if (action === 'accept') {
+      const activeRoom = roomManager.activeRooms.get(inv.roomCode);
+      if (activeRoom && activeRoom.peers.size >= activeRoom.maxPlayers) {
+        const updatedFull = updateInvitationStatus(inv.id, 'room_full');
+        res.status(409).json({
+          ok: false,
+          error: 'La sala ya alcanzó el máximo de jugadores.',
+          invite: updatedFull,
+        });
+        return;
+      }
+      if (!inv.targetWsUrl && !activeRoom) {
+        const updatedClosed = updateInvitationStatus(inv.id, 'room_closed');
+        res.status(410).json({
+          ok: false,
+          error: 'La sala ya fue cerrada o el anfitrión se desconectó.',
+          invite: updatedClosed,
+        });
+        return;
+      }
+      const updated = updateInvitationStatus(inv.id, 'accepted');
+      roomManager.sendToUser(inv.fromUserId, 'room:info', {
+        message: `${user.username} aceptó la invitación a la sala ${inv.roomCode}.`,
+      });
+      res.json({ ok: true, invite: updated });
+      return;
+    }
+
+    res.status(400).json({ error: 'Acción de invitación inválida.' });
+  });
+
+  /* ---------------- VERIFIED RUNS & RANKINGS ---------------- */
 
   app.post('/api/runs/start', rateLimit(60), (req, res) => {
     const user = getAuthUser(req);
@@ -535,7 +1031,7 @@ async function bootstrap() {
     const serverElapsedSec = (Date.now() - session.startedAtMs) / 1000;
     const avgSpeedMps = distance / durationSec;
     const maxTheoreticalScore =
-      distance * 35 + maxCombo * 600 + (bossDefeatedId ? 8000 : 1000);
+      distance * 35 + maxCombo * 600 + (bossDefeatedId ? 10000 : 1000);
 
     if (
       !Number.isFinite(score) ||
@@ -548,10 +1044,38 @@ async function bootstrap() {
       score > maxTheoreticalScore
     ) {
       res.status(400).json({
-        error:
-          'Puntuación rechazada por verificación física anti-cheat del servidor.',
+        error: 'Puntuación rechazada por verificación física anti-cheat del servidor.',
       });
       return;
+    }
+
+    // Server-side linear 8-boss progression validation
+    let verifiedBossId: string | null = bossDefeatedId;
+    if (verifiedBossId) {
+      const idx = ORDERED_BOSS_IDS.indexOf(
+        verifiedBossId as (typeof ORDERED_BOSS_IDS)[number],
+      );
+      if (idx === -1) {
+        verifiedBossId = null;
+      } else if (idx > 0) {
+        const prevBossId = ORDERED_BOSS_IDS[idx - 1];
+        const saveRow = getPlayerSaveJson(user.id);
+        let defeated: string[] = [];
+        if (saveRow.saveJson) {
+          try {
+            const parsed = JSON.parse(saveRow.saveJson) as { defeatedBosses?: string[] };
+            defeated = Array.isArray(parsed.defeatedBosses) ? parsed.defeatedBosses : [];
+          } catch {
+            defeated = [];
+          }
+        }
+        if (!defeated.includes(prevBossId) && !defeated.includes(verifiedBossId)) {
+          res.status(403).json({
+            error: `Debes derrotar primero al jefe anterior (${prevBossId}) antes de registrar ${verifiedBossId}.`,
+          });
+          return;
+        }
+      }
     }
 
     const record: SqliteRunRow = {
@@ -567,7 +1091,7 @@ async function bootstrap() {
       durationSec: Math.floor(durationSec),
       maxSpeedKmh: Math.floor(maxSpeedKmh),
       maxCombo: Math.min(30, Math.max(1, Math.floor(maxCombo))),
-      bossDefeatedId,
+      bossDefeatedId: verifiedBossId,
       victory,
       createdAt: new Date().toISOString(),
       timestampMs: Date.now(),
@@ -600,18 +1124,7 @@ async function bootstrap() {
   });
 
   app.get('/api/rooms', (_req, res) => {
-    const list = Array.from(activeRooms.values())
-      .filter((r) => r.isPublic && r.status === 'lobby' && r.peers.size < r.maxPlayers)
-      .map((r) => ({
-        code: r.code,
-        name: r.name,
-        districtId: r.districtId,
-        mode: r.mode,
-        playerCount: r.peers.size,
-        maxPlayers: r.maxPlayers,
-        hostName: r.peers.get(r.hostId)?.username ?? 'Host',
-      }));
-    res.json({ rooms: list });
+    res.json({ rooms: roomManager.listPublicRooms() });
   });
 
   app.get('/api/events/online', (_req, res) => {
@@ -635,7 +1148,9 @@ async function bootstrap() {
     });
   });
 
-  if (!IS_PROD) {
+  /* ---------------- STATIC FRONTEND / VITE MIDDLEWARE ---------------- */
+
+  if (!IS_PROD && !options?.forceProdStatic) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
@@ -643,289 +1158,76 @@ async function bootstrap() {
     });
     app.use(vite.middlewares);
   } else {
-    const distDir = path.resolve(process.cwd(), 'dist');
+    const distDir = options?.distDir || path.resolve(process.cwd(), 'dist');
     app.use(express.static(distDir));
     app.get('*', (_req, res) => {
       res.sendFile(path.join(distDir, 'index.html'));
     });
   }
 
+  /* ---------------- HTTP + WEBSOCKET UPGRADE ---------------- */
+
   const server = http.createServer(app);
   const wss = new WebSocketServer({ server, path: '/ws' });
 
-  wss.on('connection', (ws) => {
-    let userId = `guest_${crypto.randomUUID().slice(0, 8)}`;
-    let username = `INVITADO_${userId.slice(-4).toUpperCase()}`;
-    let avatarId = 'kai';
-    let currentRoomCode: string | null = null;
+  roomManager.attachSocketServer(
+    wss,
+    (token) => {
+      const payload = verifyToken<AuthSessionPayload>(token);
+      if (!payload || payload.exp < Date.now()) return null;
+      const u = findUserById(payload.uid);
+      return u ? { id: u.id, username: u.username, avatarId: u.avatarId } : null;
+    },
+    (targetUsername) => {
+      const target = findUserByIdentifier(targetUsername);
+      return target ? { id: target.id, username: target.username } : null;
+    },
+  );
 
-    const trackUserSocket = (uid: string) => {
-      let set = onlineSocketsByUser.get(uid);
-      if (!set) {
-        set = new Set();
-        onlineSocketsByUser.set(uid, set);
-      }
-      set.add(ws);
-    };
+  const listenPort = options?.port ?? DEFAULT_PORT;
+  const listenHost = options?.host ?? '0.0.0.0';
 
-    const untrackUserSocket = (uid: string) => {
-      const set = onlineSocketsByUser.get(uid);
-      if (set) {
-        set.delete(ws);
-        if (set.size === 0) onlineSocketsByUser.delete(uid);
-      }
-    };
-
-    ws.on('message', (raw) => {
-      let msg: { event?: string; payload?: Record<string, unknown> };
+  await new Promise<void>((resolve, reject) => {
+    const onError = (err: Error) => {
       try {
-        msg = JSON.parse(raw.toString()) as {
-          event?: string;
-          payload?: Record<string, unknown>;
-        };
+        wss.close();
       } catch {
-        return;
+        // Ignore cleanup close
       }
-
-      const event = msg.event;
-      const p = msg.payload ?? {};
-
-      if (event === 'auth') {
-        const token = typeof p.token === 'string' ? p.token : '';
-        const authPayload = token ? verifyToken<AuthSessionPayload>(token) : null;
-        if (authPayload && authPayload.exp >= Date.now()) {
-          const user = findUserById(authPayload.uid);
-          if (user) {
-            untrackUserSocket(userId);
-            userId = user.id;
-            username = user.username;
-            avatarId = user.avatarId;
-            trackUserSocket(userId);
-          }
-        } else if (typeof p.guestName === 'string' && p.guestName.trim()) {
-          username = p.guestName.trim().slice(0, 18);
-          trackUserSocket(userId);
-        }
-        sendWs(ws, 'auth:ok', { userId, username, avatarId });
-        return;
-      }
-
-      if (event === 'room:create') {
-        leaveCurrentRoom(ws, userId, currentRoomCode);
-        const code = generateRoomCode();
-        const characterId = String(p.characterId ?? 'kai');
-        const districtId = String(p.districtId ?? 'downtown');
-        const mode = String(p.mode ?? 'endless');
-        const isPublic = p.isPublic !== false;
-        const maxPlayers = Math.min(8, Math.max(2, Number(p.maxPlayers ?? 4)));
-        const name = String(p.name ?? `Sala de ${username}`).slice(0, 32);
-
-        const room: ServerRoom = {
-          code,
-          name,
-          hostId: userId,
-          isPublic,
-          districtId,
-          mode,
-          status: 'lobby',
-          maxPlayers,
-          startedAtMs: null,
-          finishCounter: 0,
-          peers: new Map(),
-        };
-        room.peers.set(userId, {
-          ws,
-          userId,
-          username,
-          avatarId,
-          characterId,
-          ready: true,
-          isHost: true,
-          paused: false,
-          finished: false,
-          x: 0,
-          y: 0,
-          z: 0,
-          lane: 1,
-          distance: 0,
-          score: 0,
-          action: 'idle',
-          placement: null,
-        });
-        activeRooms.set(code, room);
-        currentRoomCode = code;
-        sendWs(ws, 'room:state', serializeRoom(room));
-        return;
-      }
-
-      if (event === 'room:join') {
-        const code = String(p.code ?? '').trim().toUpperCase();
-        const room = activeRooms.get(code);
-        if (!room) {
-          sendWs(ws, 'room:error', { error: `Sala ${code} no encontrada.` });
-          return;
-        }
-        if (room.peers.size >= room.maxPlayers && !room.peers.has(userId)) {
-          sendWs(ws, 'room:error', { error: 'La sala está llena.' });
-          return;
-        }
-        if (room.status === 'racing' && !room.peers.has(userId)) {
-          sendWs(ws, 'room:error', { error: 'La carrera ya ha comenzado.' });
-          return;
-        }
-        if (currentRoomCode && currentRoomCode !== code) {
-          leaveCurrentRoom(ws, userId, currentRoomCode);
-        }
-        const characterId = String(p.characterId ?? 'kai');
-        room.peers.set(userId, {
-          ws,
-          userId,
-          username,
-          avatarId,
-          characterId,
-          ready: false,
-          isHost: room.hostId === userId,
-          paused: false,
-          finished: false,
-          x: 0,
-          y: 0,
-          z: 0,
-          lane: 1,
-          distance: 0,
-          score: 0,
-          action: 'idle',
-          placement: null,
-        });
-        currentRoomCode = code;
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        return;
-      }
-
-      if (event === 'room:leave') {
-        leaveCurrentRoom(ws, userId, currentRoomCode);
-        currentRoomCode = null;
-        sendWs(ws, 'room:left', {});
-        return;
-      }
-
-      if (!currentRoomCode) return;
-      const room = activeRooms.get(currentRoomCode);
-      if (!room) return;
-      const peer = room.peers.get(userId);
-      if (!peer) return;
-
-      if (event === 'room:ready') {
-        peer.ready = Boolean(p.ready);
-        if (typeof p.characterId === 'string') {
-          peer.characterId = p.characterId;
-        }
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        return;
-      }
-
-      if (event === 'room:config' && room.hostId === userId && room.status === 'lobby') {
-        if (typeof p.districtId === 'string') room.districtId = p.districtId;
-        if (typeof p.mode === 'string') room.mode = p.mode;
-        if (typeof p.isPublic === 'boolean') room.isPublic = p.isPublic;
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        return;
-      }
-
-      if (event === 'room:start' && room.hostId === userId) {
-        room.status = 'racing';
-        room.startedAtMs = Date.now();
-        room.finishCounter = 0;
-        for (const rPeer of room.peers.values()) {
-          rPeer.paused = false;
-          rPeer.finished = false;
-          rPeer.distance = 0;
-          rPeer.score = 0;
-          rPeer.placement = null;
-        }
-        broadcastRoom(room, 'room:started', serializeRoom(room));
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        return;
-      }
-
-      if (event === 'room:invite') {
-        const targetUsername = String(p.targetUsername ?? '').trim();
-        const target = findUserByIdentifier(targetUsername);
-        if (!target) {
-          sendWs(ws, 'room:error', { error: `Usuario "${targetUsername}" no conectado.` });
-          return;
-        }
-        const targets = onlineSocketsByUser.get(target.id);
-        if (!targets || targets.size === 0) {
-          sendWs(ws, 'room:error', {
-            error: `${target.username} no tiene la red online abierta ahora mismo.`,
-          });
-          return;
-        }
-        for (const tWs of targets) {
-          sendWs(tWs, 'room:invited', {
-            code: room.code,
-            fromUsername: username,
-            districtId: room.districtId,
-            mode: room.mode,
-          });
-        }
-        sendWs(ws, 'room:info', { message: `Invitación enviada a ${target.username}.` });
-        return;
-      }
-
-      if (event === 'player:telemetry') {
-        peer.x = Number(p.x ?? peer.x);
-        peer.y = Number(p.y ?? peer.y);
-        peer.z = Number(p.z ?? peer.z);
-        peer.lane = Number(p.lane ?? peer.lane);
-        peer.distance = Number(p.distance ?? peer.distance);
-        peer.score = Number(p.score ?? peer.score);
-        peer.action = String(p.action ?? peer.action);
-        peer.paused = Boolean(p.paused);
-        broadcastRoomTelemetry(room);
-        return;
-      }
-
-      if (event === 'player:pause') {
-        peer.paused = Boolean(p.paused);
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        broadcastRoomTelemetry(room);
-        return;
-      }
-
-      if (event === 'player:finish') {
-        if (!peer.finished) {
-          peer.finished = true;
-          peer.paused = false;
-          peer.distance = Math.max(peer.distance, Number(p.distance ?? 0));
-          peer.score = Math.max(peer.score, Number(p.score ?? 0));
-          room.finishCounter += 1;
-          peer.placement = room.finishCounter;
-        }
-        const allFinished = Array.from(room.peers.values()).every((rPeer) => rPeer.finished);
-        if (allFinished) {
-          room.status = 'finished';
-          recordMultiplayerMatch({
-            roomCode: room.code,
-            districtId: room.districtId,
-            mode: room.mode,
-            results: serializeRoom(room).players,
-          });
-        }
-        broadcastRoom(room, 'room:state', serializeRoom(room));
-        broadcastRoomTelemetry(room);
-      }
-    });
-
-    ws.on('close', () => {
-      leaveCurrentRoom(ws, userId, currentRoomCode);
-      untrackUserSocket(userId);
+      reject(err);
+    };
+    wss.once('error', onError);
+    server.once('error', onError);
+    server.listen(listenPort, listenHost, () => {
+      wss.off('error', onError);
+      server.off('error', onError);
+      wss.on('error', (err) => {
+        console.error('[METRO RUSH WS error]', err);
+      });
+      const addr = server.address();
+      const actualPort = typeof addr === 'object' && addr ? addr.port : listenPort;
+      console.log(
+        `METRO RUSH server (${dbEngine} + WS v${GAME_VERSION}) running on http://${listenHost}:${actualPort}`,
+      );
+      resolve();
     });
   });
 
-  server.listen(PORT, '0.0.0.0', () => {
-    console.log(`METRO RUSH server (SQLite + WebSocket) running on http://0.0.0.0:${PORT}`);
-  });
+  const addr = server.address();
+  const boundPort = typeof addr === 'object' && addr ? addr.port : listenPort;
+
+  return {
+    port: boundPort,
+    close: async () => {
+      roomManager.dispose();
+      await stopLanMatchHostServer();
+      await new Promise<void>((r) => wss.close(() => r()));
+      await new Promise<void>((r) => server.close(() => r()));
+      closeSqlite();
+    },
+  };
 }
 
-bootstrap();
+if (!process.env.METRO_RUSH_EMBEDDED) {
+  void startAppServer();
+}

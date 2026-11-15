@@ -1,0 +1,1010 @@
+# ACTUALIZACIÓN MAYOR: METRO RUSH: NEON CITY
+## Multijugador online, cuentas permanentes, rediseño integral de interfaces, progresión de jefes y mejoras generales.
+
+Actúa como un equipo completo de desarrollo profesional de videojuegos, integrado por:
+
+- Arquitecto de software sénior.
+- Ingeniero especializado en multijugador online y P2P.
+- Desarrollador experto en Electron, TypeScript y Node.js.
+- Diseñador UI/UX especializado en videojuegos AAA.
+- Diseñador de sistemas de progresión.
+- Diseñador de jefes y combates.
+- Animador de personajes y criaturas 3D.
+- Ingeniero de bases de datos y seguridad.
+- Especialista en optimización y distribución de videojuegos.
+
+Tu misión es trabajar directamente sobre el repositorio existente de **METRO RUSH: NEON CITY** para desarrollar una actualización importante del videojuego.
+
+Esta actualización debe mejorar radicalmente el sistema de alojamiento de partidas, las cuentas, las invitaciones, los menús, las estadísticas, los jefes y la experiencia general.
+
+**NO quiero que reconstruyas el juego desde cero. NO quiero una demostración independiente. NO quiero botones decorativos ni funcionalidades simuladas. Quiero que investigues, modifiques, conectes y pruebes los sistemas reales del proyecto.**
+
+---
+
+# 1. REGLAS GENERALES Y AUDITORÍA
+
+Antes de modificar el proyecto:
+
+1. Examina toda la estructura del repositorio.
+2. Identifica el framework, motor, tecnologías y arquitectura actuales.
+3. Inspecciona el funcionamiento de Electron.
+4. Examina el servidor WebSocket y el sistema de multijugador.
+5. Identifica cómo funcionan actualmente las cuentas locales y online.
+6. Examina la base de datos y el sistema de persistencia.
+7. Revisa el funcionamiento de invitaciones, amigos y búsqueda de usuarios.
+8. Analiza el sistema de jefes, sus fases y sus patrones de combate.
+9. Examina los menús y componentes visuales existentes.
+10. Identifica los errores que impiden jugar online.
+
+Antes de modificar archivos, realiza un respaldo de los componentes importantes.
+
+Conserva los datos existentes y crea migraciones cuando sean necesarias.
+
+No elimines sistemas funcionales para sustituirlos por versiones incompletas.
+
+La actualización debe integrarse con el juego actual.
+
+# 2. PRIORIDAD MÁXIMA: RECONSTRUIR Y REPARAR EL SISTEMA DE HOST ONLINE
+
+Este es el apartado más importante de toda la actualización.
+
+Actualmente el videojuego permite jugar en LAN, pero no conseguimos establecer partidas online reales con amigos que están en otras ubicaciones.
+
+Necesito que investigues y soluciones el problema de raíz.
+
+No quiero que el apartado online solamente muestre una interfaz atractiva. Necesito que permita crear, publicar, encontrar y disputar partidas reales.
+
+## 2.1. Crear partidas online
+
+El jugador debe poder:
+
+- Crear una sala online.
+- Convertirse en anfitrión.
+- Configurar el nombre de la sala.
+- Elegir el modo de juego.
+- Elegir el mapa permitido.
+- Establecer el máximo de participantes.
+- Configurar las opciones de la partida.
+- Invitar amigos.
+- Crear partidas públicas o privadas.
+- Iniciar la partida cuando esté preparado.
+
+El anfitrión debe poder alojar la partida desde su propia computadora.
+
+No quiero que el funcionamiento dependa obligatoriamente de un servidor dedicado de pago.
+
+## 2.2. Multijugador P2P real
+
+Investiga e implementa una arquitectura apropiada para jugar por Internet.
+
+Evalúa:
+
+- WebRTC DataChannels.
+- STUN.
+- ICE.
+- NAT traversal.
+- Conexiones directas entre jugadores.
+- TURN como alternativa cuando no sea posible una conexión directa.
+- Servidor de señalización WebSocket.
+- Servidores de partida alojados por jugadores.
+
+El objetivo es que un jugador pueda alojar una partida y los demás conectarse desde sus propias computadoras.
+
+El anfitrión debe actuar como autoridad de la partida.
+
+No permitas que los clientes determinen libremente puntuaciones, recompensas, resultados o eventos importantes.
+
+La lógica autoritativa debe validar los movimientos y acciones importantes.
+
+## 2.3. Compatibilidad con herramientas de VPN y redes virtuales
+
+Quiero que el videojuego pueda funcionar también utilizando herramientas como:
+
+- Radmin VPN.
+- ZeroTier.
+- Tailscale.
+- Otras soluciones de red virtual LAN compatibles.
+
+Esto debe permitir que amigos que están en diferentes lugares puedan compartir una red virtual y conectarse como si estuvieran en una misma LAN.
+
+No obligues a instalar estas herramientas si existe una conexión pública directa disponible.
+
+Explica qué herramientas necesitan instalar todos los participantes y cómo conectarse.
+
+No confundas una VPN de red privada con un túnel público HTTPS.
+
+## 2.4. Túneles gratuitos
+
+Investiga la integración opcional con herramientas gratuitas como:
+
+- Cloudflare Quick Tunnel.
+- Playit.gg en sus modalidades compatibles.
+- Otras alternativas gratuitas que permitan publicar el servidor.
+
+No supongas que todos los tipos de túneles admiten cualquier protocolo.
+
+Verifica específicamente:
+
+- Compatibilidad con WebSocket.
+- Compatibilidad con WSS.
+- Puerto local.
+- Puerto público.
+- Ruta de conexión.
+- Certificados TLS.
+- Persistencia del túnel.
+- Limitaciones del servicio.
+
+Si implementas Cloudflare, el videojuego debe poder iniciar `cloudflared` desde Electron cuando esté instalado o incluido de forma legal y técnicamente apropiada.
+
+Debe detectar si la herramienta está disponible, iniciar el túnel, obtener la dirección pública y mostrarla al usuario.
+
+No incluyas una dependencia obligatoria de un servicio externo de pago.
+
+Si una alternativa requiere instalación o configuración adicional, informa claramente al usuario.
+
+## 2.5. Reparar las invitaciones por nombre de usuario
+
+Actualmente, cuando intento invitar a una persona utilizando el nombre con el que creó su cuenta, el juego indica que ese usuario no existe.
+
+Esto debe investigarse y solucionarse.
+
+Comprueba:
+
+- Si las cuentas están almacenadas en la base de datos correcta.
+- Si la búsqueda consulta perfiles locales o perfiles online.
+- Si el cliente consulta el servidor correcto.
+- Si el endpoint de búsqueda existe.
+- Si el nombre de usuario se guarda correctamente.
+- Si existen diferencias entre mayúsculas y minúsculas.
+- Si se está buscando por nombre visible en vez de identificador de usuario.
+- Si los perfiles online están realmente sincronizados.
+
+Implementa un sistema de búsqueda de usuarios que funcione correctamente.
+
+Cada cuenta online debe tener:
+
+- Identificador único e inmutable.
+- Nombre de usuario único.
+- Nombre visible.
+- Estado de conexión.
+- Perfil.
+- Estadísticas públicas permitidas.
+
+La búsqueda debe poder encontrar a un usuario por su nombre de usuario, sin depender de que ambos estén conectados a la misma red.
+
+Implementa una respuesta clara cuando el usuario no exista.
+
+No muestres errores falsos cuando el problema sea una desconexión del servidor.
+
+## 2.6. Sistema de invitaciones
+
+Implementa invitaciones reales.
+
+El jugador podrá:
+
+- Buscar amigos.
+- Enviar invitaciones.
+- Recibir invitaciones.
+- Aceptarlas.
+- Rechazarlas.
+- Consultar invitaciones pendientes.
+- Entrar a la sala del anfitrión.
+- Cancelar invitaciones.
+
+Las invitaciones deben utilizar identificadores de usuario, no solamente nombres visibles.
+
+Cuando un jugador acepte una invitación, el juego debe gestionar la conexión con la sala correspondiente.
+
+Añade estados:
+
+- Invitación enviada.
+- Invitación pendiente.
+- Invitación aceptada.
+- Invitación rechazada.
+- Sala llena.
+- Anfitrión desconectado.
+- Sala cerrada.
+
+Evita las invitaciones duplicadas y las invitaciones a cuentas inexistentes.
+
+## 2.7. Continuidad del sistema de salas
+
+Conserva el funcionamiento LAN existente.
+
+Mejora el sistema para diferenciar claramente:
+
+- Crear partida LAN.
+- Buscar partida LAN.
+- Crear partida online.
+- Unirse a partida online.
+- Crear partida privada.
+- Unirse mediante código.
+- Conectarse mediante VPN.
+- Conectarse mediante túnel.
+
+La interfaz debe informar qué método de conexión se está utilizando.
+
+No presentes una partida como online si solamente está funcionando dentro de la red local.
+
+# 3. SISTEMA DE CUENTAS ONLINE PERMANENTES
+
+Actualmente existe un problema importante: creo una cuenta online, cierro el juego, vuelvo a abrirlo y tengo que iniciar sesión otra vez.
+
+Esto debe solucionarse.
+
+Quiero un sistema de sesiones persistentes.
+
+## 3.1. Recordar sesión
+
+Cuando un usuario cree una cuenta online o inicie sesión:
+
+- Guardar de forma segura la información necesaria para mantener su sesión.
+- Al abrir nuevamente el juego, comprobar si existe una sesión válida.
+- Recuperar automáticamente el perfil.
+- Permitir entrar directamente al juego sin volver a escribir las credenciales.
+- Renovar las sesiones cuando corresponda.
+- Cerrar la sesión solamente cuando el usuario lo solicite o cuando la sesión sea revocada.
+
+No guardes contraseñas en texto plano.
+
+Utiliza tokens de acceso de corta duración y mecanismos seguros de renovación.
+
+Los tokens persistentes deben almacenarse de forma segura, preferiblemente mediante almacenamiento protegido del sistema operativo.
+
+No expongas credenciales ni tokens al frontend innecesariamente.
+
+## 3.2. Cuentas locales y online
+
+Conserva las dos modalidades.
+
+Cuenta local:
+
+- Permite jugar sin Internet.
+- Guarda el progreso en la computadora.
+- Mantiene estadísticas.
+- Permite acceder al contenido local.
+
+Cuenta online:
+
+- Permite jugar por Internet.
+- Conserva el perfil en el servidor.
+- Recupera el progreso en otras computadoras.
+- Permite utilizar invitaciones y funciones sociales.
+
+Permite vincular un perfil local con una cuenta online.
+
+Evita sobrescribir el progreso existente al realizar la vinculación.
+
+## 3.3. Pantalla de administración de cuenta
+
+Crea una pantalla completa para administrar:
+
+- Nombre de usuario.
+- Nombre visible.
+- Tipo de cuenta.
+- Estado de conexión.
+- Fecha de creación.
+- Estadísticas.
+- Progreso.
+- Cambiar contraseña.
+- Cerrar sesión.
+- Vincular cuenta local y online.
+- Sincronizar progreso.
+- Cerrar sesión en otros dispositivos cuando el backend lo permita.
+
+# 4. REDISEÑO DEL MENÚ PRINCIPAL
+
+Quiero un rediseño visual importante.
+
+El menú principal actual necesita una presentación mucho más profesional, moderna y organizada.
+
+Utiliza como referencia visual la calidad de los videojuegos comerciales modernos.
+
+Mantén la identidad futurista y neon de METRO RUSH.
+
+No quiero una interfaz genérica.
+
+## 4.1. Nuevo selector vertical de modos
+
+Cambia el selector de modos de juego.
+
+Actualmente no quiero que siga ocupando una distribución horizontal tradicional.
+
+Diseña un selector vertical situado en una esquina del menú principal.
+
+Debe tener:
+
+- Botones verticales.
+- Iconos personalizados.
+- Animaciones al seleccionar.
+- Transiciones suaves.
+- Indicador del modo activo.
+- Efectos de iluminación.
+- Retroalimentación visual.
+- Diseño compacto.
+- Adaptación a diferentes resoluciones.
+
+Los modos deben verse claramente diferenciados.
+
+Puedes utilizar tarjetas, líneas de energía, bordes iluminados y efectos de profundidad.
+
+No satures la pantalla.
+
+## 4.2. Organización del menú
+
+La pantalla principal debe presentar:
+
+- Selector vertical de modos.
+- Personaje principal.
+- Entorno visual atractivo.
+- Información del jugador.
+- Monedas.
+- Nivel.
+- Experiencia.
+- Estado online.
+- Accesos a los apartados importantes.
+
+El diseño debe tener jerarquía visual.
+
+# 5. REDISEÑO DE LA INFORMACIÓN DEL JUGADOR
+
+Quiero reorganizar la información que aparece en la pantalla principal.
+
+En la parte superior deben aparecer:
+
+- Nombre del jugador.
+- Nivel.
+- Experiencia.
+- Monedas.
+- Tiques.
+- Estado de conexión.
+- Estadísticas resumidas importantes.
+
+No quiero que todos estos datos estén distribuidos de forma desordenada.
+
+Organízalos en una barra de información compacta y elegante.
+
+## 5.1. Botón de perfil de usuario
+
+En la zona inferior de la interfaz principal añade un botón llamado:
+
+**PERFIL DE USUARIO**
+
+También puedes utilizar el nombre del jugador como acceso directo.
+
+El nombre del jugador debe ser visible en la parte superior.
+
+Al pulsarlo, debe abrir la pantalla de perfil.
+
+Esta pantalla debe funcionar tanto para cuentas locales como online.
+
+Debe mostrar:
+
+- Nombre de usuario.
+- Nombre visible.
+- Avatar.
+- Tipo de cuenta.
+- Nivel.
+- Experiencia.
+- Monedas.
+- Tiques.
+- Tiempo jugado.
+- Victorias.
+- Derrotas.
+- Partidas completadas.
+- Jefes derrotados.
+- Logros.
+- Historial de progreso.
+- Fecha de creación de la cuenta, cuando corresponda.
+
+Organiza toda esta información en secciones.
+
+# 6. REDISEÑO COMPLETO DEL APARTADO DE ESTADÍSTICAS
+
+Quiero convertir el apartado actual de estadísticas en un dashboard profesional.
+
+No quiero una simple lista de números.
+
+Debe parecer un centro de estadísticas de un videojuego comercial.
+
+Incluye:
+
+## 6.1. Estadísticas generales
+
+- Partidas jugadas.
+- Partidas ganadas.
+- Partidas perdidas.
+- Porcentaje de victorias.
+- Tiempo total de juego.
+- Distancia recorrida.
+- Monedas obtenidas.
+- Monedas gastadas.
+- Objetos recogidos.
+- Eliminaciones.
+- Jefes derrotados.
+- Récords personales.
+
+## 6.2. Gráficas
+
+Implementa gráficas funcionales utilizando datos reales.
+
+Incluye:
+
+- Evolución de victorias y derrotas.
+- Progreso de experiencia.
+- Monedas obtenidas a lo largo del tiempo.
+- Rendimiento por modo.
+- Tiempo jugado.
+- Récords.
+- Evolución del rendimiento del jugador.
+
+Añade filtros por:
+
+- Últimos 7 días.
+- Últimos 30 días.
+- Últimos 90 días.
+- Historial completo.
+
+## 6.3. Diseño visual
+
+Utiliza:
+
+- Tarjetas de estadísticas.
+- Gráficas de líneas.
+- Gráficas de barras.
+- Indicadores de progreso.
+- Comparaciones.
+- Animaciones moderadas.
+- Iconos.
+- Colores coherentes con la identidad del videojuego.
+
+Las estadísticas deben proceder de registros reales.
+
+No inventes números ni rellenes gráficas con datos ficticios.
+
+Las estadísticas online deben sincronizarse correctamente y las locales deben conservarse cuando no exista conexión.
+
+# 7. REDISEÑO DEL SISTEMA DE JEFES
+
+Quiero una mejora profunda del sistema de jefes.
+
+Actualmente los jefes aparecen demasiado cerca del personaje y sus combates se vuelven repetitivos.
+
+Quiero que los enfrentamientos sean más interesantes, variados y desafiantes.
+
+## 7.1. Distancia y presentación
+
+Aleja los jefes del personaje al comenzar el enfrentamiento.
+
+No quiero que aparezcan prácticamente encima del jugador.
+
+Ajusta:
+
+- Distancia inicial.
+- Posición de aparición.
+- Orientación.
+- Animación de entrada.
+- Presentación del jefe.
+- Cámara.
+- Espacio de combate.
+- Distancia de ataque.
+
+La distancia debe adaptarse al tamaño y las habilidades de cada jefe.
+
+Evita que el jugador reciba daño antes de poder reaccionar.
+
+## 7.2. Cuatro fases de combate
+
+Cada jefe tiene cuatro fases.
+
+Quiero que cada fase tenga identidad propia.
+
+Actualmente los jefes suelen repetir los mismos movimientos durante todo el enfrentamiento.
+
+Esto debe cambiar.
+
+Cada fase debe introducir comportamientos diferentes.
+
+Ejemplo de estructura:
+
+**Fase 1: Reconocimiento**
+
+- Movimientos iniciales.
+- Ataques básicos.
+- Desplazamientos.
+- Ataques fáciles de identificar.
+- El jefe analiza la posición del jugador.
+
+**Fase 2: Agresividad**
+
+- Nuevos ataques.
+- Mayor movilidad.
+- Combinaciones.
+- Ataques con mayor alcance.
+- Nuevos efectos visuales.
+
+**Fase 3: Transformación o furia**
+
+- Animación especial de transformación.
+- Cambios visuales.
+- Nuevos patrones.
+- Ataques más peligrosos.
+- Cambios en el comportamiento.
+
+**Fase 4: Última resistencia**
+
+- Animación de transición.
+- Ataques especiales.
+- Combinaciones complejas.
+- Mayor presión.
+- Secuencias de ataque únicas.
+- Animación especial al ser derrotado.
+
+No quiero que las cuatro fases sean simplemente el mismo ataque con más daño.
+
+Cada fase debe introducir mecánicas y animaciones propias.
+
+## 7.3. Animaciones
+
+Crea o integra animaciones para:
+
+- Aparición.
+- Entrada al combate.
+- Desplazamiento.
+- Ataques básicos.
+- Ataques especiales.
+- Preparación de ataques.
+- Golpes recibidos.
+- Transiciones entre fases.
+- Transformación.
+- Furia.
+- Derrota.
+- Victoria del jugador.
+
+Si el modelo existente permite reutilizar animaciones, hazlo correctamente.
+
+No inventes nombres de animaciones sin comprobar que existen.
+
+Si faltan recursos, identifica qué animaciones deben crearse o conseguirse.
+
+# 8. NUEVOS JEFES Y PROGRESIÓN OBLIGATORIA
+
+Añade cuatro jefes nuevos al videojuego.
+
+El objetivo final es disponer de ocho jefes en total.
+
+Si el proyecto ya contiene ocho o más, no dupliques jefes: conserva los existentes y ajusta el contenido para cumplir la progresión solicitada, documentando cualquier diferencia.
+
+Cada jefe debe tener:
+
+- Nombre.
+- Identidad visual.
+- Modelo.
+- Historia o presentación.
+- Personalidad.
+- Arena.
+- Cuatro fases.
+- Ataques propios.
+- Habilidades especiales.
+- Animaciones.
+- Dificultad.
+- Recompensas.
+- Estadísticas.
+
+Los jefes no deben sentirse como simples variantes de un mismo enemigo.
+
+Cada uno debe tener una identidad diferenciada.
+
+## 8.1. Desbloqueo progresivo
+
+Quiero un sistema de progresión obligatoria.
+
+De los ocho jefes:
+
+- Solamente uno estará desbloqueado inicialmente.
+- Los otros siete estarán bloqueados.
+
+Organiza los jefes del más débil al más fuerte.
+
+Para desbloquear el siguiente jefe, el jugador debe derrotar al anterior.
+
+No permitas saltarse la progresión.
+
+Ejemplo:
+
+Jefe 1 → Jefe 2 → Jefe 3 → Jefe 4 → Jefe 5 → Jefe 6 → Jefe 7 → Jefe 8.
+
+Los jefes bloqueados deben aparecer visualmente en el menú con:
+
+- Nombre.
+- Imagen o silueta.
+- Número de posición.
+- Estado bloqueado.
+- Requisito para desbloquear.
+- Indicador de progresión.
+
+El jugador debe comprender qué necesita hacer para enfrentarse al siguiente.
+
+## 8.2. Jefes en partidas normales
+
+En las partidas normales solamente deben aparecer los jefes que el jugador tenga desbloqueados, respetando las reglas de progresión.
+
+Nunca debe aparecer aleatoriamente un jefe que el jugador todavía no ha desbloqueado.
+
+Valida esta condición tanto en la interfaz como en la lógica del servidor.
+
+No permitas manipular el estado de desbloqueo desde el cliente.
+
+# 9. MEJORAS DEL LOBBY Y PRESENTACIÓN DEL PERSONAJE
+
+Quiero mejorar ligeramente el lobby donde se muestra el personaje equipado.
+
+No quiero eliminar el sistema actual.
+
+Mejora:
+
+- Posición del personaje.
+- Encuadre.
+- Iluminación.
+- Cámara.
+- Fondo.
+- Presentación de animaciones.
+- Efectos visuales.
+- Distribución de elementos.
+- Transiciones.
+
+El personaje debe lucir mejor sin afectar el rendimiento.
+
+Evita que los menús tapen al personaje.
+
+Asegúrate de que el modelo tenga una presentación visual limpia.
+
+# 10. SISTEMA DE MASCOTAS
+
+Actualmente el jugador puede equipar una mascota.
+
+Añade la posibilidad de desequiparla.
+
+Debe existir una opción clara:
+
+**DESEQUIPAR MASCOTA**
+
+Al utilizarla:
+
+- La mascota deja de acompañar al jugador.
+- Se actualiza el estado del inventario.
+- El cambio se guarda.
+- El lobby refleja inmediatamente el resultado.
+- No se pierde la mascota ni se elimina de la colección.
+
+El jugador podrá volver a equiparla cuando quiera.
+
+Comprueba que no existan errores de guardado o duplicación.
+
+# 11. BOTÓN PARA SALIR DEL JUEGO Y TECLA ESCAPE
+
+Actualmente falta un botón para cerrar el videojuego.
+
+Añade una opción visible:
+
+**SALIR DEL JUEGO**
+
+Al pulsarla debe aparecer una ventana de confirmación.
+
+Opciones:
+
+- Volver al juego.
+- Salir del videojuego.
+
+También implementa el comportamiento de la tecla ESCAPE en el lobby.
+
+Cuando el jugador presione ESCAPE:
+
+1. Aparece una ventana de confirmación.
+2. Se pregunta si realmente desea salir.
+3. Puede cancelar.
+4. Puede confirmar la salida.
+
+No cierres el juego inmediatamente al pulsar ESCAPE.
+
+Asegúrate de que esta función no interfiera con otras pantallas.
+
+Si ESCAPE ya tiene una función en otra sección, conserva su comportamiento contextual.
+
+Antes de salir:
+
+- Guarda el progreso pendiente.
+- Cierra conexiones.
+- Detiene los servidores locales que corresponda.
+- Cierra los procesos auxiliares.
+- Evita dejar procesos de Electron o Node ejecutándose.
+
+# 12. ADAPTACIÓN Y REDISEÑO DE TODOS LOS MENÚS
+
+Quiero que realices una revisión visual de todos los apartados del videojuego.
+
+No te limites al menú principal.
+
+Revisa:
+
+- Menú principal.
+- Perfil.
+- Personajes.
+- Garaje 3D.
+- Ciudades.
+- Misiones.
+- Pase de batalla.
+- Eventos y jefes.
+- Tienda.
+- Inventario.
+- Estadísticas.
+- Online.
+- Ajustes.
+- Créditos.
+- Menús de pausa.
+- Pantallas de derrota.
+- Pantallas de victoria.
+- Salas de espera.
+- Pantallas de invitaciones.
+- Pantallas de conexión.
+
+Cada apartado debe tener una estructura visual coherente.
+
+Utiliza un sistema de diseño compartido:
+
+- Tipografía.
+- Colores.
+- Iconografía.
+- Bordes.
+- Sombras.
+- Espaciados.
+- Animaciones.
+- Estados activos.
+- Estados deshabilitados.
+- Mensajes de error.
+- Ventanas de confirmación.
+
+Evita que cada sección parezca diseñada por separado.
+
+El resultado debe tener calidad visual de un videojuego comercial.
+
+# 13. RESPONSIVE Y ACCESIBILIDAD
+
+Comprueba que todas las pantallas funcionen en diferentes resoluciones.
+
+Evita:
+
+- Elementos cortados.
+- Botones fuera de pantalla.
+- Barras horizontales innecesarias.
+- Textos superpuestos.
+- Paneles que oculten información.
+- Menús que no se puedan desplazar.
+
+Mantén una interfaz cómoda de utilizar.
+
+Las animaciones deben poder reducirse cuando afecten al rendimiento o a la accesibilidad.
+
+# 14. SEGURIDAD Y PROTECCIÓN DEL PROGRESO
+
+Revisa la seguridad de los sistemas online.
+
+Implementa:
+
+- Validación del servidor.
+- Protección de sesiones.
+- Autorización de acciones.
+- Identificadores únicos.
+- Prevención de duplicación de recompensas.
+- Protección frente a manipulación de resultados.
+- Control de invitaciones.
+- Validación de versiones.
+- Gestión de desconexiones.
+
+No almacenes contraseñas en texto plano.
+
+No expongas secretos en el cliente.
+
+No confíes en información enviada libremente por los jugadores.
+
+Realiza copias de seguridad antes de migrar bases de datos.
+
+# 15. LICENCIA, AUTORÍA Y CRÉDITOS DEL VIDEOJUEGO
+
+Quiero que el videojuego tenga un sistema claro de atribución de autoría.
+
+El titular y responsable creativo del proyecto es:
+
+**Jaderson Liriano**
+**Líder de XynexDevs**
+**Proyecto: METRO RUSH: NEON CITY**
+
+Quiero que esta autoría aparezca en:
+
+- Pantalla de créditos.
+- Información del videojuego.
+- Archivo de licencia.
+- Documentación del proyecto.
+- Distribución del instalador.
+
+Crea un archivo `LICENSE.md` con una licencia de derechos reservados personalizada.
+
+Debe establecer, en términos claros:
+
+- Reconocimiento de Jaderson Liriano como creador y titular de los derechos que le correspondan.
+- Identificación de XynexDevs como equipo o sello desarrollador.
+- Prohibición de redistribuir, vender, modificar o publicar versiones derivadas sin autorización escrita del titular, en la medida permitida por la legislación aplicable.
+- Prohibición de eliminar avisos de autoría.
+- Condiciones de uso del videojuego.
+- Ausencia de concesión automática de derechos sobre el código o los recursos.
+
+IMPORTANTE:
+
+Antes de declarar que todo el código, modelos, texturas, música y demás recursos pertenecen exclusivamente a Jaderson Liriano, audita sus licencias.
+
+Los recursos de terceros deben conservar sus atribuciones y condiciones originales.
+
+No reclames propiedad exclusiva sobre contenido que tenga licencias incompatibles o pertenezca a terceros.
+
+La licencia debe proteger los elementos originales del proyecto sin vulnerar derechos ajenos.
+
+No inventes registros de derechos de autor ni afirmes que el documento equivale a un registro legal oficial.
+
+# 16. OPTIMIZACIÓN Y COMPATIBILIDAD CON ELECTRON
+
+El juego debe continuar funcionando como aplicación de escritorio.
+
+Comprueba:
+
+- Inicio correcto.
+- Cierre correcto.
+- Persistencia.
+- Inicio de sesión.
+- Recuperación de sesión.
+- Conexiones online.
+- Conexiones LAN.
+- Túneles.
+- Servidores locales.
+- Gestión de procesos.
+- Uso de memoria.
+
+No dependas de rutas de desarrollo que desaparezcan al compilar.
+
+Comprueba que todos los recursos y configuraciones estén disponibles en producción.
+
+No expongas claves privadas ni credenciales dentro del instalador.
+
+# 17. PRUEBAS OBLIGATORIAS
+
+No marques la actualización como terminada sin realizar pruebas.
+
+## Pruebas de cuentas
+
+1. Crear una cuenta online.
+2. Cerrar el juego.
+3. Abrir nuevamente el `.exe`.
+4. Comprobar que la sesión se recupera.
+5. Cerrar sesión manualmente.
+6. Volver a iniciar sesión.
+7. Reiniciar la computadora.
+8. Comprobar la persistencia.
+
+## Pruebas de invitaciones
+
+1. Crear dos cuentas online diferentes.
+2. Buscar una cuenta utilizando su nombre.
+3. Comprobar que aparece.
+4. Enviar invitación.
+5. Aceptar invitación.
+6. Comprobar que ambos jugadores llegan a la misma sala.
+
+## Pruebas multijugador
+
+Realiza pruebas entre dos computadoras.
+
+No basta con abrir dos ventanas en la misma computadora.
+
+Comprueba:
+
+- Conexión LAN.
+- Conexión por Internet.
+- P2P.
+- Conexión mediante VPN virtual.
+- Conexión mediante túnel.
+- Desconexiones.
+- Reconexiones.
+- Salida del anfitrión.
+- Inicio de partida.
+- Sincronización del estado de juego.
+
+Si no tienes acceso a una segunda computadora, documenta esa limitación y no declares la prueba como superada.
+
+## Pruebas de jefes
+
+- Primer jefe desbloqueado.
+- Siete jefes bloqueados.
+- Orden correcto.
+- Desbloqueo al derrotar al anterior.
+- Cuatro fases diferenciadas.
+- Ataques diferentes por fase.
+- Animaciones de transición.
+- Recompensas.
+- Aparición de jefes según progreso.
+
+## Pruebas de interfaz
+
+Comprueba cada menú, botón, ventana, gráfica y transición.
+
+# 18. GENERACIÓN DE LA NUEVA VERSIÓN DEL JUEGO
+
+Quiero que prepares el proyecto para distribuir la nueva actualización a mis amigos.
+
+Antes de compilar:
+
+1. Revisa los scripts de `package.json`.
+2. Comprueba que todas las dependencias estén instaladas.
+3. Ejecuta el proceso de compilación.
+4. Comprueba que no existan errores de TypeScript.
+5. Ejecuta las pruebas.
+6. Verifica la configuración de Electron.
+7. Comprueba el empaquetado.
+8. Genera el instalador de Windows.
+
+No inventes comandos.
+
+Cuando termines, indícame el comando exacto que debo ejecutar en PowerShell para generar la nueva versión.
+
+Si el proyecto tiene un script `dist:win`, puedes utilizarlo, pero primero verifica que realmente exista y funcione.
+
+El instalador debe incluir las modificaciones realizadas.
+
+Conserva la compatibilidad con los datos de los jugadores existentes.
+
+# 19. INFORME FINAL OBLIGATORIO
+
+Al finalizar, presenta un informe que incluya:
+
+1. Funcionalidades implementadas.
+2. Problemas corregidos.
+3. Cambios en el sistema online.
+4. Arquitectura P2P utilizada.
+5. Compatibilidad con VPN y túneles.
+6. Sistema de cuentas permanentes.
+7. Solución a las invitaciones.
+8. Nuevos jefes y progresión.
+9. Rediseño de interfaces.
+10. Mejoras de estadísticas.
+11. Mejoras del lobby.
+12. Sistema de mascotas.
+13. Licencia y créditos.
+14. Archivos nuevos.
+15. Archivos modificados.
+16. Dependencias instaladas.
+17. Pruebas realizadas.
+18. Problemas pendientes.
+19. Comando de compilación.
+20. Ubicación del instalador `.exe`.
+
+# CONDICIONES FINALES
+
+- Trabaja sobre el repositorio existente.
+- No reconstruyas el juego desde cero.
+- No elimines funcionalidades existentes.
+- No borres el progreso de los jugadores.
+- No simules el multijugador.
+- No simules las estadísticas.
+- No inventes usuarios.
+- No presentes conexiones locales como conexiones de Internet.
+- No dejes botones sin funcionalidad.
+- No permitas que el cliente manipule libremente las recompensas.
+- No exijas contratar un servidor dedicado para cada partida.
+- No obligues a utilizar una sola herramienta de conexión.
+- No guardes contraseñas en texto plano.
+- No marques como terminadas funciones que no hayas implementado.
+- No afirmes que una función está probada si no has realizado la prueba.
+
+Prioriza primero la estabilidad del multijugador y las cuentas, después los jefes y finalmente el rediseño visual.
+
+Trabaja por fases, prueba los cambios y conserva una versión funcional del proyecto durante todo el proceso.
+
+**El objetivo es que METRO RUSH: NEON CITY evolucione a una experiencia mucho más profesional, estable, completa y preparada para jugar con amigos por Internet.**

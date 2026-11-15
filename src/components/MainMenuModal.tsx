@@ -21,6 +21,7 @@ import {
   Target,
   Upload,
   User,
+  UserCheck,
   X,
   Zap,
 } from 'lucide-react';
@@ -30,8 +31,10 @@ import {
   CHARACTERS,
   DISTRICTS,
   DRONE_CODEX,
+  getBossUnlockRequirement,
   getCharacterById,
   getDistrictById,
+  isBossUnlocked,
   LIVE_EVENTS,
 } from '../game/data';
 import {
@@ -42,7 +45,9 @@ import {
 import { getCustomGlbInfo, parseCustomGlbFile } from '../game/gltfAssets';
 import { ASSET_LICENSES } from '../game/hardware';
 import {
+  AccountSyncConflict,
   BossId,
+  ConflictResolutionStrategy,
   DistrictId,
   HardwareDiagnostics,
   HudSnapshot,
@@ -63,6 +68,7 @@ import { OnlineHubView } from './OnlineHubView';
 import { SettingsCategory, SettingsView } from './SettingsView';
 import { ShopView } from './ShopView';
 import { StatsView } from './StatsView';
+import { UserProfileView } from './UserProfileView';
 
 export type MenuTab =
   | 'characters'
@@ -75,6 +81,7 @@ export type MenuTab =
   | 'inventory'
   | 'stats'
   | 'online'
+  | 'profile'
   | 'settings'
   | 'credits';
 
@@ -86,14 +93,25 @@ interface MainMenuModalProps {
   liveHud: HudSnapshot;
   serverOnline: boolean;
   onlineUser: OnlineUser | null;
+  activeLocalProfileId: string | null;
   mpConnected: boolean;
   mpSelfId: string | null;
+  mpTargetUrl: string;
   mpRoom: MultiplayerRoomState | null;
   mpInvite: RoomInviteNotice | null;
+  mpNotice: { text: string; isError?: boolean } | null;
+  pendingConflict: AccountSyncConflict | null;
+  pendingOnlineSave: PlayerSaveData | null;
+  onResolveConflict: (
+    strategy: ConflictResolutionStrategy,
+    mergedSave: PlayerSaveData,
+  ) => Promise<void>;
+  onDismissConflict: () => void;
   onDismissInvite: () => void;
   previewBossId: BossId;
   onSelectBossPreview: (bossId: BossId) => void;
   onOnlineUserChange: (user: OnlineUser | null) => void;
+  onSwitchLocalProfile: (profileId: string, nextSave: PlayerSaveData) => void;
   onUpdateSave: (next: PlayerSaveData) => void;
   onVideoChangeWithConfirm: (next: PCSettings, prev: PCSettings) => void;
   onRunBenchmark: () => Promise<number>;
@@ -125,14 +143,22 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   liveHud,
   serverOnline,
   onlineUser,
+  activeLocalProfileId,
   mpConnected,
   mpSelfId,
+  mpTargetUrl,
   mpRoom,
   mpInvite,
+  mpNotice,
+  pendingConflict,
+  pendingOnlineSave,
+  onResolveConflict,
+  onDismissConflict,
   onDismissInvite,
   previewBossId,
   onSelectBossPreview,
   onOnlineUserChange,
+  onSwitchLocalProfile,
   onUpdateSave,
   onVideoChangeWithConfirm,
   onRunBenchmark,
@@ -210,6 +236,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     { id: 'inventory', label: t(lang, 'nav.inventory'), Icon: Backpack },
     { id: 'stats', label: t(lang, 'nav.stats'), Icon: BarChart3 },
     { id: 'online', label: t(lang, 'nav.online'), Icon: Globe },
+    { id: 'profile', label: 'Perfil', Icon: UserCheck },
     { id: 'settings', label: t(lang, 'nav.settings'), Icon: Settings },
     { id: 'credits', label: t(lang, 'nav.credits'), Icon: Info },
   ];
@@ -635,7 +662,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           <BattlePassView save={save} onUpdateSave={onUpdateSave} />
         )}
 
-        {/* 6. EVENTS & 5-BOSS ARENA */}
+        {/* 6. EVENTS & 8-BOSS SEQUENTIAL ARENA */}
         {tab === 'events' &&
           (eventsSub === 'bosses' ? (
             <>
@@ -643,10 +670,10 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
                   <div>
                     <h2 className="font-display text-xl font-bold text-white">
-                      5 Jefes de Neon City
+                      8 Jefes de Neon City
                     </h2>
                     <p className="text-[11px] text-slate-400">
-                      Modelos 3D únicos con fases de ataque y celdas EMP.
+                      Progresión lineal 1–8 · Modelos 3D únicos y fases EMP.
                     </p>
                   </div>
                   <div className="flex gap-1 bg-[#0b1224] p-1 rounded-lg border border-white/10">
@@ -654,7 +681,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                       onClick={() => setEventsSub('bosses')}
                       className="px-2.5 py-1 rounded text-xs font-bold bg-rose-500 text-white cursor-pointer"
                     >
-                      Jefes
+                      Jefes (8)
                     </button>
                     <button
                       onClick={() => setEventsSub('events')}
@@ -666,9 +693,10 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </div>
 
                 <div className="space-y-2">
-                  {BOSSES.map((b) => {
+                  {BOSSES.map((b, idx) => {
                     const selected = b.id === previewBossId;
                     const defeated = save.defeatedBosses.includes(b.id);
+                    const unlocked = isBossUnlocked(b.id, save.defeatedBosses);
                     return (
                       <button
                         key={b.id}
@@ -679,16 +707,26 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                         className={`w-full p-3 rounded-xl border text-left cursor-pointer ${
                           selected
                             ? 'bg-rose-500/20 border-rose-400 text-white'
-                            : 'bg-[#0c1324] border-white/10 text-slate-300 hover:border-white/25'
+                            : unlocked
+                              ? 'bg-[#0c1324] border-white/10 text-slate-300 hover:border-white/25'
+                              : 'bg-[#090e1c] border-white/5 text-slate-400 opacity-75 hover:opacity-95'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <span className="font-display font-bold text-sm text-white">
+                          <span className="font-display font-bold text-sm text-white flex items-center gap-1.5">
+                            <span className="font-mono-num text-xs text-slate-400">
+                              #{idx + 1}
+                            </span>
                             {b.name}
+                            {!unlocked && <Lock className="w-3.5 h-3.5 text-amber-400" />}
                           </span>
                           {defeated ? (
                             <span className="text-[11px] text-emerald-300 font-bold">
                               Derrotado
+                            </span>
+                          ) : !unlocked ? (
+                            <span className="text-[11px] text-amber-300 font-semibold">
+                              Bloqueado
                             </span>
                           ) : (
                             <span className="text-[11px] font-mono-num text-rose-300">
@@ -705,46 +743,74 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 </div>
               </div>
 
-              <div className="pointer-events-auto lg:self-end w-full lg:w-[400px] bg-[#070b17]/95 border border-rose-500/45 rounded-xl p-4 space-y-3">
-                <div>
-                  <div className="text-[11px] text-rose-300 font-bold">
-                    {activeBoss.title}
+              {(() => {
+                const activeBossUnlocked = isBossUnlocked(
+                  activeBoss.id,
+                  save.defeatedBosses,
+                );
+                const unlockReq = getBossUnlockRequirement(activeBoss.id);
+                return (
+                  <div className="pointer-events-auto lg:self-end w-full lg:w-[400px] bg-[#070b17]/95 border border-rose-500/45 rounded-xl p-4 space-y-3">
+                    <div>
+                      <div className="text-[11px] text-rose-300 font-bold">
+                        {activeBoss.title}
+                      </div>
+                      <h3 className="font-display text-2xl font-bold text-white">
+                        {activeBoss.name}
+                      </h3>
+                      <p className="text-xs text-slate-300 mt-1">
+                        {activeBoss.description}
+                      </p>
+                    </div>
+
+                    <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-2">
+                      {activeBoss.phases.map((p) => (
+                        <div key={p}>· {p}</div>
+                      ))}
+                    </div>
+
+                    <div className="p-2.5 rounded-lg bg-[#10182b] border border-cyan-400/30 text-xs text-cyan-200">
+                      {activeBoss.counterHint}
+                    </div>
+
+                    {!activeBossUnlocked && unlockReq && (
+                      <div className="p-2.5 rounded-lg bg-amber-950/40 border border-amber-400/50 text-xs text-amber-200 flex items-center gap-2">
+                        <Lock className="w-4 h-4 text-amber-400 shrink-0" />
+                        <span>
+                          Derrota primero a <strong className="text-white">{unlockReq.name}</strong> ({unlockReq.title}) para desbloquear este jefe.
+                        </span>
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-between text-xs font-mono-num text-amber-300">
+                      <span>Recompensa de Asalto:</span>
+                      <span>
+                        +{activeBoss.rewardCoins} M · +{activeBoss.rewardGems} G
+                      </span>
+                    </div>
+
+                    <button
+                      disabled={!activeBossUnlocked}
+                      onClick={() => {
+                        if (!activeBossUnlocked) return;
+                        audioEngine.playUiClick(true);
+                        onStartBossBattle(activeBoss.id, activeBoss.cityId);
+                      }}
+                      className="w-full py-2.5 rounded-lg bg-rose-500 hover:bg-rose-400 disabled:bg-slate-800 disabled:text-slate-400 text-white font-display font-bold text-sm flex items-center justify-center gap-2 cursor-pointer disabled:cursor-not-allowed"
+                    >
+                      {activeBossUnlocked ? (
+                        <>
+                          <Swords className="w-4 h-4" /> Enfrentar a {activeBoss.name}
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-4 h-4" /> Jefe Bloqueado (Progresión Lineal)
+                        </>
+                      )}
+                    </button>
                   </div>
-                  <h3 className="font-display text-2xl font-bold text-white">
-                    {activeBoss.name}
-                  </h3>
-                  <p className="text-xs text-slate-300 mt-1">
-                    {activeBoss.description}
-                  </p>
-                </div>
-
-                <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-2">
-                  {activeBoss.phases.map((p) => (
-                    <div key={p}>· {p}</div>
-                  ))}
-                </div>
-
-                <div className="p-2.5 rounded-lg bg-[#10182b] border border-cyan-400/30 text-xs text-cyan-200">
-                  {activeBoss.counterHint}
-                </div>
-
-                <div className="flex items-center justify-between text-xs font-mono-num text-amber-300">
-                  <span>Recompensa de Asalto:</span>
-                  <span>
-                    +{activeBoss.rewardCoins} M · +{activeBoss.rewardGems} G
-                  </span>
-                </div>
-
-                <button
-                  onClick={() => {
-                    audioEngine.playUiClick(true);
-                    onStartBossBattle(activeBoss.id, activeBoss.cityId);
-                  }}
-                  className="w-full py-2.5 rounded-lg bg-rose-500 hover:bg-rose-400 text-white font-display font-bold text-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Swords className="w-4 h-4" /> Enfrentar a {activeBoss.name}
-                </button>
-              </div>
+                );
+              })()}
             </>
           ) : (
             <div className="space-y-4">
@@ -762,7 +828,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     onClick={() => setEventsSub('bosses')}
                     className="px-3 py-1.5 rounded text-xs font-bold text-slate-300 cursor-pointer"
                   >
-                    Jefes 3D (5)
+                    Jefes 3D (8)
                   </button>
                   <button
                     onClick={() => setEventsSub('events')}
@@ -835,12 +901,20 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             save={save}
             serverOnline={serverOnline}
             onlineUser={onlineUser}
+            activeLocalProfileId={activeLocalProfileId}
             mpConnected={mpConnected}
             mpSelfId={mpSelfId}
+            mpTargetUrl={mpTargetUrl}
             mpRoom={mpRoom}
             mpInvite={mpInvite}
+            mpNotice={mpNotice}
+            pendingConflict={pendingConflict}
+            pendingOnlineSave={pendingOnlineSave}
+            onResolveConflict={onResolveConflict}
+            onDismissConflict={onDismissConflict}
             onDismissInvite={onDismissInvite}
             onOnlineUserChange={onOnlineUserChange}
+            onSwitchLocalProfile={onSwitchLocalProfile}
             onReplaceSave={onUpdateSave}
             onStartChallenge={(districtId, bossId) => {
               if (bossId) {
@@ -849,6 +923,20 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 onDeployDistrict(districtId);
               }
             }}
+          />
+        )}
+
+        {/* 10B. UNIFIED USER PROFILE */}
+        {tab === 'profile' && (
+          <UserProfileView
+            save={save}
+            serverOnline={serverOnline}
+            onlineUser={onlineUser}
+            activeLocalProfileId={activeLocalProfileId}
+            onUpdateSave={onUpdateSave}
+            onOnlineUserChange={onOnlineUserChange}
+            onSwitchLocalProfile={onSwitchLocalProfile}
+            onOpenOnlineTab={() => switchTab('online')}
           />
         )}
 
@@ -873,13 +961,37 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
         {/* 12. CREDITS & ASSET LICENSES */}
         {tab === 'credits' && (
           <div className="space-y-5 max-w-4xl mx-auto">
-            <div className="border-b border-white/10 pb-3">
-              <h2 className="font-display text-2xl font-bold text-white">
-                METRO RUSH: NEON CITY — AAA Commercial Edition
-              </h2>
-              <p className="text-xs text-slate-400 mt-1">
-                Motor 3D Three.js PBR con LOD e Instancing, 4 Vehículos 3D Futuristas, Persecutor IA Enforcer, Pase de Batalla de 20 Niveles, Audio Procedural Adaptativo, 7 Ciudades con ciclo horario completo, 5 Jefes 3D y Servidor Online con validación anti-trampas.
+            <div className="border-b border-white/10 pb-3.5 space-y-2">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="font-display text-2xl font-bold text-white">
+                  METRO RUSH: NEON CITY
+                </h2>
+                <span className="font-mono-num text-xs font-semibold text-cyan-300">
+                  v2.4.0 Desktop Edition
+                </span>
+              </div>
+              <p className="text-xs text-slate-300">
+                Creado y dirigido por{' '}
+                <strong className="text-white">Jaderson Liriano</strong>,{' '}
+                <strong className="text-cyan-300">Líder de XynexDevs</strong>.
               </p>
+              <p className="text-xs text-slate-400">
+                Motor 3D Three.js PBR con LOD e Instancing, 4 Vehículos 3D Futuristas, Persecutor IA Enforcer, Pase de Batalla de 20 Niveles, Audio Procedural Adaptativo, 7 Ciudades con ciclo horario completo, 8 Jefes 3D con progresión lineal, Cuentas Duales Persistentes y Multijugador LAN / VPN / Túnel / WebRTC.
+              </p>
+            </div>
+
+            <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/35 flex flex-wrap items-center justify-between gap-3 text-xs">
+              <div>
+                <div className="font-display font-bold text-sm text-white">
+                  Créditos Oficiales de Autoría
+                </div>
+                <div className="text-slate-300 mt-0.5">
+                  Dirección, Diseño de Juego y Arquitectura: <strong className="text-white">Jaderson Liriano</strong> (Líder de <strong className="text-cyan-300">XynexDevs</strong>)
+                </div>
+              </div>
+              <div className="font-mono-num text-slate-400">
+                © 2026 Jaderson Liriano · XynexDevs
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
@@ -904,14 +1016,14 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   <Shield className="w-4 h-4" /> Seguridad y Guardado v3
                 </div>
                 <p className="text-slate-300">
-                  Autenticación scrypt + HMAC SHA-256, validación de economía transaccional y respaldo automático de partida en JSON.
+                  Autenticación scrypt + HMAC SHA-256 + sesiones cifradas con safeStorage, respaldo JSON e invitaciones persistentes en SQLite.
                 </p>
               </div>
             </div>
 
             <div className="rounded-xl bg-[#0b1224] border border-white/10 p-4 space-y-3">
               <div className="font-display font-bold text-sm text-white">
-                Licencias y Registro de Recursos
+                Licencias y Atribuciones de Terceros (Preservadas)
               </div>
               <div className="divide-y divide-white/10 text-xs">
                 {ASSET_LICENSES.map((lic) => (

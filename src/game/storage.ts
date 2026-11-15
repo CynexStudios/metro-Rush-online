@@ -339,6 +339,8 @@ export function createInitialSave(): PlayerSaveData {
     weeklyResetAt: now + WEEK_MS,
     completedEvents: [],
     defeatedBosses: [],
+    ownedPets: ['fox_cyber'],
+    equippedPetId: 'fox_cyber',
     unlockedAchievements: [],
     storyChapter: 1,
     tutorialCompleted: false,
@@ -499,6 +501,16 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     ),
     unlockedDistricts: migratedDistricts,
     defeatedBosses: parsed.defeatedBosses ?? [],
+    ownedPets:
+      Array.isArray(parsed.ownedPets) && parsed.ownedPets.length > 0
+        ? Array.from(new Set(['fox_cyber', ...parsed.ownedPets]))
+        : ['fox_cyber'],
+    equippedPetId:
+      parsed.equippedPetId === null
+        ? null
+        : typeof parsed.equippedPetId === 'string'
+          ? parsed.equippedPetId
+          : 'fox_cyber',
     ownedVehicles,
     selectedVehicleId,
     vehicleUpgrades: {
@@ -780,6 +792,7 @@ export function applyRunToSave(
       hour: '2-digit',
       minute: '2-digit',
     }),
+    timestampMs: Date.now(),
     mode: run.mode,
     districtId: run.districtId,
     characterId: run.characterId,

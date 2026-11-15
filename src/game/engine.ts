@@ -12,8 +12,11 @@ import {
   getCharacterById,
   getDistrictById,
   getStoryChapterByNum,
+  getUnlockedBossIds,
   getVehicleById,
+  isBossUnlocked,
   LIVE_EVENTS,
+  ORDERED_BOSS_IDS,
 } from './data';
 import { getEffectiveVehicleStats, getReviveCostForAttempt } from './economy';
 import {
@@ -494,6 +497,7 @@ export class MetroRushEngine {
   private bossHp = 0;
   private bossMaxHp = 3;
   private bossPhase = 1;
+  private bossEntranceTimer = 0;
   private bossDefeatedId: BossId | null = null;
   private bossDistance: number | null = null;
   private bossAttackTimer = 6;
@@ -1007,6 +1011,7 @@ export class MetroRushEngine {
     const prevCosmetics = JSON.stringify(this.save.equippedCosmetics);
     const prevVehicle = this.save.selectedVehicleId ?? 'hover_bike';
     const prevPaints = JSON.stringify(this.save.vehiclePaints ?? {});
+    const prevPet = this.save.equippedPetId ?? null;
     const prevDistrict = this.save.selectedDistrictId;
     const prevTexQuality = this.settings.textureQuality;
     const prevRefl = this.settings.reflections;
@@ -1047,6 +1052,8 @@ export class MetroRushEngine {
     ) {
       this.rebuildPlayerCharacter();
       this.rebuildVehicleShowcase();
+    } else if (prevPet !== (save.equippedPetId ?? null)) {
+      this.rebuildCompanionFox();
     }
 
     if (prevTime !== this.settings.timeOfDay) {
@@ -1100,17 +1107,90 @@ export class MetroRushEngine {
   }
 
   private rebuildCompanionFox(): void {
-    const char = getCharacterById(this.save.selectedCharacterId);
     if (this.companionFox) {
       this.scene.remove(this.companionFox.group);
       this.companionFox.dispose();
       this.companionFox = null;
     }
+    if (this.save.equippedPetId !== 'fox_cyber') {
+      return;
+    }
+    const char = getCharacterById(this.save.selectedCharacterId);
     const fox = buildCompanionFoxModel(char.colors.accent);
     fox.group.position.set(-4.8, 0.35, 1.2);
-    fox.group.visible = this.phase === 'playing' || (this.phase === 'title' && this.showcaseMode === 'title');
+    fox.group.visible =
+      this.phase === 'playing' || (this.phase === 'title' && this.showcaseMode === 'title');
     this.scene.add(fox.group);
     this.companionFox = fox;
+  }
+
+  private getBossCombatDistance(bossId: BossId): number {
+    switch (bossId) {
+      case 'iron_hunter':
+        return 28;
+      case 'neon_wraith':
+        return 29;
+      case 'titan_drone':
+      case 'overseer':
+        return 30;
+      case 'volt_archon':
+        return 31;
+      case 'cryo_leviathan':
+        return 32;
+      case 'the_sentinel':
+        return 33;
+      case 'omega_core':
+        return 34;
+    }
+  }
+
+  private animateBossMesh(dt: number, phase: number): void {
+    if (!this.bossMesh) return;
+    const spd = 1 + (Math.max(1, phase) - 1) * 0.45;
+    const rings = this.bossMesh.userData.rings as THREE.Object3D[] | undefined;
+    if (rings) {
+      rings.forEach((r, idx) => {
+        if (this.activeBossId === 'titan_drone' || this.activeBossId === 'volt_archon') {
+          r.rotation.z += dt * (2.6 + idx * 0.4) * spd;
+        } else {
+          r.rotation.z += dt * (idx % 2 === 0 ? 1.4 : -1.8) * spd;
+          r.rotation.x += dt * 0.55 * spd;
+        }
+      });
+    }
+    const wings = this.bossMesh.userData.wings as THREE.Object3D[] | undefined;
+    if (wings) {
+      wings.forEach((w, idx) => {
+        const sign = idx % 2 === 0 ? 1 : -1;
+        w.rotation.z = sign * (0.36 + Math.sin(this.elapsedTotal * 4.5 * spd) * 0.16);
+      });
+    }
+    const segments = this.bossMesh.userData.segments as THREE.Object3D[] | undefined;
+    if (segments) {
+      if (this.activeBossId === 'cryo_leviathan') {
+        segments.forEach((seg, idx) => {
+          seg.position.x = Math.sin(this.elapsedTotal * 4.2 * spd - idx * 0.65) * (0.45 + idx * 0.14);
+          seg.position.y = 0.25 + Math.cos(this.elapsedTotal * 3.5 * spd - idx * 0.5) * 0.22;
+        });
+      } else if (this.activeBossId === 'omega_core' || this.activeBossId === 'the_sentinel') {
+        segments.forEach((seg, idx) => {
+          const baseAng = (idx * Math.PI * 2) / Math.max(1, segments.length) + this.elapsedTotal * 1.15 * spd;
+          const rx = this.activeBossId === 'omega_core' ? 3.55 : 3.1;
+          const ry = this.activeBossId === 'omega_core' ? 2.55 : 2.2;
+          seg.position.set(Math.cos(baseAng) * rx, Math.sin(baseAng) * ry, Math.sin(baseAng * 2) * 0.55);
+          seg.rotation.y += dt * 2.2 * spd;
+        });
+      } else if (this.activeBossId === 'iron_hunter') {
+        segments.forEach((leg, idx) => {
+          leg.rotation.x = Math.sin(this.elapsedTotal * 8 * spd + idx * Math.PI * 0.5) * 0.35;
+        });
+      }
+    }
+    const core = this.bossMesh.userData.core as THREE.Object3D | null | undefined;
+    if (core) {
+      const pulse = 1 + Math.sin(this.elapsedTotal * 6 * spd) * (0.06 + (phase - 1) * 0.03);
+      core.scale.setScalar(pulse);
+    }
   }
 
   private getRoadElevationY(worldZ: number): number {
@@ -1449,7 +1529,9 @@ export class MetroRushEngine {
 
     this.playerRig.root.visible = true;
     if (this.vehicleShowcase) this.vehicleShowcase.group.visible = false;
-    if (this.companionFox) this.companionFox.group.visible = true;
+    if (this.companionFox) {
+      this.companionFox.group.visible = this.save.equippedPetId === 'fox_cyber';
+    }
 
     this.playerX = 0;
     this.playerY = 0;
@@ -1544,12 +1626,17 @@ export class MetroRushEngine {
     this.nextRandomBossDist = 760 + Math.random() * 240;
 
     const evt = eventId ? LIVE_EVENTS.find((e) => e.id === eventId) : null;
-    const chosenBossId =
+    const candidateBossId =
       bossOverride ??
       evt?.bossId ??
       (mode === 'story' ? chapterDef.bossId : undefined) ??
       distDef.signatureBoss ??
       BOSSES[0].id;
+    const unlockedBosses = getUnlockedBossIds(this.save.defeatedBosses ?? []);
+    const chosenBossId =
+      mode === 'bosschase' && !isBossUnlocked(candidateBossId, this.save.defeatedBosses ?? [])
+        ? unlockedBosses[unlockedBosses.length - 1] ?? BOSSES[0].id
+        : candidateBossId;
     const bossDef = getBossById(chosenBossId);
     this.swapBossModel(chosenBossId);
 
@@ -1558,12 +1645,15 @@ export class MetroRushEngine {
       this.bossMaxHp = bossDef.hpSegments;
       this.bossHp = bossDef.hpSegments;
       this.bossPhase = 1;
-      this.bossDistance = 20;
-      this.bossAttackTimer = 4.2;
+      this.bossEntranceTimer = 1.6;
+      this.bossDistance = 24;
+      this.bossAttackTimer = 4.6;
+      this.bossMesh.position.set(0, 4.5, -48);
       this.bossMesh.visible = true;
       audioEngine.playBossEntrance();
     } else {
       this.bossHp = 0;
+      this.bossEntranceTimer = 0;
       this.bossDistance = null;
       this.bossMesh.visible = false;
     }
@@ -3449,14 +3539,17 @@ export class MetroRushEngine {
   private updateTitleScene(dt: number): void {
     this.elapsedTotal += dt;
     if (this.companionFox) {
-      this.companionFox.group.visible = this.showcaseMode === 'title';
-      this.companionFox.group.position.set(
-        -2.2,
-        0.02 + Math.abs(Math.sin(this.elapsedTotal * 3.5)) * 0.04,
-        0.6,
-      );
-      this.companionFox.group.rotation.y = Math.PI * 0.85;
-      this.companionFox.mixer?.update(dt * 0.5);
+      const petEquipped = this.save.equippedPetId === 'fox_cyber';
+      this.companionFox.group.visible = petEquipped && this.showcaseMode === 'title';
+      if (petEquipped) {
+        this.companionFox.group.position.set(
+          -1.85,
+          0.02 + Math.abs(Math.sin(this.elapsedTotal * 3.5)) * 0.04,
+          0.6,
+        );
+        this.companionFox.group.rotation.y = Math.PI * 0.85;
+        this.companionFox.mixer?.update(dt * 0.5);
+      }
     }
     if (this.showcaseMode === 'garage') {
       if (this.vehicleShowcase) {
@@ -3508,29 +3601,30 @@ export class MetroRushEngine {
     } else if (this.showcaseMode === 'boss') {
       if (this.vehicleShowcase) this.vehicleShowcase.group.visible = false;
       this.bossMesh.visible = true;
-      this.bossMesh.position.set(0, 2.4 + Math.sin(this.elapsedTotal * 2) * 0.25, -5.5);
+      this.bossMesh.position.set(0, 2.5 + Math.sin(this.elapsedTotal * 2) * 0.25, -6.2);
       this.bossMesh.rotation.y = Math.sin(this.elapsedTotal * 0.8) * 0.45;
-      this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, 1.8, 5, dt);
-      this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, 2.6, 5, dt);
-      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 2.4, 5, dt);
-      this.camera.lookAt(0, 2.2, -5.5);
+      this.animateBossMesh(dt, 2);
+      this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, 1.9, 5, dt);
+      this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, 2.7, 5, dt);
+      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 3.1, 5, dt);
+      this.camera.lookAt(0, 2.25, -6.2);
     } else {
       if (this.vehicleShowcase) this.vehicleShowcase.group.visible = false;
-      const angle = Math.sin(this.elapsedTotal * 0.32) * 0.4;
+      const angle = Math.sin(this.elapsedTotal * 0.32) * 0.32;
       this.camera.position.x = THREE.MathUtils.damp(
         this.camera.position.x,
-        Math.sin(angle) * 4.2,
+        Math.sin(angle) * 3.6 - 0.55,
         4,
         dt,
       );
       this.camera.position.y = THREE.MathUtils.damp(
         this.camera.position.y,
-        2.3 + Math.sin(this.elapsedTotal * 0.55) * 0.16,
+        2.35 + Math.sin(this.elapsedTotal * 0.55) * 0.14,
         4,
         dt,
       );
-      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 4.6, 4, dt);
-      this.camera.lookAt(0, 1.35, -3.5);
+      this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, 5.0, 4, dt);
+      this.camera.lookAt(-0.4, 1.32, -3.5);
     }
     animateCharacterRig(this.playerRig, 'idle', this.elapsedTotal, 0, 0, dt);
     this.playerPointLight.position.set(0, 2.2, 1.5);
@@ -4045,15 +4139,19 @@ export class MetroRushEngine {
     );
 
     if (this.companionFox) {
-      const foxZ = this.playerZ + 1.3;
-      const foxGy = this.getRoadElevationY(foxZ);
-      this.companionFox.group.position.set(
-        -4.65,
-        foxGy + 0.35 + Math.abs(Math.sin(this.elapsedTotal * 7)) * 0.08,
-        foxZ,
-      );
-      this.companionFox.group.rotation.y = Math.PI;
-      this.companionFox.mixer?.update(simDt);
+      const petEquipped = this.save.equippedPetId === 'fox_cyber';
+      this.companionFox.group.visible = petEquipped;
+      if (petEquipped) {
+        const foxZ = this.playerZ + 1.3;
+        const foxGy = this.getRoadElevationY(foxZ);
+        this.companionFox.group.position.set(
+          -4.65,
+          foxGy + 0.35 + Math.abs(Math.sin(this.elapsedTotal * 7)) * 0.08,
+          foxZ,
+        );
+        this.companionFox.group.rotation.y = Math.PI;
+        this.companionFox.mixer?.update(simDt);
+      }
     }
 
     if (this.grounded && (action === 'run' || action === 'sprint')) {
@@ -4403,9 +4501,9 @@ export class MetroRushEngine {
       x,
       y,
       z: spawnZ,
-      speedZ: kind === 'laser' ? 38 : kind === 'shockwave' ? 30 : 28 + this.bossPhase * 2,
+      speedZ: kind === 'laser' ? 38 : kind === 'shockwave' ? 30 : 29 + this.bossPhase * 2.5,
       telegraphTimer: 0,
-      lifeTimer: 4.5,
+      lifeTimer: 6.2,
       hit: false,
     });
   }
@@ -4856,6 +4954,22 @@ export class MetroRushEngine {
     const bossDef = getBossById(this.activeBossId);
     if (this.bossHp <= 0) {
       this.bossDefeatedId = bossDef.id;
+      this.spawnParticles(
+        this.bossMesh.position.x,
+        this.bossMesh.position.y,
+        this.bossMesh.position.z,
+        56,
+        bossDef.primaryColor,
+        12,
+      );
+      this.spawnParticles(
+        this.bossMesh.position.x,
+        this.bossMesh.position.y,
+        this.bossMesh.position.z,
+        36,
+        bossDef.secondaryColor,
+        9,
+      );
       const bonusCoins = Math.round(bossDef.rewardCoins * 1.35);
       const bonusGems = Math.round(bossDef.rewardGems * 1.35);
       this.coinsRun += bonusCoins;
@@ -5358,7 +5472,9 @@ export class MetroRushEngine {
         this.bossHp = 3;
         this.bossMaxHp = 3;
         this.bossPhase = 1;
-        this.bossAttackTimer = 3.4;
+        this.bossEntranceTimer = 1.5;
+        this.bossAttackTimer = 3.9;
+        this.bossMesh.position.set(0, 4.5, this.playerZ - 48);
         this.bossMesh.visible = true;
         audioEngine.setBossPhase(1);
         audioEngine.playBossEntrance();
@@ -5366,21 +5482,25 @@ export class MetroRushEngine {
       }
     }
 
-    // Surprise Random Boss Ambush during Normal Runs
+    // Surprise Random Boss Ambush during Normal Runs (only from unlocked bosses)
     if (
       (this.mode === 'endless' || this.mode === 'parkour') &&
       !this.randomBossActive &&
       this.distance >= this.nextRandomBossDist
     ) {
       this.nextRandomBossDist += 920 + Math.random() * 280;
-      const randBoss = BOSSES[Math.floor(Math.random() * BOSSES.length)];
+      const unlockedPool = getUnlockedBossIds(this.save.defeatedBosses ?? []);
+      const randId = unlockedPool[Math.floor(Math.random() * unlockedPool.length)] ?? ORDERED_BOSS_IDS[0];
+      const randBoss = getBossById(randId);
       this.swapBossModel(randBoss.id);
       this.randomBossActive = true;
       this.randomBossTimer = 24;
       this.bossHp = 3;
       this.bossMaxHp = 3;
       this.bossPhase = 1;
-      this.bossAttackTimer = 3.5;
+      this.bossEntranceTimer = 1.5;
+      this.bossAttackTimer = 4.0;
+      this.bossMesh.position.set(0, 4.5, this.playerZ - 48);
       this.bossMesh.visible = true;
       audioEngine.setBossPhase(1);
       audioEngine.playBossEntrance();
@@ -5390,13 +5510,20 @@ export class MetroRushEngine {
 
     if (this.randomBossActive) {
       this.randomBossTimer -= simDt;
-      const bossGy = this.getRoadElevationY(this.playerZ - 16);
+      if (this.bossEntranceTimer > 0) {
+        this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
+      }
+      const targetDist = this.getBossCombatDistance(this.activeBossId);
+      const introProgress = 1 - this.bossEntranceTimer / 1.5;
+      const bossZOffset = THREE.MathUtils.lerp(48, targetDist, Math.min(1, introProgress));
+      const bossGy = this.getRoadElevationY(this.playerZ - bossZOffset);
       this.bossMesh.position.set(
         THREE.MathUtils.lerp(this.bossMesh.position.x, this.playerX, dt * 3.2),
         bossGy + 4.3 + Math.sin(this.elapsedTotal * 3.2) * 0.45,
-        this.playerZ - 16,
+        this.playerZ - bossZOffset,
       );
       this.bossMesh.rotation.y = Math.sin(this.elapsedTotal * 2) * 0.25;
+      this.animateBossMesh(simDt, this.bossPhase);
 
       const prevAtk = this.bossAttackTimer;
       this.bossAttackTimer -= simDt;
@@ -5432,21 +5559,31 @@ export class MetroRushEngine {
     }
 
     if (this.mode === 'bosschase' && this.bossDistance !== null) {
+      if (this.bossEntranceTimer > 0) {
+        this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
+      }
+      const targetDist = this.getBossCombatDistance(this.activeBossId);
+      const introProgress = 1 - this.bossEntranceTimer / 1.6;
+      const bossZOffset = THREE.MathUtils.lerp(48, targetDist, Math.min(1, introProgress));
+
       const targetX =
         this.activeBossId === 'neon_wraith'
-          ? LANES[Math.floor(this.elapsedTotal * (1.2 + this.bossPhase * 0.25)) % 3]
-          : this.playerX;
-      const bossGy = this.getRoadElevationY(this.playerZ - 16);
+          ? LANES[Math.floor(this.elapsedTotal * (1.2 + this.bossPhase * 0.28)) % 3]
+          : this.activeBossId === 'cryo_leviathan'
+            ? Math.sin(this.elapsedTotal * (1.4 + this.bossPhase * 0.2)) * 3.1
+            : this.playerX;
+      const bossGy = this.getRoadElevationY(this.playerZ - bossZOffset);
       const hoverY =
         this.activeBossId === 'iron_hunter'
-          ? bossGy + 1.55 + Math.abs(Math.sin(this.elapsedTotal * 5)) * 0.35
-          : bossGy + 4.2 + Math.sin(this.elapsedTotal * 3) * 0.45;
+          ? bossGy + 1.6 + Math.abs(Math.sin(this.elapsedTotal * 5)) * 0.35
+          : bossGy + 4.35 + Math.sin(this.elapsedTotal * 3) * 0.45;
       this.bossMesh.position.set(
         THREE.MathUtils.lerp(this.bossMesh.position.x, targetX, dt * 3.5),
         hoverY,
-        this.playerZ - 16,
+        this.playerZ - bossZOffset,
       );
       this.bossMesh.rotation.y = Math.sin(this.elapsedTotal * 2) * 0.25;
+      this.animateBossMesh(simDt, this.bossPhase);
 
       const prevAtk = this.bossAttackTimer;
       this.bossAttackTimer -= simDt;
@@ -5456,41 +5593,90 @@ export class MetroRushEngine {
         }
         const warnMap: Record<BossId, string> = {
           titan_drone: '¡PROYECTILES Y BARRIDO LÁSER — CAMBIA DE CARRIL!',
-          overseer: '¡RAYO DE BARRIDO EN CARRIL — ESQUIVA YA!',
           iron_hunter: '¡ONDA EXPANSIVA SÍSMICA — SALTA!',
+          overseer: '¡RAYO DE BARRIDO EN CARRIL — ESQUIVA YA!',
           neon_wraith: '¡BOMBARDEO HOLOGRÁFICO EN CARRIL!',
+          cryo_leviathan: '¡LANZAS DE ESCARCHA Y PULSO CRIOGÉNICO!',
+          volt_archon: '¡DESCARGA VOLTAICA EN CADENA — CAMBIA DE CARRIL!',
           the_sentinel: '¡TORMENTA ORBITAL MULTIFASE — ESQUIVA!',
+          omega_core: '¡SINGULARIDAD OMEGA — MÁXIMA ALERTA EN PISTA!',
         };
         this.bossWarningText = warnMap[this.activeBossId] ?? '¡JEFE ATACANDO!';
         this.contextPrompt = 'RECOGE CELDAS EMP CIAN PARA DAÑAR AL JEFE';
       }
       if (this.bossAttackTimer <= 0) {
         this.bossWarningText = null;
-        this.bossAttackTimer = Math.max(2.2, 4.8 - this.bossPhase * 0.55);
+        this.bossAttackTimer = Math.max(2.15, 4.8 - this.bossPhase * 0.55);
         this.bossDistance = Math.max(2, this.bossDistance - 3.2);
         if (this.forwardSpeed > 28 || this.vehicleTimer > 0) {
-          this.bossDistance = Math.min(25, this.bossDistance + 3.8);
+          this.bossDistance = Math.min(26, this.bossDistance + 3.8);
         }
 
-        // Boss-specific telegraphed pattern scaling across Phases 1..4
+        // Boss-specific telegraphed 4-phase choreography across all 8 bosses
         if (this.activeBossId === 'iron_hunter') {
-          this.spawnBossHazard('shockwave', this.targetLane);
-          audioEngine.playBossShockwave();
+          this.spawnBossHazard(this.bossPhase === 2 ? 'projectile' : 'shockwave', this.targetLane);
+          if (this.bossPhase !== 2) audioEngine.playBossShockwave();
           if (this.bossPhase >= 3) {
-            this.spawnBossHazard('projectile', this.targetLane);
+            this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
+          }
+          if (this.bossPhase >= 4) {
+            this.spawnBossHazard('laneStrike', (this.targetLane + 2) % 3);
           }
         } else if (this.activeBossId === 'overseer') {
           this.spawnBossHazard('laser', this.targetLane);
           if (this.bossPhase >= 2) {
             this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
           }
-        } else if (this.activeBossId === 'neon_wraith') {
-          this.spawnBossHazard('laneStrike', this.targetLane);
           if (this.bossPhase >= 3) {
             this.spawnBossHazard('shockwave', 1);
             audioEngine.playBossShockwave();
           }
+          if (this.bossPhase >= 4) {
+            this.spawnBossHazard('laser', (this.targetLane + 2) % 3);
+          }
+        } else if (this.activeBossId === 'neon_wraith') {
+          this.spawnBossHazard('laneStrike', this.targetLane);
+          if (this.bossPhase >= 2) {
+            this.spawnBossHazard('laneStrike', (this.targetLane + 1) % 3);
+          }
+          if (this.bossPhase >= 3) {
+            this.spawnBossHazard('shockwave', 1);
+            audioEngine.playBossShockwave();
+          }
+        } else if (this.activeBossId === 'cryo_leviathan') {
+          this.spawnBossHazard('projectile', this.targetLane);
+          if (this.bossPhase >= 2) {
+            this.spawnBossHazard('projectile', (this.targetLane + 2) % 3);
+          }
+          if (this.bossPhase >= 3) {
+            this.spawnBossHazard('shockwave', 1);
+            audioEngine.playBossShockwave();
+          }
+          if (this.bossPhase >= 4) {
+            this.spawnBossHazard('laser', this.targetLane);
+          }
+        } else if (this.activeBossId === 'volt_archon') {
+          this.spawnBossHazard('laser', this.targetLane);
+          if (this.bossPhase >= 2) {
+            this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
+            this.spawnBossHazard('projectile', (this.targetLane + 2) % 3);
+          }
+          if (this.bossPhase >= 3) {
+            this.spawnBossHazard('shockwave', 1);
+            audioEngine.playBossShockwave();
+          }
+        } else if (this.activeBossId === 'omega_core') {
+          this.spawnBossHazard('laser', this.targetLane);
+          this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
+          if (this.bossPhase >= 2) {
+            this.spawnBossHazard('shockwave', 1);
+            audioEngine.playBossShockwave();
+          }
+          if (this.bossPhase >= 4) {
+            this.spawnBossHazard('laneStrike', (this.targetLane + 2) % 3);
+          }
         } else {
+          // titan_drone & the_sentinel
           this.spawnBossHazard('projectile', this.targetLane);
           if (this.bossPhase >= 2) {
             this.spawnBossHazard(
@@ -5498,6 +5684,9 @@ export class MetroRushEngine {
               (this.targetLane + 2) % 3,
             );
             if (this.bossPhase >= 4) audioEngine.playBossShockwave();
+          }
+          if (this.bossPhase >= 3 && this.activeBossId === 'the_sentinel') {
+            this.spawnBossHazard('laneStrike', (this.targetLane + 1) % 3);
           }
         }
       }

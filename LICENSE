@@ -1,0 +1,33 @@
+METRO RUSH: NEON CITY
+Copyright (c) 2026 Jaderson Liriano — Líder de XynexDevs
+Todos los derechos reservados / All Rights Reserved.
+
+1. PROPIEDAD INTELECTUAL Y AUTORÍA
+El software original, código fuente, diseño de juego, arquitectura multijugador,
+sistemas de progresión, interfaz de usuario, configuraciones de empaquetado y la
+marca "METRO RUSH: NEON CITY" son obra original y propiedad de Jaderson Liriano
+(Líder de XynexDevs).
+
+2. RESTRICCIONES DE USO Y REDISTRIBUCIÓN
+Se permite clonar y ejecutar este repositorio exclusivamente con fines de
+estudio, revisión técnica, pruebas y uso personal autorizado.
+
+Sin autorización previa por escrito de Jaderson Liriano (XynexDevs), NO está
+permitido:
+- Redistribuir, vender, sublicenciar o publicar este videojuego o versiones
+  compiladas (.exe) como producto comercial propio.
+- Eliminar, ocultar o alterar los créditos de autoría de Jaderson Liriano,
+  XynexDevs o los avisos legales presentes en el código y en la interfaz.
+- Reutilizar el código original para publicar copias comerciales derivadas.
+
+3. LIMITACIÓN DE GARANTÍA Y RESPONSABILIDAD
+EL SOFTWARE SE ENTREGA "TAL CUAL" ("AS IS"), SIN GARANTÍA DE NINGÚN TIPO,
+EXPRESA O IMPLÍCITA. EN NINGÚN CASO EL AUTOR O XYNEXDEVS SERÁN RESPONSABLES DE
+CUALQUIER RECLAMACIÓN, DAÑO O RESPONSABILIDAD DERIVADA DEL USO DEL SOFTWARE.
+
+4. COMPONENTES Y ACTIVOS DE TERCEROS
+Este proyecto incorpora modelos 3D de muestra (KhronosGroup/glTF-Sample-Assets)
+y bibliotecas de código abierto que conservan íntegramente sus licencias
+originales (CC0 1.0, CC-BY 4.0, Apache 2.0, MIT, ISC y SIL OFL 1.1).
+Consulta el archivo LICENSE.md en la raíz del repositorio para el listado
+completo de atribuciones de terceros.
