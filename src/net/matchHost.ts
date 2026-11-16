@@ -965,7 +965,8 @@ export async function startLanMatchHostServer(params: {
   const manager = new AuthoritativeRoomManager();
   const srv = http.createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
-    if (req.url === '/api/health') {
+    const reqPath = (req.url || '/').split('?')[0];
+    if (reqPath === '/api/health') {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(
         JSON.stringify({
@@ -973,6 +974,19 @@ export async function startLanMatchHostServer(params: {
           role: 'lan_match_host',
           gameVersion: GAME_VERSION,
           rooms: manager.listPublicRooms(),
+          activeRoomCount: manager.activeRooms.size,
+        }),
+      );
+      return;
+    }
+    if (reqPath === '/api/rooms') {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          ok: true,
+          gameVersion: GAME_VERSION,
+          rooms: manager.listPublicRooms(),
+          activeRoomCount: manager.activeRooms.size,
         }),
       );
       return;
@@ -1030,12 +1044,33 @@ export async function stopLanMatchHostServer(): Promise<LanHostState> {
     lanManager = null;
   }
   if (lanWss) {
+    for (const client of lanWss.clients) {
+      try {
+        client.terminate();
+      } catch {
+        // ignore
+      }
+    }
     await new Promise<void>((r) => lanWss!.close(() => r()));
     lanWss = null;
   }
   if (lanHttpServer) {
-    await new Promise<void>((r) => lanHttpServer!.close(() => r()));
+    const srv = lanHttpServer;
     lanHttpServer = null;
+    await new Promise<void>((r) => {
+      let done = false;
+      const finish = () => {
+        if (!done) {
+          done = true;
+          r();
+        }
+      };
+      srv.close(finish);
+      if (typeof srv.closeAllConnections === 'function') {
+        srv.closeAllConnections();
+      }
+      setTimeout(finish, 1000);
+    });
   }
   currentLanConfig.error = null;
   return getLanHostStatus();

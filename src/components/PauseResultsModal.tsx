@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   AlertTriangle,
   Award,
@@ -104,12 +104,13 @@ export const PauseModal: React.FC<PauseModalProps> = ({
         )}
 
         {/* Live Telemetry Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-2.5">
           {[
             ['Distancia', `${hud.distance} m`],
             ['Puntuación', hud.score.toLocaleString('es-ES')],
             ['Velocidad', `${hud.speedKmh} KM/H`],
             ['Combo', `x${hud.combo}`],
+            ['Carriles / Piso', `${hud.laneCount}C · P${hud.parkourFloor}`],
             ['Etapa', `Nivel ${hud.difficultyStage}/4`],
           ].map(([lbl, val]) => (
             <div
@@ -235,6 +236,43 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     ? getBossById(summary.bossDefeatedId)
     : null;
 
+  const [animProgress, setAnimProgress] = useState(0);
+
+  useEffect(() => {
+    const reduced =
+      typeof window !== 'undefined' &&
+      window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    if (reduced) {
+      setAnimProgress(1);
+      return;
+    }
+    setAnimProgress(0);
+    const start = performance.now();
+    const durationMs = 1150;
+    let lastTickAt = 0;
+    let rafId = 0;
+
+    const step = (now: number) => {
+      const elapsed = now - start;
+      const p = Math.min(1, elapsed / durationMs);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setAnimProgress(eased);
+      if (p < 1) {
+        if (now - lastTickAt > 90) {
+          lastTickAt = now;
+          audioEngine.playStatTick();
+        }
+        rafId = window.requestAnimationFrame(step);
+      } else {
+        audioEngine.playStatTotal();
+      }
+    };
+    rafId = window.requestAnimationFrame(step);
+    return () => window.cancelAnimationFrame(rafId);
+  }, [summary]);
+
+  const lerpVal = (target: number) => Math.round(target * animProgress);
+
   const isNewScoreRecord = summary.score > summary.previousBestScore;
   const isNewDistRecord = summary.distance > summary.previousBestDistance;
   const deltaVsLastScore = summary.previousLastRun
@@ -245,10 +283,30 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
     ? 'border-emerald-400/55'
     : 'border-rose-500/45';
 
+  const animScore = lerpVal(summary.score);
+  const animDist = lerpVal(summary.distance);
+  const animCoins = lerpVal(summary.coins);
+  const animGems = lerpVal(summary.gems);
+  const animXp = lerpVal(summary.xpEarned);
+  const animBpXp = lerpVal(summary.battlePassXpEarned);
+  const animObstacles = lerpVal(summary.obstaclesDodged ?? 0);
+  const animTrains = lerpVal(summary.trainsPassed ?? 0);
+  const animShieldBreaks = lerpVal(summary.shieldBreaks ?? 0);
+  const animDoubleJumps = lerpVal(summary.doubleJumps ?? 0);
+  const animParkourChains = lerpVal(summary.parkourChains ?? 0);
+
   return (
-    <div className="fixed inset-0 z-30 flex items-center justify-center bg-[#040712]/92 p-5 overflow-y-auto">
+    <div
+      className={`fixed inset-0 z-30 flex p-5 overflow-y-auto ${
+        summary.victory
+          ? 'items-center justify-center bg-[#040712]/90'
+          : 'items-center justify-end bg-transparent pointer-events-none'
+      }`}
+    >
       <div
-        className={`w-full max-w-3xl bg-[#0a0f1f] border ${borderTheme} rounded-xl p-6 space-y-5 my-auto`}
+        className={`w-full bg-[#0a0f1f]/96 border ${borderTheme} rounded-xl p-6 space-y-4 my-auto pointer-events-auto shadow-2xl ${
+          summary.victory ? 'max-w-3xl' : 'max-w-[660px]'
+        }`}
       >
         {/* Victory vs Defeat Header */}
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-4">
@@ -297,7 +355,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
               {t(language, 'results.finalScore')}
             </div>
             <div className="font-mono-num text-3xl font-bold text-cyan-300">
-              {summary.score.toLocaleString('es-ES')}
+              {animScore.toLocaleString('es-ES')}
             </div>
             <div className="flex items-center justify-end gap-2 mt-1 text-[11px] font-mono-num">
               {isNewScoreRecord && (
@@ -318,32 +376,36 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           </div>
         </div>
 
-        {/* Boss Defeated Banner */}
-        {defeatedBoss && (
-          <div className="p-3.5 rounded-lg bg-fuchsia-950/35 border border-fuchsia-400/45 flex items-center justify-between text-xs">
+        {/* Boss Banner */}
+        {(defeatedBoss || summary.bossName) && (
+          <div className="p-3.5 rounded-lg bg-fuchsia-950/35 border border-fuchsia-400/45 flex flex-wrap items-center justify-between gap-2 text-xs">
             <div className="flex items-center gap-2 font-bold text-fuchsia-200">
-              <Swords className="w-4 h-4 text-fuchsia-400" /> Jefe Derrotado:{' '}
-              {defeatedBoss.name}
+              <Swords className="w-4 h-4 text-fuchsia-400" />
+              {defeatedBoss
+                ? `Jefe Derrotado: ${defeatedBoss.name} (4/4 Fases)`
+                : `Combate vs ${summary.bossName} · Fase alcanzada ${summary.bossPhaseReached || 1}/4 (${summary.bossPhasesCleared || 0} superadas)`}
             </div>
-            <span className="font-mono-num text-amber-300 font-bold">
-              +{defeatedBoss.rewardCoins} M · +{defeatedBoss.rewardGems} G
-            </span>
+            {defeatedBoss && (
+              <span className="font-mono-num text-amber-300 font-bold">
+                +{defeatedBoss.rewardCoins} M · +{defeatedBoss.rewardGems} G
+              </span>
+            )}
           </div>
         )}
 
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {/* Primary Metrics Grid (Sequential Animated) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
           {[
             [
               t(language, 'results.distance'),
-              `${summary.distance} m${isNewDistRecord ? ' ★' : ''}`,
+              `${animDist} m${isNewDistRecord ? ' ★' : ''}`,
             ],
             [t(language, 'results.maxSpeed'), `${summary.maxSpeedKmh} KM/H`],
             [t(language, 'results.maxCombo'), `x${summary.maxCombo}`],
             [t(language, 'results.duration'), `${summary.durationSec}s`],
-            [t(language, 'common.coins'), `+${summary.coins} M`],
-            [t(language, 'common.gems'), `+${summary.gems} G`],
-            ['XP / Pase Batalla', `+${summary.xpEarned} / +${summary.battlePassXpEarned}`],
+            [t(language, 'common.coins'), `+${animCoins} M`],
+            [t(language, 'common.gems'), `+${animGems} G`],
+            ['XP / Pase Batalla', `+${animXp} / +${animBpXp}`],
             [
               'Enemigos / Revivir',
               `${summary.enemiesEliminated} / ${summary.revivesUsed}`,
@@ -351,12 +413,31 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           ].map(([label, val]) => (
             <div
               key={label}
-              className="p-3 rounded-lg bg-[#0e1529] border border-white/10"
+              className="p-2.5 rounded-lg bg-[#0e1529] border border-white/10"
             >
               <div className="text-[11px] text-slate-400">{label}</div>
-              <div className="font-mono-num text-base font-bold text-white mt-0.5">
+              <div className="font-mono-num text-sm font-bold text-white mt-0.5">
                 {val}
               </div>
+            </div>
+          ))}
+        </div>
+
+        {/* 3.0.1 Detailed Action Breakdown */}
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
+          {[
+            ['Obstáculos', animObstacles],
+            ['Trenes', animTrains],
+            ['Rupt. Escudo', animShieldBreaks],
+            ['Dobles Saltos', animDoubleJumps],
+            ['Cadenas P2', animParkourChains],
+          ].map(([lbl, v]) => (
+            <div
+              key={String(lbl)}
+              className="px-2.5 py-2 rounded-lg bg-[#0c1224] border border-white/10 flex items-center justify-between font-mono-num"
+            >
+              <span className="text-slate-400">{lbl}</span>
+              <span className="font-bold text-cyan-300">{v}</span>
             </div>
           ))}
         </div>

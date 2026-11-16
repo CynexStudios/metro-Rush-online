@@ -1,11 +1,10 @@
 import {
-  BATTLE_PASS_PREMIUM_COST_COINS,
   BATTLE_PASS_PREMIUM_COST_GEMS,
   BATTLE_PASS_TIERS,
-  BATTLE_PASS_XP_PER_TIER,
   CHARACTERS,
   COSMETICS,
   DISTRICTS,
+  getBattlePassXpForTier,
   MISSIONS,
   SKILL_TREE,
   SPECIAL_SHOP_ITEMS,
@@ -17,6 +16,7 @@ import {
   DistrictId,
   PlayerSaveData,
   SpecialItemId,
+  UnlockRequirement,
   VehicleId,
   VehicleStats,
 } from './types';
@@ -44,6 +44,44 @@ function nowLabel(): string {
 
 function makeId(prefix: string): string {
   return `${prefix}_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+}
+
+export function checkUnlockRequirement(
+  save: PlayerSaveData,
+  req?: UnlockRequirement,
+): { met: boolean; current: number; target: number; reason?: string } {
+  if (!req) return { met: true, current: 1, target: 1 };
+  let current = 0;
+  switch (req.type) {
+    case 'missions':
+      current = save.stats.missionsCompleted;
+      break;
+    case 'bosses':
+      current = save.defeatedBosses.length;
+      break;
+    case 'distance':
+      current = save.stats.totalDistance;
+      break;
+    case 'level':
+      current = save.level;
+      break;
+    case 'parkourChains':
+      current = save.stats.parkourChains ?? 0;
+      break;
+    case 'achievement':
+      current =
+        req.achievementId && save.unlockedAchievements.includes(req.achievementId)
+          ? 1
+          : 0;
+      break;
+  }
+  const met = current >= req.target;
+  return {
+    met,
+    current,
+    target: req.target,
+    reason: met ? undefined : `Requisito pendiente: ${req.label} (${Math.min(current, req.target)}/${req.target}).`,
+  };
 }
 
 /**
@@ -87,10 +125,10 @@ export function getEffectiveVehicleStats(
   const v = VEHICLES.find((x) => x.id === vehicleId) ?? VEHICLES[0];
   const lvl = Math.max(0, Math.min(v.maxUpgradeLevel, upgradeLevel));
   return {
-    speed: Math.min(12, v.baseStats.speed + lvl * 0.45),
-    handling: Math.min(12, v.baseStats.handling + lvl * 0.45),
-    shield: Math.min(12, v.baseStats.shield + lvl * 0.5),
-    boostDuration: Number((v.baseStats.boostDuration + lvl * 0.85).toFixed(1)),
+    speed: Math.min(13, v.baseStats.speed + lvl * 0.45),
+    handling: Math.min(13, v.baseStats.handling + lvl * 0.45),
+    shield: Math.min(13, v.baseStats.shield + lvl * 0.5),
+    boostDuration: Number((v.baseStats.boostDuration + lvl * 0.75).toFixed(1)),
   };
 }
 
@@ -103,13 +141,15 @@ export function addBattlePassXp(
   let xp = Math.max(0, bp.xp + Math.max(0, Math.floor(xpDelta)));
   let leveledUp = false;
 
-  while (level < maxTier && xp >= BATTLE_PASS_XP_PER_TIER) {
-    xp -= BATTLE_PASS_XP_PER_TIER;
+  while (level < maxTier) {
+    const req = getBattlePassXpForTier(level);
+    if (xp < req) break;
+    xp -= req;
     level += 1;
     leveledUp = true;
   }
   if (level >= maxTier) {
-    xp = Math.min(xp, BATTLE_PASS_XP_PER_TIER);
+    xp = Math.min(xp, getBattlePassXpForTier(maxTier));
   }
 
   return {
@@ -161,9 +201,18 @@ export function purchaseCharacter(
     return { ok: true, nextSave: next };
   }
 
+  const reqCheck = checkUnlockRequirement(next, ch.unlockRequirement);
+  if (!reqCheck.met) {
+    return {
+      ok: false,
+      reason: reqCheck.reason ?? 'Aún no cumples el requisito de desbloqueo.',
+      nextSave: save,
+    };
+  }
+
   if (currency === 'gems' && ch.unlockCostGems > 0) {
     if (next.gems < ch.unlockCostGems) {
-      return { ok: false, reason: 'Gemas insuficientes.', nextSave: save };
+      return { ok: false, reason: 'Moneda G (Gemas) insuficiente.', nextSave: save };
     }
     next.gems -= ch.unlockCostGems;
     logTransaction(next, ch.name, 'Personaje', `${ch.unlockCostGems} G`);
@@ -251,6 +300,15 @@ export function purchaseOrSelectVehicle(
   if (next.ownedVehicles.includes(vehicleId)) {
     next.selectedVehicleId = vehicleId;
     return { ok: true, nextSave: next };
+  }
+
+  const reqCheck = checkUnlockRequirement(next, v.unlockRequirement);
+  if (!reqCheck.met) {
+    return {
+      ok: false,
+      reason: reqCheck.reason ?? 'Requisito previo no cumplido.',
+      nextSave: save,
+    };
   }
 
   if (next.coins < v.unlockCostCoins || next.gems < v.unlockCostGems) {
@@ -384,28 +442,38 @@ export function unlockOrSelectDistrict(
   return { ok: true, nextSave: next };
 }
 
+/**
+ * 3.0.1 Rule: Premium Battle Pass MUST ONLY be purchased with Moneda G (Gems).
+ */
 export function unlockPremiumBattlePass(
   save: PlayerSaveData,
-  payWith: 'coins' | 'gems',
+  payWith: 'coins' | 'gems' = 'gems',
 ): EconomyResult {
   if (save.battlePass.premiumUnlocked) {
     return { ok: false, reason: 'Pase Premium ya desbloqueado.', nextSave: save };
   }
-  const next = structuredClone(save);
-  if (payWith === 'gems') {
-    if (next.gems < BATTLE_PASS_PREMIUM_COST_GEMS) {
-      return { ok: false, reason: 'Gemas insuficientes.', nextSave: save };
-    }
-    next.gems -= BATTLE_PASS_PREMIUM_COST_GEMS;
-    logTransaction(next, 'Pase de Batalla Premium T1', 'Pase de Batalla', `${BATTLE_PASS_PREMIUM_COST_GEMS} G`);
-  } else {
-    if (next.coins < BATTLE_PASS_PREMIUM_COST_COINS) {
-      return { ok: false, reason: 'Monedas insuficientes.', nextSave: save };
-    }
-    next.coins -= BATTLE_PASS_PREMIUM_COST_COINS;
-    next.stats.coinsSpent += BATTLE_PASS_PREMIUM_COST_COINS;
-    logTransaction(next, 'Pase de Batalla Premium T1', 'Pase de Batalla', `${BATTLE_PASS_PREMIUM_COST_COINS} M`);
+  if (payWith !== 'gems') {
+    return {
+      ok: false,
+      reason: 'El Pase de Batalla Premium solo puede adquirirse exclusivamente con Moneda G (Gemas).',
+      nextSave: save,
+    };
   }
+  const next = structuredClone(save);
+  if (next.gems < BATTLE_PASS_PREMIUM_COST_GEMS) {
+    return {
+      ok: false,
+      reason: `Moneda G insuficiente (${next.gems}/${BATTLE_PASS_PREMIUM_COST_GEMS} G requeridos).`,
+      nextSave: save,
+    };
+  }
+  next.gems -= BATTLE_PASS_PREMIUM_COST_GEMS;
+  logTransaction(
+    next,
+    'Pase de Batalla Premium 3.0',
+    'Pase de Batalla',
+    `${BATTLE_PASS_PREMIUM_COST_GEMS} G`,
+  );
   next.battlePass.premiumUnlocked = true;
   return { ok: true, nextSave: next };
 }
@@ -434,7 +502,7 @@ function grantBattlePassRewardToSave(
       if (reward.itemId && !save.ownedCosmetics.includes(reward.itemId)) {
         save.ownedCosmetics.push(reward.itemId);
       } else {
-        save.coins += 400;
+        save.coins += 500;
       }
       if (reward.amount && reward.amount > 0) {
         save.talismans += reward.amount;
@@ -447,7 +515,7 @@ function grantBattlePassRewardToSave(
       ) {
         save.ownedVehicles.push(reward.itemId as VehicleId);
       } else {
-        save.coins += 800;
+        save.coins += 1200;
       }
       break;
   }
@@ -464,7 +532,7 @@ export function claimBattlePassReward(
     return { ok: false, reason: 'Aún no has alcanzado este nivel.', nextSave: save };
   }
   if (track === 'premium' && !save.battlePass.premiumUnlocked) {
-    return { ok: false, reason: 'Requiere Pase Premium.', nextSave: save };
+    return { ok: false, reason: 'Requiere Pase Premium (Moneda G).', nextSave: save };
   }
 
   const claimedArr =

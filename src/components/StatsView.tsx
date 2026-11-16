@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { BarChart3, Cpu, History, Trophy } from 'lucide-react';
-import { DRONE_CODEX, getDistrictById } from '../game/data';
+import { BATTLE_PASS_TIERS, DRONE_CODEX, getDistrictById } from '../game/data';
 import { getPerformanceProfiles, SYSTEM_REQUIREMENTS } from '../game/hardware';
 import { xpRequiredForLevel } from '../game/storage';
 import {
@@ -249,7 +249,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
                   Pase de Batalla Temporada {save.battlePass.season}
                 </div>
                 <div className="text-slate-300 mt-0.5">
-                  Nivel {save.battlePass.level}/20 ·{' '}
+                  Nivel {save.battlePass.level}/{BATTLE_PASS_TIERS.length} ·{' '}
                   {save.battlePass.premiumUnlocked ? 'Premium' : 'Estándar'}
                 </div>
               </div>
@@ -290,6 +290,14 @@ export const StatsView: React.FC<StatsViewProps> = ({
                   'Mejor Puesto Online',
                   save.stats.mpBestPlacement > 0 ? `#${save.stats.mpBestPlacement}` : '-',
                 ],
+                ['Rupturas de Escudo', save.stats.shieldBreaks ?? 0],
+                ['Dobles Saltos', save.stats.doubleJumps ?? 0],
+                ['Cadenas Parkour P2', save.stats.parkourChains ?? 0],
+                ['Fases de Jefe', save.stats.bossPhasesCleared ?? 0],
+                ['Dist. 5 Carriles', `${(save.stats.fiveLaneDistance ?? 0).toLocaleString('es-ES')} m`],
+                ['Obstáculos Esquivados', (save.stats.obstaclesDodged ?? 0).toLocaleString('es-ES')],
+                ['Trenes Superados', (save.stats.trainsPassed ?? 0).toLocaleString('es-ES')],
+                ['Victorias sin Revivir', save.stats.noReviveWins ?? 0],
               ] as [string, string | number][]
             ).map(([lbl, val]) => (
               <div
@@ -314,7 +322,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
               </div>
               <p className="text-xs text-slate-400 max-w-xl mx-auto">
                 {hasLegacyWithoutTimestamp
-                  ? 'Las carreras guardadas antes de la v2.4.0 no tenían marca temporal exacta. Selecciona "Todo el historial" o juega una carrera nueva para ver su gráfica aquí.'
+                  ? 'Las carreras guardadas en versiones anteriores no tenían marca temporal exacta. Selecciona "Todo el historial" o juega una carrera nueva para ver su gráfica aquí.'
                   : 'Completa una carrera en cualquier modo para desbloquear tu gráfica de trayectoria y comparativa de victorias.'}
               </p>
             </div>

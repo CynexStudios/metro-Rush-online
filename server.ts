@@ -49,6 +49,7 @@ import {
   verifyAndRotateRefreshSession,
 } from './src/db/sqlite';
 import { GAME_VERSION } from './src/game/version';
+import { checkForReleaseUpdate } from './electron/updater';
 import {
   AuthoritativeRoomManager,
   getLanHostStatus,
@@ -223,6 +224,12 @@ export async function startAppServer(options?: {
     });
   });
 
+  app.get('/api/updates/check', async (req, res) => {
+    const repo = req.query.repo ? String(req.query.repo) : undefined;
+    const info = await checkForReleaseUpdate(GAME_VERSION, repo);
+    res.json(info);
+  });
+
   /* ---------------- ICE / STUN / TURN DISCOVERY ---------------- */
 
   app.get('/api/rtc/ice-config', (_req, res) => {
@@ -276,6 +283,101 @@ export async function startAppServer(options?: {
   app.post('/api/lan/stop', async (_req, res) => {
     const state = await stopLanMatchHostServer();
     res.json({ ok: true, state });
+  });
+
+  app.post('/api/net/probe', async (req, res) => {
+    const raw = String(req.body?.target || req.body?.targetUrl || '').trim();
+    if (!raw) {
+      res.status(400).json({ ok: false, reason: 'invalid_url', error: 'Introduce una IP:Puerto o URL.' });
+      return;
+    }
+    const cleanTarget = raw.split('#')[0].trim();
+    let httpBase = cleanTarget;
+    if (httpBase.startsWith('ws://')) {
+      httpBase = `http://${httpBase.slice(5)}`;
+    } else if (httpBase.startsWith('wss://')) {
+      httpBase = `https://${httpBase.slice(6)}`;
+    } else if (!httpBase.startsWith('http://') && !httpBase.startsWith('https://')) {
+      const bareIpv4 = /^\d{1,3}(\.\d{1,3}){3}$/.test(httpBase);
+      if (bareIpv4) httpBase = `${httpBase}:3077`;
+      const isIpOrLocal =
+        /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(httpBase) ||
+        /^\d{1,3}(\.\d{1,3}){3}(:\d+)?/.test(httpBase);
+      httpBase = `${isIpOrLocal ? 'http' : 'https'}://${httpBase}`;
+    }
+    httpBase = httpBase.replace(/\/ws\/?$/i, '').replace(/\/+$/, '');
+
+    let parsed: URL;
+    try {
+      parsed = new URL(httpBase);
+    } catch {
+      res.status(400).json({ ok: false, reason: 'invalid_url', error: `Dirección inválida: ${raw}` });
+      return;
+    }
+
+    try {
+      const probeRes = await fetch(`${parsed.origin}/api/health`, {
+        signal: AbortSignal.timeout(4500),
+      });
+      if (!probeRes.ok) {
+        const isTunnel = parsed.hostname.endsWith('.trycloudflare.com') || parsed.hostname.includes('playit');
+        res.json({
+          ok: false,
+          reason: probeRes.status >= 500 ? 'tunnel_origin_offline' : 'http_error',
+          httpStatus: probeRes.status,
+          error: isTunnel
+            ? `El túnel respondió con HTTP ${probeRes.status}: el anfitrión cerró el juego o el túnel todavía está terminando de conectar.`
+            : `El servidor respondió HTTP ${probeRes.status}.`,
+        });
+        return;
+      }
+      const data = (await probeRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        gameVersion?: string;
+        rooms?: unknown[];
+        activeRoomCount?: number;
+      };
+      res.json({
+        ok: true,
+        httpBase: parsed.origin,
+        gameVersion: data.gameVersion ?? null,
+        rooms: Array.isArray(data.rooms) ? data.rooms : [],
+        activeRoomCount: typeof data.activeRoomCount === 'number' ? data.activeRoomCount : null,
+      });
+    } catch (err) {
+      const cause = (err as { cause?: { code?: string }; name?: string; code?: string }) || {};
+      const code = cause.cause?.code || cause.code || cause.name || '';
+      const hostLabel = parsed.port ? `${parsed.hostname}:${parsed.port}` : parsed.hostname;
+      if (code === 'ECONNREFUSED') {
+        res.json({
+          ok: false,
+          reason: 'connection_refused',
+          error: `El equipo ${parsed.hostname} está conectado, pero el puerto ${parsed.port || '80'} está cerrado. El anfitrión debe crear la sala o pulsar "Iniciar Servidor" primero.`,
+        });
+        return;
+      }
+      if (code === 'ENOTFOUND' || code === 'EAI_AGAIN') {
+        res.json({
+          ok: false,
+          reason: 'dns_not_ready',
+          error: `No se pudo resolver "${parsed.hostname}". Si es un enlace trycloudflare nuevo, espera 5 segundos y vuelve a intentar.`,
+        });
+        return;
+      }
+      if (code === 'TimeoutError' || code === 'AbortError' || code === 'ETIMEDOUT' || code === 'EHOSTUNREACH') {
+        res.json({
+          ok: false,
+          reason: 'timeout_or_firewall',
+          error: `No hubo respuesta desde ${hostLabel} (tiempo agotado). Causa más probable: el Firewall de Windows del anfitrión está bloqueando el puerto ${parsed.port || '3077'} (muy común en Radmin VPN / Redes Públicas) o la VPN no está activa.`,
+        });
+        return;
+      }
+      res.json({
+        ok: false,
+        reason: 'network_error',
+        error: `No se pudo contactar a ${hostLabel}: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    }
   });
 
   /* ---------------- LOCAL PROFILES (OFFLINE-FIRST IN SQLITE) ---------------- */

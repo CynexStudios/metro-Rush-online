@@ -32,16 +32,26 @@ import {
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
-  BATTLE_PASS_XP_PER_TIER,
+  BATTLE_PASS_TIERS,
   DISTRICTS,
+  getBattlePassXpForTier,
   getCharacterById,
+  getDistrictById,
   getVehicleById,
   LIVE_EVENTS,
   STORY_CHAPTERS,
 } from '../game/data';
 import { getPendingRewardCount } from '../game/economy';
 import { xpRequiredForLevel } from '../game/storage';
-import { DistrictId, GameMode, PlayerSaveData, TimeOfDay } from '../game/types';
+import {
+  DistrictId,
+  GameMode,
+  PlayerSaveData,
+  ReleaseUpdateInfo,
+  TimeOfDay,
+  UpdateProgressState,
+} from '../game/types';
+import { GAME_VERSION } from '../game/version';
 import { getCityLabel, getModeLabel, getTimeLabel, t } from '../i18n';
 import { OnlineUser } from '../services/onlineClient';
 import { MenuTab } from './MainMenuModal';
@@ -52,6 +62,10 @@ interface TitleOverlayProps {
   onlineUser: OnlineUser | null;
   mpRoomCode?: string | null;
   hasSyncConflict?: boolean;
+  updateInfo?: ReleaseUpdateInfo | null;
+  updateState?: UpdateProgressState;
+  onDismissUpdateBanner?: () => void;
+  onOpenUpdatesSettings?: () => void;
   onSelectMode: (mode: GameMode) => void;
   onSelectDistrict: (districtId: DistrictId) => void;
   onSelectTimeOfDay: (time: TimeOfDay) => void;
@@ -124,6 +138,10 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   onlineUser,
   mpRoomCode,
   hasSyncConflict,
+  updateInfo,
+  updateState,
+  onDismissUpdateBanner,
+  onOpenUpdatesSettings,
   onSelectMode,
   onSelectDistrict,
   onSelectTimeOfDay,
@@ -144,15 +162,14 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
   const lang = save.settings.language;
   const activeChar = getCharacterById(save.selectedCharacterId);
   const activeVehicle = getVehicleById(save.selectedVehicleId ?? 'hover_bike');
+  const activeDistrictDef = getDistrictById(save.selectedDistrictId);
   const cityLabel = getCityLabel(lang, save.selectedDistrictId);
   const pending = getPendingRewardCount(save);
   const totalNotifications = pending.missions + pending.battlePass;
   const xpReq = Math.max(1, xpRequiredForLevel(save.level));
   const xpPct = Math.min(100, Math.round((save.xp / xpReq) * 100));
-  const bpPct = Math.min(
-    100,
-    Math.round((save.battlePass.xp / BATTLE_PASS_XP_PER_TIER) * 100),
-  );
+  const bpXpReq = Math.max(1, getBattlePassXpForTier(save.battlePass.level));
+  const bpPct = Math.min(100, Math.round((save.battlePass.xp / bpXpReq) * 100));
   const chapterDef =
     STORY_CHAPTERS.find((c) => c.chapter === selectedStoryChapter) ??
     STORY_CHAPTERS[0];
@@ -357,6 +374,53 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
             </text>
             <rect x="236" y="88" width="206" height="4" fill="#ec4899" />
           </svg>
+          <div className="mb-2 flex items-center justify-between gap-2 px-1 text-[11px] font-mono-num">
+            <span className="text-cyan-300 font-bold tracking-wider">
+              v{GAME_VERSION} · NEON APOCALYPSE
+            </span>
+            {!save.settings.randomMap && activeDistrictDef.laneCount === 5 && (
+              <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-200 font-bold">
+                5 CARRILES
+              </span>
+            )}
+          </div>
+
+          {updateInfo?.hasUpdate && (
+            <div className="mb-2.5 bg-[#0a1729]/96 border border-emerald-400/60 rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 text-xs">
+              <div className="min-w-0">
+                <div className="font-bold text-emerald-300 truncate">
+                  Actualización v{updateInfo.latestVersion} disponible
+                </div>
+                <div className="text-[11px] text-slate-300 truncate">
+                  {updateState?.status === 'downloading'
+                    ? `Descargando ${updateState.progressPercent}%...`
+                    : updateState?.status === 'ready_to_install'
+                      ? 'Instalador verificado y listo.'
+                      : 'Lanzamiento oficial en GitHub Releases.'}
+                </div>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
+                <button
+                  onClick={() => {
+                    audioEngine.playUiClick(true);
+                    onOpenUpdatesSettings?.();
+                  }}
+                  className="px-2.5 py-1 rounded bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-[11px] cursor-pointer whitespace-nowrap"
+                >
+                  Actualizar
+                </button>
+                {onDismissUpdateBanner && (
+                  <button
+                    onClick={onDismissUpdateBanner}
+                    className="px-1.5 py-1 rounded bg-white/10 hover:bg-white/20 text-slate-300 text-[11px] cursor-pointer"
+                    title="Ocultar aviso"
+                  >
+                    ×
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
 
           <div className="bg-[#070b17]/96 border border-white/15 rounded-xl p-4 space-y-3">
             {/* Active Loadout Strip */}
@@ -383,7 +447,9 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
                 onClick={() => navClick('districts')}
                 className="text-right hover:opacity-85 cursor-pointer min-w-0"
               >
-                <div className="text-[11px] text-slate-400">Distrito</div>
+                <div className="text-[11px] text-slate-400">
+                  Distrito {!save.settings.randomMap ? `(${activeDistrictDef.laneCount}C)` : ''}
+                </div>
                 <div className="font-display font-bold text-cyan-300 truncate">
                   {save.settings.randomMap ? 'Aleatorio' : cityLabel.name}
                 </div>
@@ -475,7 +541,7 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
                     const unlocked = save.unlockedDistricts.includes(d.id);
                     return (
                       <option key={d.id} value={d.id} disabled={!unlocked}>
-                        {getCityLabel(lang, d.id).name} {unlocked ? '' : '(Bloqueada)'}
+                        {getCityLabel(lang, d.id).name} ({d.laneCount}C){unlocked ? '' : ' [Bloqueada]'}
                       </option>
                     );
                   })}
@@ -598,10 +664,10 @@ export const TitleOverlay: React.FC<TitleOverlayProps> = ({
             </div>
             <div className="flex items-baseline justify-between">
               <span className="font-display font-bold text-lg text-white">
-                Nivel {save.battlePass.level}/20
+                Nivel {save.battlePass.level}/{BATTLE_PASS_TIERS.length}
               </span>
               <span className="font-mono-num text-[11px] text-slate-300">
-                {save.battlePass.xp}/{BATTLE_PASS_XP_PER_TIER} XP
+                {save.battlePass.xp}/{bpXpReq} XP
               </span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded overflow-hidden">

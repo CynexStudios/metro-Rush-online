@@ -52,8 +52,8 @@ export const ReviveModal: React.FC<ReviveModalProps> = ({
           </div>
         </div>
 
-        {/* Progressive Token Cost Card */}
-        <div className="p-4 rounded-xl bg-[#0d192b] border border-emerald-400/35 space-y-2 text-xs">
+        {/* Progressive Token Cost Card + 10s Auto-Decline Countdown */}
+        <div className="p-4 rounded-xl bg-[#0d192b] border border-emerald-400/35 space-y-2.5 text-xs">
           <div className="flex items-center justify-between">
             <span className="font-bold text-emerald-300 flex items-center gap-1.5">
               <ShieldAlert className="w-4 h-4" /> Coste Progresivo de Revivir
@@ -74,8 +74,38 @@ export const ReviveModal: React.FC<ReviveModalProps> = ({
               {prompt.availableTokens === 1 ? 'Token' : 'Tokens'}
             </span>
           </div>
+          <div className="space-y-1 pt-1">
+            <div className="flex items-center justify-between text-[11px] font-mono-num">
+              <span className="text-slate-300">Tiempo restante para decidir:</span>
+              <span
+                className={`font-bold ${
+                  prompt.remainingSeconds <= 3
+                    ? 'text-rose-400'
+                    : prompt.remainingSeconds <= 5
+                      ? 'text-amber-300'
+                      : 'text-emerald-300'
+                }`}
+              >
+                {Math.max(0, prompt.remainingSeconds).toFixed(1)}s
+              </span>
+            </div>
+            <div className="h-2 bg-slate-900 rounded overflow-hidden">
+              <div
+                className={`h-full transition-all duration-75 ${
+                  prompt.remainingSeconds <= 3
+                    ? 'bg-rose-500'
+                    : prompt.remainingSeconds <= 5
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                }`}
+                style={{
+                  width: `${Math.max(0, Math.min(100, (prompt.remainingSeconds / 10) * 100))}%`,
+                }}
+              />
+            </div>
+          </div>
           <div className="text-[11px] text-slate-400">
-            Despeja todos los obstáculos cercanos, aleja al Enforcer y otorga 3.0s de invulnerabilidad.
+            Reanuda en el punto exacto (conservando Jefe y Fase actual), despeja obstáculos y otorga 3.0s de invulnerabilidad.
           </div>
         </div>
 

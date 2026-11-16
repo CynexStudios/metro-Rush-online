@@ -3,6 +3,7 @@ import {
   Check,
   Coins,
   Gem,
+  Lock,
   Receipt,
   ShieldAlert,
   ShoppingBag,
@@ -20,6 +21,7 @@ import {
   SPECIAL_SHOP_ITEMS,
 } from '../game/data';
 import {
+  checkUnlockRequirement,
   getSkillCoinCost,
   getSkillTicketCost,
   purchaseCharacter,
@@ -236,8 +238,10 @@ export const ShopView: React.FC<ShopViewProps> = ({ save, onUpdateSave }) => {
               {CHARACTERS.map((ch) => {
                 const unlocked = save.unlockedCharacters.includes(ch.id);
                 const selected = save.selectedCharacterId === ch.id;
-                const canCoins = save.coins >= ch.unlockCostCoins;
-                const canGems = ch.unlockCostGems > 0 && save.gems >= ch.unlockCostGems;
+                const reqCheck = checkUnlockRequirement(save, ch.unlockRequirement);
+                const canCoins = reqCheck.met && save.coins >= ch.unlockCostCoins;
+                const canGems =
+                  reqCheck.met && ch.unlockCostGems > 0 && save.gems >= ch.unlockCostGems;
                 const isInspected = inspected.itemId === ch.id && inspected.kind === 'character';
 
                 return (
@@ -281,6 +285,23 @@ export const ShopView: React.FC<ShopViewProps> = ({ save, onUpdateSave }) => {
                       {ch.passiveName && (
                         <div className="text-[11px] text-emerald-300">
                           Pasiva: {ch.passiveName}
+                        </div>
+                      )}
+                      {!unlocked && ch.unlockRequirement && (
+                        <div
+                          className={`mt-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center justify-between gap-2 ${
+                            reqCheck.met
+                              ? 'bg-emerald-950/35 border-emerald-400/40 text-emerald-200'
+                              : 'bg-amber-950/35 border-amber-400/40 text-amber-200'
+                          }`}
+                        >
+                          <span className="flex items-center gap-1 truncate">
+                            <Lock className="w-3 h-3 shrink-0" />
+                            {ch.unlockRequirement.label}
+                          </span>
+                          <span className="font-mono-num shrink-0">
+                            {Math.min(reqCheck.current, reqCheck.target)}/{reqCheck.target}
+                          </span>
                         </div>
                       )}
                     </div>
@@ -328,7 +349,9 @@ export const ShopView: React.FC<ShopViewProps> = ({ save, onUpdateSave }) => {
                             }
                             className="flex-1 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num cursor-pointer disabled:cursor-not-allowed"
                           >
-                            {ch.unlockCostCoins.toLocaleString('es-ES')} M
+                            {!reqCheck.met
+                              ? `Req. (${Math.min(reqCheck.current, reqCheck.target)}/${reqCheck.target})`
+                              : `${ch.unlockCostCoins.toLocaleString('es-ES')} M`}
                           </button>
                           {ch.unlockCostGems > 0 && (
                             <button

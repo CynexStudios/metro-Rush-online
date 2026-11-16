@@ -81,6 +81,7 @@ export function createProceduralTextures(
   reflectionsEnabled = true,
   materialQuality: 'standard' | 'pbr' = 'pbr',
   ambientOcclusion = true,
+  laneCount: 3 | 5 = 3,
 ): ProceduralTexturePack {
   const maxAniso = Math.min(
     textureQuality === 'high' ? 8 : textureQuality === 'medium' ? 4 : 1,
@@ -103,7 +104,14 @@ export function createProceduralTextures(
   rhCtx.fillStyle = '#707070';
   rhCtx.fillRect(0, 0, 256, 256);
 
-  const laneCenters = [110 * s, 256 * s, 402 * s];
+  const laneCenters =
+    laneCount === 5
+      ? [74 * s, 165 * s, 256 * s, 347 * s, 438 * s]
+      : [110 * s, 256 * s, 402 * s];
+  const dividerXs =
+    laneCount === 5
+      ? [119 * s, 210 * s, 301 * s, 392 * s]
+      : [181 * s, 327 * s];
 
   if (districtId === 'oldcity') {
     // Cobblestone historical street (no train tracks!)
@@ -188,38 +196,47 @@ export function createProceduralTextures(
     rCtx.fillStyle = '#090e1a';
     rCtx.fillRect(0, 0, res, res);
     laneCenters.forEach((cx, idx) => {
-      const hCx = [55, 128, 201][idx];
+      const hCx = laneCount === 5 ? [37, 82, 128, 174, 219][idx] : [55, 128, 201][idx];
       rCtx.fillStyle = '#182238';
       rhCtx.fillStyle = '#a8a8a8';
       for (let y = 0; y < res; y += Math.round(32 * s)) {
-        rCtx.fillRect(cx - 40 * s, y, 80 * s, 9 * s);
+        rCtx.fillRect(cx - 32 * s, y, 64 * s, 9 * s);
       }
       for (let y = 0; y < 256; y += 16) {
-        rhCtx.fillRect(hCx - 20, y, 40, 4);
+        rhCtx.fillRect(hCx - 16, y, 32, 4);
       }
       rCtx.fillStyle = '#64748b';
-      rCtx.fillRect(cx - 33 * s, 0, 6 * s, res);
-      rCtx.fillRect(cx + 27 * s, 0, 6 * s, res);
+      rCtx.fillRect(cx - 26 * s, 0, 5 * s, res);
+      rCtx.fillRect(cx + 21 * s, 0, 5 * s, res);
       rhCtx.fillStyle = '#ffffff';
-      rhCtx.fillRect(hCx - 16, 0, 3, 256);
-      rhCtx.fillRect(hCx + 13, 0, 3, 256);
+      rhCtx.fillRect(hCx - 13, 0, 3, 256);
+      rhCtx.fillRect(hCx + 10, 0, 3, 256);
     });
   } else {
-    // Urban Asphalt Highway for Downtown & Skyline (clean street markings & crosswalks, NO permanent train tracks)
-    rCtx.fillStyle = districtId === 'skyline' ? '#171f36' : '#0c111e';
+    // Urban Asphalt Highway for Downtown, Skyline, and 5-lane Megacities
+    rCtx.fillStyle =
+      districtId === 'skyline'
+        ? '#171f36'
+        : districtId === 'cyber_port'
+          ? '#0f1c2b'
+          : districtId === 'obsidian_citadel'
+            ? '#0c1216'
+            : districtId === 'crimson_metropolis'
+              ? '#160b10'
+              : '#0c111e';
     rCtx.fillRect(0, 0, res, res);
-    const grainCount = textureQuality === 'high' ? 3800 : 1500;
+    const grainCount = textureQuality === 'high' ? 3200 : 1200;
     for (let i = 0; i < grainCount; i++) {
       const x = Math.random() * res;
       const y = Math.random() * res;
-      const v = 13 + Math.floor(Math.random() * 18);
+      const v = 13 + Math.floor(Math.random() * 16);
       rCtx.fillStyle = `rgb(${v},${v + 4},${v + 12})`;
       rCtx.fillRect(x, y, 2, 2);
     }
     // Crosswalk zebra bands near tile seam
-    rCtx.fillStyle = 'rgba(226, 232, 240, 0.22)';
-    for (let x = Math.round(32 * s); x < res - 32 * s; x += Math.round(44 * s)) {
-      rCtx.fillRect(x, 12 * s, 22 * s, 42 * s);
+    rCtx.fillStyle = 'rgba(226, 232, 240, 0.2)';
+    for (let x = Math.round(28 * s); x < res - 28 * s; x += Math.round(40 * s)) {
+      rCtx.fillRect(x, 12 * s, 20 * s, 40 * s);
     }
   }
 
@@ -227,7 +244,7 @@ export function createProceduralTextures(
   if (districtId !== 'underground') {
     laneCenters.forEach((cx) => {
       rCtx.fillStyle = primaryHex;
-      rCtx.globalAlpha = 0.28;
+      rCtx.globalAlpha = 0.24;
       for (let y = 0; y < res; y += Math.round(64 * s)) {
         rCtx.fillRect(cx - 2 * s, y + 14 * s, 4 * s, 24 * s);
       }
@@ -238,11 +255,12 @@ export function createProceduralTextures(
   // Lane dividers + edge trims
   rCtx.fillStyle = districtId === 'oldcity' ? '#78716c' : '#475569';
   for (let y = 0; y < res; y += Math.round(64 * s)) {
-    rCtx.fillRect(181 * s, y + 8 * s, 4 * s, 32 * s);
-    rCtx.fillRect(327 * s, y + 8 * s, 4 * s, 32 * s);
+    for (const dx of dividerXs) {
+      rCtx.fillRect(dx, y + 8 * s, 4 * s, 32 * s);
+    }
   }
   rCtx.fillStyle = secondaryHex;
-  rCtx.globalAlpha = 0.72;
+  rCtx.globalAlpha = 0.65;
   rCtx.fillRect(10 * s, 0, 5 * s, res);
   rCtx.fillRect(497 * s, 0, 5 * s, res);
   rCtx.globalAlpha = 1;
@@ -433,8 +451,20 @@ export function createProceduralTextures(
       { top: 'LÍNEA EXPRESS', sub: 'ACCESO RESTRINGIDO' },
     ],
     future: [
-      { top: 'FUTURE LABS', sub: 'GRAVEDAD 0.78G' },
+      { top: 'FUTURE LABS', sub: 'GRAVEDAD 0.82G' },
       { top: 'QUANTUM CORE', sub: 'SENTINEL GRID' },
+    ],
+    cyber_port: [
+      { top: 'PUERTO CIBER', sub: 'AUTOPISTA 5 CARRILES' },
+      { top: 'TERMINAL DELTA', sub: 'CARGA SUPERSÓNICA' },
+    ],
+    obsidian_citadel: [
+      { top: 'CIUDADELA OBSIDIANA', sub: 'SECTOR 5 CARRILES' },
+      { top: 'EJE MONOLITO', sub: 'ACCESO BLINDADO' },
+    ],
+    crimson_metropolis: [
+      { top: 'METRÓPOLIS CARMESÍ', sub: 'REACTOR CENTRAL' },
+      { top: 'APOCALIPSIS 3.0', sub: 'ZONA OMEGA CORE' },
     ],
   };
 
@@ -517,11 +547,11 @@ export function createProceduralTextures(
   const buildingMat = new THREE.MeshStandardMaterial({
     map: buildingTexture,
     normalMap: usePbr ? buildingNormalTexture : null,
-    normalScale: new THREE.Vector2(0.6, 0.6),
+    normalScale: new THREE.Vector2(0.55, 0.55),
     emissiveMap: buildingEmissiveTexture,
     emissive: new THREE.Color('#ffffff'),
-    emissiveIntensity: 0.56,
-    roughness: districtId === 'future' ? 0.3 : 0.5,
+    emissiveIntensity: 0.44,
+    roughness: districtId === 'future' ? 0.35 : 0.54,
     metalness: districtId === 'future' ? 0.35 : 0.45,
   });
 
@@ -529,22 +559,22 @@ export function createProceduralTextures(
     map: magWallTexture,
     emissiveMap: magWallTexture,
     emissive: new THREE.Color('#ffffff'),
-    emissiveIntensity: 0.52,
-    roughness: 0.35,
+    emissiveIntensity: 0.46,
+    roughness: 0.36,
   });
 
   const neonTrimMat = new THREE.MeshStandardMaterial({
     color: primaryHex,
     emissive: primaryHex,
-    emissiveIntensity: 0.78,
-    roughness: 0.25,
+    emissiveIntensity: 0.62,
+    roughness: 0.28,
   });
 
   const secTrimMat = new THREE.MeshStandardMaterial({
     color: secondaryHex,
     emissive: secondaryHex,
-    emissiveIntensity: 0.78,
-    roughness: 0.25,
+    emissiveIntensity: 0.62,
+    roughness: 0.28,
   });
 
   const darkMetalMat = new THREE.MeshStandardMaterial({

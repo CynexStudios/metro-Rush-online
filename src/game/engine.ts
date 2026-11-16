@@ -27,11 +27,13 @@ import {
 import { createProceduralTextures, ProceduralTexturePack } from './materials';
 import {
   animateCharacterRig,
+  applyBossPhaseVisuals,
   buildBossLaserBeam,
   buildBossModel,
   buildBossProjectile,
   buildBossShockwave,
   buildBuildingLOD,
+  buildCaptureDroneModel,
   buildCharacterRig,
   buildCityObstacleModel,
   buildCollectibleModel,
@@ -40,12 +42,16 @@ import {
   buildDistrictLandmark,
   buildEnemyModel,
   buildFighterJetModel,
+  buildHangarLobbyGroup,
   buildHelicopterModel,
   buildHoverBikePickupModel,
   buildHoverCarModel,
+  buildParkourModule,
   buildPursuerModel,
   buildRailCrossingBarrier,
   buildRemoteRunnerGhost,
+  buildSectorTransitionGate,
+  buildShieldShatterEffect,
   buildTrafficTruckObstacle,
   buildUndergroundTunnelSegment,
   buildVehicleShowcaseModel,
@@ -55,6 +61,7 @@ import {
 } from './models';
 import { RunTelemetry } from './storage';
 import {
+  ActiveRunContext,
   BossId,
   DistrictDef,
   DistrictId,
@@ -72,7 +79,8 @@ import {
   WeatherType,
 } from './types';
 
-const LANES = [-3.2, 0, 3.2];
+const LANES_3 = [-3.2, 0, 3.2];
+const LANES_5 = [-6.4, -3.2, 0, 3.2, 6.4];
 const CHUNK_LEN = 56;
 
 type TimePeriod = Exclude<TimeOfDay, 'dynamic'>;
@@ -99,74 +107,74 @@ interface TimeLightingConfig {
 
 const TIME_CONFIGS: Record<TimePeriod, TimeLightingConfig> = {
   dawn: {
-    skyHex: '#2e1d47',
-    fogHex: '#4f284b',
+    skyHex: '#25173b',
+    fogHex: '#40213d',
     sunHex: '#fda4af',
-    sunIntensity: 1.25,
-    hemiIntensity: 0.72,
+    sunIntensity: 0.98,
+    hemiIntensity: 0.56,
     sunPos: [24, 11, -18],
-    exposure: 1.0,
-    emissiveMult: 0.85,
-  },
-  morning: {
-    skyHex: '#1f4478',
-    fogHex: '#335d94',
-    sunHex: '#fef3c7',
-    sunIntensity: 1.55,
-    hemiIntensity: 0.88,
-    sunPos: [22, 22, 10],
-    exposure: 1.02,
-    emissiveMult: 0.65,
-  },
-  noon: {
-    skyHex: '#1d4f8a',
-    fogHex: '#2f65a3',
-    sunHex: '#ffffff',
-    sunIntensity: 1.72,
-    hemiIntensity: 0.95,
-    sunPos: [10, 36, 12],
-    exposure: 1.0,
-    emissiveMult: 0.52,
-  },
-  afternoon: {
-    skyHex: '#2c3c6b',
-    fogHex: '#494775',
-    sunHex: '#fed7aa',
-    sunIntensity: 1.5,
-    hemiIntensity: 0.82,
-    sunPos: [-20, 20, 14],
-    exposure: 1.02,
+    exposure: 0.94,
     emissiveMult: 0.72,
   },
+  morning: {
+    skyHex: '#1b3b68',
+    fogHex: '#2b4f7e',
+    sunHex: '#fef3c7',
+    sunIntensity: 1.18,
+    hemiIntensity: 0.65,
+    sunPos: [22, 22, 10],
+    exposure: 0.95,
+    emissiveMult: 0.56,
+  },
+  noon: {
+    skyHex: '#194578',
+    fogHex: '#29578c',
+    sunHex: '#f8fafc',
+    sunIntensity: 1.28,
+    hemiIntensity: 0.7,
+    sunPos: [10, 36, 12],
+    exposure: 0.94,
+    emissiveMult: 0.48,
+  },
+  afternoon: {
+    skyHex: '#243259',
+    fogHex: '#3c3b64',
+    sunHex: '#fed7aa',
+    sunIntensity: 1.12,
+    hemiIntensity: 0.62,
+    sunPos: [-20, 20, 14],
+    exposure: 0.95,
+    emissiveMult: 0.62,
+  },
   dusk: {
-    skyHex: '#241136',
-    fogHex: '#3e1842',
+    skyHex: '#1d0f2e',
+    fogHex: '#321438',
     sunHex: '#fb923c',
-    sunIntensity: 1.32,
-    hemiIntensity: 0.74,
+    sunIntensity: 1.02,
+    hemiIntensity: 0.58,
     sunPos: [-24, 9, -12],
-    exposure: 1.04,
-    emissiveMult: 0.9,
+    exposure: 0.96,
+    emissiveMult: 0.76,
   },
   night: {
     skyHex: '#060a18',
     fogHex: '#0f1730',
     sunHex: '#93c5fd',
-    sunIntensity: 1.18,
-    hemiIntensity: 0.7,
+    sunIntensity: 0.96,
+    hemiIntensity: 0.54,
     sunPos: [16, 26, 12],
-    exposure: 1.04,
-    emissiveMult: 1.0,
+    exposure: 0.96,
+    emissiveMult: 0.85,
   },
   midnight: {
     skyHex: '#03050d',
     fogHex: '#070b18',
     sunHex: '#64748b',
-    sunIntensity: 0.95,
-    hemiIntensity: 0.56,
+    sunIntensity: 0.82,
+    hemiIntensity: 0.45,
     sunPos: [14, 24, 12],
-    exposure: 1.0,
-    emissiveMult: 1.08,
+    exposure: 0.94,
+    emissiveMult: 0.92,
   },
 };
 
@@ -198,7 +206,13 @@ type ObstacleKind =
   | 'floodZone'
   | 'rubble'
   | 'maintBot'
-  | 'turbineHazard';
+  | 'turbineHazard'
+  | 'floor2Deck'
+  | 'jumpPad'
+  | 'swingBar'
+  | 'balanceBeam'
+  | 'highConduit'
+  | 'sectorGate';
 
 interface ObstacleEntity {
   id: number;
@@ -220,6 +234,8 @@ interface ObstacleEntity {
   hit: boolean;
   interacted: boolean;
   hornPlayed?: boolean;
+  passedCounted?: boolean;
+  rampTopY?: number;
 }
 
 interface AbyssGap {
@@ -355,6 +371,13 @@ export class MetroRushEngine {
   private playerRig!: CharacterRig;
   private vehicleShowcase: { group: THREE.Group; dispose: () => void } | null = null;
   private vehicleShowcaseKey = '';
+  private hangarGroup: THREE.Group | null = null;
+  private hangarKey = '';
+  private captureDroneMesh!: THREE.Group;
+  private abilityAuraRing: THREE.Mesh | null = null;
+  private shieldShatterVfx: { group: THREE.Group; timer: number; maxTimer: number }[] = [];
+  private sectorGates: { group: THREE.Group; timer: number }[] = [];
+  private recentDistrictIds: DistrictId[] = [];
   private pursuerMesh!: THREE.Group;
   private contactShadow!: THREE.Mesh;
   private grappleLine!: THREE.Line;
@@ -444,11 +467,17 @@ export class MetroRushEngine {
 
   // Mechanics & Gauges
   private momentum = 0;
+  private sprintCooldown = 0;
+  private readonly SPRINT_COOLDOWN_MAX = 3.4;
+  private boostActive = false;
   private slowMoEnergy = 100;
   private isSlowMo = false;
+  private vehicleLockNoticeTimer = 0;
   private abilityCharge = 100;
   private abilityActiveTimer = 0;
   private hasShield = false;
+  private shieldCooldown = 0;
+  private readonly SHIELD_COOLDOWN_MAX = 16.0;
   private magnetTimer = 0;
   private vehicleTimer = 0;
   private invulnTimer = 0;
@@ -469,6 +498,27 @@ export class MetroRushEngine {
   private abilitiesUsedCount = 0;
   private slowMoUsedCount = 0;
   private secretsFoundRun = 0;
+  private obstaclesDodgedRun = 0;
+  private trainsPassedRun = 0;
+  private shieldBreaksRun = 0;
+  private doubleJumpsRun = 0;
+  private doubleJumpCooldown = 0;
+  private readonly DOUBLE_JUMP_COOLDOWN_MAX = 1.6;
+  private doubleJumpBlockedReason: string | null = null;
+  private doubleJumpBlockedTimer = 0;
+  private parkourChainsRun = 0;
+  private bossPhasesClearedRun = 0;
+  private fiveLaneDistanceRun = 0;
+  private swingBarTimer = 0;
+  private onFloor2 = false;
+  private onBalanceBeam = false;
+  private celebrateTimer = 0;
+  private objectiveToastText: string | null = null;
+  private objectiveToastTimer = 0;
+  private sectorTransitionText: string | null = null;
+  private sectorTransitionTimer = 0;
+  private pendingSectorGate = false;
+  private hudEmitReviveAccum = 0;
   private highlights: string[] = [];
 
   // Pursuer, Revive, Talisman, Vehicle & Story State
@@ -479,13 +529,22 @@ export class MetroRushEngine {
   private liveTalismansHeld = 0;
   private liveReviveTokensHeld = 0;
   private revivePrompt: RevivePromptState | null = null;
+  private reviveCountdownTimer = 10.0;
   private randomBossActive = false;
   private randomBossTimer = 0;
-  private nextRandomBossDist = 820;
+  private nextRandomBossDist = 1650;
+  private inBossArena = false;
   private storyChapterNum = 1;
   private storyObjectiveText: string | null = null;
   private storyBeatIndex = 0;
   private activeVehicleStats = getEffectiveVehicleStats('hover_bike', 0);
+  private activeRunContext: ActiveRunContext = {
+    mode: 'endless',
+    districtId: 'downtown',
+    eventId: null,
+    bossId: null,
+    storyChapter: null,
+  };
 
   // Dynamic Events & Bosses
   private nextEventDistance = 420;
@@ -495,12 +554,21 @@ export class MetroRushEngine {
   private timeRemaining: number | null = null;
   private targetDistance: number | null = null;
   private bossHp = 0;
-  private bossMaxHp = 3;
+  private bossMaxHp = 16;
   private bossPhase = 1;
+  private bossPhaseIndex = 0;
+  private bossPhaseHp = 0;
+  private bossPhaseMaxHp = 4;
+  private bossPhaseName = '';
+  private bossIntroTitle = '';
+  private bossIntroQuote = '';
+  private bossIntroTimer = 0;
+  private bossPhaseTransitionTimer = 0;
   private bossEntranceTimer = 0;
+  private bossEmpSpawnTimer = 4.0;
   private bossDefeatedId: BossId | null = null;
   private bossDistance: number | null = null;
-  private bossAttackTimer = 6;
+  private bossAttackTimer = 5.5;
   private bossWarningText: string | null = null;
   private bossHazards: BossHazardEntity[] = [];
   private aerialThreats: AerialThreatEntity[] = [];
@@ -682,9 +750,9 @@ export class MetroRushEngine {
       this.composer.addPass(new RenderPass(this.scene, this.camera));
       this.bloomPass = new UnrealBloomPass(
         new THREE.Vector2(w, h),
-        0.2,
-        0.24,
-        0.92,
+        0.26,
+        0.22,
+        0.88,
       );
       this.bloomPass.enabled =
         this.settings.bloom && !this.settings.reduceVisualEffects;
@@ -694,18 +762,17 @@ export class MetroRushEngine {
     this.hemiLight = new THREE.HemisphereLight(
       this.district.colors.primaryNeon,
       0x0a0d1c,
-      0.75,
+      0.52,
     );
     this.scene.add(this.hemiLight);
 
     this.dirLight = new THREE.DirectionalLight(
       this.district.colors.sunLight,
-      1.3,
+      1.05,
     );
     this.dirLight.position.set(16, 28, 12);
-    this.dirLight.castShadow = !this.isSoftwareGl && this.settings.shadows;
-    this.dirLight.shadow.mapSize.set(1024, 1024);
-    const d = 22;
+    this.applyGraphicsQualitySettings();
+    const d = 24;
     this.dirLight.shadow.camera.left = -d;
     this.dirLight.shadow.camera.right = d;
     this.dirLight.shadow.camera.top = d;
@@ -719,16 +786,16 @@ export class MetroRushEngine {
 
     this.rimLight = new THREE.DirectionalLight(
       this.district.colors.secondaryNeon,
-      0.6,
+      0.48,
     );
     this.rimLight.position.set(-14, 12, -20);
     this.scene.add(this.rimLight);
 
     this.playerPointLight = new THREE.PointLight(
       this.district.colors.primaryNeon,
-      1.2,
-      13,
-      1.6,
+      0.95,
+      12,
+      1.7,
     );
     this.scene.add(this.playerPointLight);
 
@@ -742,7 +809,45 @@ export class MetroRushEngine {
       this.settings.reflections,
       this.settings.materialQuality,
       this.settings.ambientOcclusion,
+      this.getLaneCount(),
     );
+  }
+
+  private getShadowMapResolution(): number {
+    if (this.isSoftwareGl || !this.settings.shadows) return 0;
+    const preset = this.settings.graphicsQuality;
+    if (preset === 'very_low' || preset === 'low') return 0;
+    if (preset === 'medium') return 512;
+    if (preset === 'high' || this.settings.lightingQuality === 'standard') return 1024;
+    return 2048;
+  }
+
+  private applyGraphicsQualitySettings(): void {
+    const shadowSize = this.getShadowMapResolution();
+    const shadowsEnabled = shadowSize > 0;
+    this.renderer.shadowMap.enabled = shadowsEnabled;
+    if (this.dirLight) {
+      this.dirLight.castShadow = shadowsEnabled;
+      if (shadowsEnabled) {
+        if (
+          this.dirLight.shadow.mapSize.width !== shadowSize ||
+          this.dirLight.shadow.mapSize.height !== shadowSize
+        ) {
+          this.dirLight.shadow.mapSize.set(shadowSize, shadowSize);
+          this.dirLight.shadow.map?.dispose();
+          this.dirLight.shadow.map = null;
+        }
+      }
+    }
+    if (this.bloomPass) {
+      this.bloomPass.enabled =
+        !this.isSoftwareGl &&
+        this.settings.bloom &&
+        !this.settings.reduceVisualEffects &&
+        this.settings.graphicsQuality !== 'very_low';
+      this.bloomPass.strength =
+        this.settings.graphicsQuality === 'ultra' ? 0.32 : 0.24;
+    }
   }
 
   private applyPixelRatioAndResolution(): void {
@@ -843,7 +948,7 @@ export class MetroRushEngine {
     this.grappleLine.visible = false;
     this.scene.add(this.grappleLine);
 
-    this.bossMesh = buildBossModel(this.activeBossId);
+    this.bossMesh = buildBossModel(this.activeBossId, this.save.useCustomBossModels ?? true);
     this.bossMesh.visible = false;
     this.scene.add(this.bossMesh);
 
@@ -851,6 +956,11 @@ export class MetroRushEngine {
     this.pursuerMesh.visible = false;
     this.scene.add(this.pursuerMesh);
 
+    this.captureDroneMesh = buildCaptureDroneModel('#ef4444');
+    this.captureDroneMesh.visible = false;
+    this.scene.add(this.captureDroneMesh);
+
+    this.rebuildHangarLobby();
     this.rebuildVehicleShowcase();
 
     const pGeo = new THREE.BoxGeometry(0.15, 0.15, 0.15);
@@ -948,6 +1058,37 @@ export class MetroRushEngine {
     });
   }
 
+  private rebuildHangarLobby(): void {
+    const char = getCharacterById(this.save.selectedCharacterId);
+    const owned = (this.save.ownedVehicles ?? ['hover_bike']).join(',');
+    const paints = JSON.stringify(this.save.vehiclePaints ?? {});
+    const key = `${char.id}:${owned}:${paints}`;
+    if (this.hangarGroup && this.hangarKey === key) return;
+
+    if (this.hangarGroup) {
+      this.scene.remove(this.hangarGroup);
+      this.hangarGroup.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+          else m.material.dispose();
+        }
+      });
+      this.hangarGroup = null;
+    }
+
+    this.hangarGroup = buildHangarLobbyGroup(
+      char.colors.accent,
+      char.colors.jacket,
+      this.save.ownedVehicles ?? ['hover_bike'],
+      this.save.vehiclePaints ?? {},
+    );
+    this.hangarKey = key;
+    this.hangarGroup.visible = this.phase === 'title' && this.showcaseMode !== 'city';
+    this.scene.add(this.hangarGroup);
+  }
+
   public setShowcaseMode(mode: ShowcaseMode, bossId?: BossId): void {
     this.showcaseMode = mode;
     if (bossId && bossId !== this.previewBossId) {
@@ -956,11 +1097,17 @@ export class MetroRushEngine {
     }
     if (this.phase === 'title') {
       this.bossMesh.visible = mode === 'boss';
+      if (this.hangarGroup) {
+        this.hangarGroup.visible = mode !== 'city';
+      }
       if (this.vehicleShowcase) {
         this.vehicleShowcase.group.visible = mode === 'garage';
       }
       if (this.playerRig) {
         this.playerRig.root.visible = mode !== 'garage' && mode !== 'boss';
+      }
+      for (const c of this.chunks) {
+        c.group.visible = mode === 'city';
       }
     }
   }
@@ -991,18 +1138,26 @@ export class MetroRushEngine {
     const wasVisible = this.bossMesh?.visible ?? false;
     if (this.bossMesh) {
       this.scene.remove(this.bossMesh);
-      this.bossMesh.traverse((obj) => {
-        if ((obj as THREE.Mesh).isMesh) {
-          const m = obj as THREE.Mesh;
-          m.geometry.dispose();
-          if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
-          else m.material.dispose();
-        }
-      });
+      if (typeof this.bossMesh.userData.customDispose === 'function') {
+        this.bossMesh.userData.customDispose();
+      } else {
+        this.bossMesh.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry.dispose();
+            if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+            else m.material.dispose();
+          }
+        });
+      }
     }
-    this.bossMesh = buildBossModel(bossId);
+    this.bossMesh = buildBossModel(bossId, this.save.useCustomBossModels ?? true);
     this.bossMesh.visible = wasVisible;
     this.scene.add(this.bossMesh);
+  }
+
+  public refreshBossShowcaseModel(bossId: BossId): void {
+    this.swapBossModel(bossId);
   }
 
   public syncSaveData(save: PlayerSaveData): void {
@@ -1011,6 +1166,7 @@ export class MetroRushEngine {
     const prevCosmetics = JSON.stringify(this.save.equippedCosmetics);
     const prevVehicle = this.save.selectedVehicleId ?? 'hover_bike';
     const prevPaints = JSON.stringify(this.save.vehiclePaints ?? {});
+    const prevOwnedVeh = (this.save.ownedVehicles ?? []).join(',');
     const prevPet = this.save.equippedPetId ?? null;
     const prevDistrict = this.save.selectedDistrictId;
     const prevTexQuality = this.settings.textureQuality;
@@ -1020,6 +1176,8 @@ export class MetroRushEngine {
     const prevTime = this.settings.timeOfDay;
     const prevDensity = this.settings.objectDensity;
     const prevDraw = this.settings.drawDistance;
+    const prevPreset = this.settings.graphicsQuality;
+    const prevUseCustomBoss = this.save.useCustomBossModels ?? true;
 
     this.save = save;
     this.settings = save.settings;
@@ -1030,33 +1188,32 @@ export class MetroRushEngine {
     audioEngine.updateSettings(this.settings);
 
     this.applyPixelRatioAndResolution();
-    if (this.bloomPass) {
-      this.bloomPass.enabled =
-        !this.isSoftwareGl &&
-        this.settings.bloom &&
-        !this.settings.reduceVisualEffects;
-    }
-    this.renderer.shadowMap.enabled =
-      !this.isSoftwareGl && this.settings.shadows;
-    this.dirLight.castShadow = !this.isSoftwareGl && this.settings.shadows;
+    this.applyGraphicsQualitySettings();
 
     const nextModelStyle = save.modelStyle ?? 'procedural';
     const nextVehicle = save.selectedVehicleId ?? 'hover_bike';
     const nextPaints = JSON.stringify(save.vehiclePaints ?? {});
+    const nextOwnedVeh = (save.ownedVehicles ?? []).join(',');
     if (
       prevChar !== save.selectedCharacterId ||
       prevModelStyle !== nextModelStyle ||
       prevCosmetics !== JSON.stringify(save.equippedCosmetics) ||
       prevVehicle !== nextVehicle ||
-      prevPaints !== nextPaints
+      prevPaints !== nextPaints ||
+      prevOwnedVeh !== nextOwnedVeh
     ) {
       this.rebuildPlayerCharacter();
       this.rebuildVehicleShowcase();
+      this.rebuildHangarLobby();
     } else if (prevPet !== (save.equippedPetId ?? null)) {
       this.rebuildCompanionFox();
     }
 
-    if (prevTime !== this.settings.timeOfDay) {
+    if (prevUseCustomBoss !== (save.useCustomBossModels ?? true)) {
+      this.swapBossModel(this.activeBossId);
+    }
+
+    if (prevTime !== this.settings.timeOfDay || prevPreset !== this.settings.graphicsQuality) {
       this.currentPeriod = this.resolveTimePeriod(
         this.settings.timeOfDay,
         this.district.defaultTimeOfDay,
@@ -1072,7 +1229,8 @@ export class MetroRushEngine {
         prevMat !== this.settings.materialQuality ||
         prevAo !== this.settings.ambientOcclusion ||
         prevDensity !== this.settings.objectDensity ||
-        prevDraw !== this.settings.drawDistance)
+        prevDraw !== this.settings.drawDistance ||
+        prevPreset !== this.settings.graphicsQuality)
     ) {
       this.applyDistrictTheme(getDistrictById(save.selectedDistrictId));
       this.resetWorldForTitle();
@@ -1124,29 +1282,69 @@ export class MetroRushEngine {
     this.companionFox = fox;
   }
 
+  private getLaneCount(): 3 | 5 {
+    return this.district?.laneCount === 5 ? 5 : 3;
+  }
+
+  private getLanes(): number[] {
+    return this.getLaneCount() === 5 ? LANES_5 : LANES_3;
+  }
+
+  private getCenterLane(): number {
+    return this.getLaneCount() === 5 ? 2 : 1;
+  }
+
+  private getLaneX(lane: number): number {
+    const lanes = this.getLanes();
+    return lanes[THREE.MathUtils.clamp(lane, 0, lanes.length - 1)] ?? 0;
+  }
+
+  private getRoadWidth(): number {
+    return this.getLaneCount() === 5 ? 18.0 : 11.6;
+  }
+
+  private getWallOffset(): number {
+    return this.getLaneCount() === 5 ? 8.35 : 5.05;
+  }
+
+  private getWalkCenter(): number {
+    return this.getLaneCount() === 5 ? 11.5 : 8.2;
+  }
+
+  private getBuildingOffset(): number {
+    return this.getLaneCount() === 5 ? 15.4 : 12.0;
+  }
+
+  private getTunnelRadius(): number {
+    return this.getLaneCount() === 5 ? 15.2 : 11.5;
+  }
+
   private getBossCombatDistance(bossId: BossId): number {
     switch (bossId) {
       case 'iron_hunter':
-        return 28;
+        return 30;
       case 'neon_wraith':
-        return 29;
+        return 32;
       case 'titan_drone':
       case 'overseer':
-        return 30;
-      case 'volt_archon':
-        return 31;
-      case 'cryo_leviathan':
-        return 32;
-      case 'the_sentinel':
         return 33;
-      case 'omega_core':
+      case 'volt_archon':
         return 34;
+      case 'cryo_leviathan':
+        return 35;
+      case 'the_sentinel':
+        return 36;
+      case 'omega_core':
+        return 38;
     }
   }
 
   private animateBossMesh(dt: number, phase: number): void {
     if (!this.bossMesh) return;
-    const spd = 1 + (Math.max(1, phase) - 1) * 0.45;
+    if (this.bossMesh.userData.isCustomGlb && this.bossMesh.userData.customMixer) {
+      (this.bossMesh.userData.customMixer as THREE.AnimationMixer).update(dt);
+    }
+    const spd = 1 + (Math.max(1, phase) - 1) * 0.42;
     const rings = this.bossMesh.userData.rings as THREE.Object3D[] | undefined;
     if (rings) {
       rings.forEach((r, idx) => {
@@ -1187,7 +1385,7 @@ export class MetroRushEngine {
       }
     }
     const core = this.bossMesh.userData.core as THREE.Object3D | null | undefined;
-    if (core) {
+    if (core && !this.bossMesh.userData.isCustomGlb) {
       const pulse = 1 + Math.sin(this.elapsedTotal * 6 * spd) * (0.06 + (phase - 1) * 0.03);
       core.scale.setScalar(pulse);
     }
@@ -1361,19 +1559,24 @@ export class MetroRushEngine {
     const d = this.district;
     const fogBase =
       this.settings.drawDistance === 'near'
-        ? 0.015
+        ? 0.016
         : this.settings.drawDistance === 'medium'
-          ? 0.011
+          ? 0.0115
           : 0.0085;
     const volMult = this.settings.volumetrics ? 1.0 : 0.78;
-    const lightMult = this.settings.lightingQuality === 'cinematic' ? 1.0 : 0.85;
+    const lightMult =
+      this.settings.graphicsQuality === 'ultra' || this.settings.lightingQuality === 'cinematic'
+        ? 1.0
+        : this.settings.graphicsQuality === 'very_low' || this.settings.graphicsQuality === 'low'
+          ? 0.78
+          : 0.88;
 
     if (d.isUnderground) {
       this.scene.background = new THREE.Color(d.colors.skyTop);
-      this.scene.fog = new THREE.FogExp2(d.colors.fog, fogBase * 1.15 * volMult);
-      this.dirLight.intensity = 1.15 * lightMult;
-      this.hemiLight.intensity = 0.65;
-      this.renderer.toneMappingExposure = 1.02;
+      this.scene.fog = new THREE.FogExp2(d.colors.fog, fogBase * 1.18 * volMult);
+      this.dirLight.intensity = 0.88 * lightMult;
+      this.hemiLight.intensity = 0.48;
+      this.renderer.toneMappingExposure = 0.9;
     } else {
       const skyCol = new THREE.Color(cfg.skyHex).lerp(
         new THREE.Color(d.colors.skyTop),
@@ -1392,15 +1595,29 @@ export class MetroRushEngine {
     }
 
     if (this.textures) {
-      this.textures.buildingMat.emissiveIntensity = 0.6 * cfg.emissiveMult;
-      this.textures.neonTrimMat.emissiveIntensity = 0.82 * cfg.emissiveMult;
-      this.textures.secTrimMat.emissiveIntensity = 0.82 * cfg.emissiveMult;
+      this.textures.buildingMat.emissiveIntensity = 0.46 * cfg.emissiveMult;
+      this.textures.neonTrimMat.emissiveIntensity = 0.62 * cfg.emissiveMult;
+      this.textures.secTrimMat.emissiveIntensity = 0.62 * cfg.emissiveMult;
     }
     this.cloudsMesh.visible = !d.isUnderground && this.settings.volumetrics;
   }
 
-  private applyDistrictTheme(d: DistrictDef): void {
+  private applyDistrictTheme(d: DistrictDef, spawnGate = false): void {
+    const prevLaneCount = this.district?.laneCount ?? 3;
     this.district = d;
+    const newLaneCount = d.laneCount === 5 ? 5 : 3;
+
+    // Remap targetLane cleanly when transitioning between 3-lane and 5-lane maps (§19)
+    if (prevLaneCount !== newLaneCount && this.phase === 'playing') {
+      const prevMax = Math.max(1, prevLaneCount - 1);
+      const newMax = Math.max(1, newLaneCount - 1);
+      this.targetLane = THREE.MathUtils.clamp(
+        Math.round((this.targetLane / prevMax) * newMax),
+        0,
+        newMax,
+      );
+    }
+
     if (this.settings.randomWeather) {
       const weathers: WeatherType[] = ['clear', 'rain', 'cyberfog', 'storm', 'sunset'];
       this.weather = d.isUnderground
@@ -1429,7 +1646,20 @@ export class MetroRushEngine {
       this.settings.reflections,
       this.settings.materialQuality,
       this.settings.ambientOcclusion,
+      newLaneCount,
     );
+
+    if (spawnGate) {
+      const gate = buildSectorTransitionGate(
+        this.getRoadWidth(),
+        d.colors.primaryNeon,
+        d.colors.secondaryNeon,
+      );
+      const gateZ = this.playerZ - 26;
+      gate.position.set(0, this.getRoadElevationY(gateZ), gateZ);
+      this.scene.add(gate);
+      this.sectorGates.push({ group: gate, timer: 2.8 });
+    }
 
     this.applyTimeOfDayVisuals(targetPeriod);
     audioEngine.setCityAmbience(d.id, targetPeriod, this.weather);
@@ -1454,19 +1684,55 @@ export class MetroRushEngine {
     this.chunks = [];
   }
 
+  private clearTransientVfx(): void {
+    for (const v of this.shieldShatterVfx) {
+      this.scene.remove(v.group);
+      v.group.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+    this.shieldShatterVfx = [];
+
+    for (const sg of this.sectorGates) {
+      this.scene.remove(sg.group);
+      sg.group.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+    this.sectorGates = [];
+  }
+
   private resetWorldForTitle(): void {
     this.clearChunks();
+    this.clearTransientVfx();
     this.playerX = 0;
     this.playerY = 0;
     this.playerZ = 0;
-    this.targetLane = 1;
+    this.targetLane = this.getCenterLane();
     this.velY = 0;
     this.nextChunkIndex = -1;
     const count = this.getVisibleChunksCount();
     for (let i = 0; i < count; i++) {
       this.spawnChunk(this.nextChunkIndex++, true);
     }
-    this.playerRig.root.position.set(0, 0, 0);
+    for (const c of this.chunks) {
+      c.group.visible = this.showcaseMode === 'city';
+    }
+    this.rebuildHangarLobby();
+    if (this.hangarGroup) {
+      this.hangarGroup.visible = this.showcaseMode !== 'city';
+    }
+    this.playerRig.root.position.set(0, 0.14, 0);
     this.playerRig.root.rotation.set(0, Math.PI, 0);
     this.playerRig.root.visible =
       this.showcaseMode !== 'garage' && this.showcaseMode !== 'boss';
@@ -1474,7 +1740,65 @@ export class MetroRushEngine {
       this.vehicleShowcase.group.visible = this.showcaseMode === 'garage';
     }
     this.pursuerMesh.visible = false;
+    this.captureDroneMesh.visible = false;
     this.bossMesh.visible = this.showcaseMode === 'boss';
+  }
+
+  private beginBossEncounter(bossId: BossId, isAmbush: boolean): void {
+    const bossDef = getBossById(bossId);
+    this.swapBossModel(bossId);
+    this.inBossArena = true;
+    this.clearNearbyHazards(130);
+
+    this.bossPhaseIndex = 0;
+    this.bossPhase = 1;
+    const phasesCfg = bossDef.phasesConfig;
+    const totalHp = phasesCfg.reduce((acc, p) => acc + p.hpUnits, 0);
+    const p1 = phasesCfg[0];
+
+    this.bossMaxHp = totalHp;
+    this.bossHp = totalHp;
+    this.bossPhaseMaxHp = p1.hpUnits;
+    this.bossPhaseHp = p1.hpUnits;
+    this.bossPhaseName = p1.name;
+    this.bossIntroTitle = `${bossDef.name} — ${bossDef.introTitle}`;
+    this.bossIntroQuote = bossDef.introQuote;
+    this.bossIntroTimer = 3.2;
+    this.bossPhaseTransitionTimer = 0;
+    this.bossEntranceTimer = 3.2;
+    this.bossEmpSpawnTimer = p1.empSpawnSec;
+    this.bossAttackTimer = p1.attackCooldownSec + 3.2;
+    this.bossDistance = this.getBossCombatDistance(bossId);
+    this.bossWarningText = null;
+    this.bossMesh.position.set(0, this.getRoadElevationY(this.playerZ - 58) + 4.8, this.playerZ - 58);
+    this.bossMesh.visible = true;
+    applyBossPhaseVisuals(this.bossMesh, bossDef, 0);
+
+    audioEngine.setBossPhase(1);
+    audioEngine.setMusicMode('boss');
+    audioEngine.playBossEntrance();
+
+    this.showBanner(
+      isAmbush
+        ? `¡EMBOSCADA: ${bossDef.name.toUpperCase()}!`
+        : `${bossDef.name.toUpperCase()} · ${bossDef.introTitle.toUpperCase()}`,
+    );
+    this.showSubtitle(bossDef.introQuote);
+  }
+
+  public getActiveRunContext(): ActiveRunContext {
+    return { ...this.activeRunContext };
+  }
+
+  public restartRun(): void {
+    const ctx = this.activeRunContext;
+    this.startRun(
+      ctx.mode,
+      ctx.districtId,
+      ctx.eventId,
+      ctx.bossId ?? undefined,
+      ctx.storyChapter ?? undefined,
+    );
   }
 
   public startRun(
@@ -1486,7 +1810,9 @@ export class MetroRushEngine {
   ): void {
     audioEngine.unlock();
     audioEngine.setBossPhase(1);
-    audioEngine.setMusicMode(mode === 'bosschase' ? 'boss' : mode === 'tutorial' ? 'intro' : 'exploration');
+    audioEngine.setMusicMode(
+      mode === 'bosschase' ? 'boss' : mode === 'tutorial' ? 'intro' : 'exploration',
+    );
     audioEngine.startMusic();
 
     this.mode = mode;
@@ -1494,8 +1820,12 @@ export class MetroRushEngine {
     this.phase = 'playing';
     this.mpPausedOverlay = false;
     this.clearDynamicThreats();
+    this.clearTransientVfx();
+    if (this.hangarGroup) this.hangarGroup.visible = false;
+    if (this.captureDroneMesh) this.captureDroneMesh.visible = false;
 
-    const chapterDef = getStoryChapterByNum(storyChapterOverride ?? this.save.storyChapter ?? 1);
+    const chapterNum = storyChapterOverride ?? this.save.storyChapter ?? 1;
+    const chapterDef = getStoryChapterByNum(chapterNum);
     const effectiveDistrictId =
       mode === 'tutorial'
         ? 'downtown'
@@ -1503,8 +1833,17 @@ export class MetroRushEngine {
           ? chapterDef.districtId
           : districtId;
     const distDef = getDistrictById(effectiveDistrictId);
-    this.applyDistrictTheme(distDef);
+    this.recentDistrictIds = [distDef.id];
+    this.applyDistrictTheme(distDef, false);
     this.clearChunks();
+
+    this.activeRunContext = {
+      mode,
+      districtId: distDef.id,
+      eventId,
+      bossId: bossOverride ?? null,
+      storyChapter: mode === 'story' ? chapterNum : null,
+    };
 
     const char = getCharacterById(this.save.selectedCharacterId);
     const speedSkill = this.save.skillLevels['momentum_mastery'] ?? 0;
@@ -1524,6 +1863,7 @@ export class MetroRushEngine {
     this.revivesUsedRun = 0;
     this.talismanUsedRun = false;
     this.revivePrompt = null;
+    this.reviveCountdownTimer = 10.0;
     this.liveTalismansHeld = this.save.talismans ?? 0;
     this.liveReviveTokensHeld = this.save.reviveTokens ?? 0;
 
@@ -1536,11 +1876,14 @@ export class MetroRushEngine {
     this.playerX = 0;
     this.playerY = 0;
     this.playerZ = 0;
-    this.targetLane = 1;
+    this.targetLane = this.getCenterLane();
     this.velY = 0;
     this.grounded = true;
     this.jumpsUsed = 0;
     this.doubleJumpFlipTimer = 0;
+    this.doubleJumpCooldown = 0;
+    this.doubleJumpBlockedReason = null;
+    this.doubleJumpBlockedTimer = 0;
     this.vaultTimer = 0;
     this.slideTimer = 0;
     this.wallRunTimer = 0;
@@ -1548,6 +1891,15 @@ export class MetroRushEngine {
     this.climbTimer = 0;
     this.ziplineTimer = 0;
     this.grappleTimer = 0;
+    this.swingBarTimer = 0;
+    this.onFloor2 = false;
+    this.onBalanceBeam = false;
+    this.celebrateTimer = 0;
+    this.objectiveToastText = null;
+    this.objectiveToastTimer = 0;
+    this.sectorTransitionText = null;
+    this.sectorTransitionTimer = 0;
+    this.pendingSectorGate = false;
     this.stumbleTimer = 0;
     this.hitstopTimer = 0;
     this.cameraShake = 0;
@@ -1555,22 +1907,26 @@ export class MetroRushEngine {
     this.diveQueued = false;
 
     this.baseSpeed =
-      (23 + char.stats.speed * 0.7 + speedSkill * 1.1) *
+      (22.5 + char.stats.speed * 0.65 + speedSkill * 0.95) *
       this.district.speedBonus *
       diffMult;
     if (mode === 'freerun') this.baseSpeed *= 0.88;
-    if (mode === 'timetrial' || mode === 'bosschase') this.baseSpeed *= 1.1;
+    if (mode === 'timetrial' || mode === 'bosschase') this.baseSpeed *= 1.08;
     this.forwardSpeed = this.baseSpeed;
     this.maxSpeedKmh = 0;
     this.difficultyStage = 1;
 
-    this.momentum = 25;
+    this.momentum = 28;
+    this.sprintCooldown = 0;
+    this.boostActive = false;
     this.slowMoEnergy = 100;
     this.isSlowMo = false;
+    this.vehicleLockNoticeTimer = 0;
     this.abilityCharge = 100;
     this.abilityActiveTimer = 0;
     // Valkyrie Passive: Blindaje Reactivo (starts every run with active Shield!)
     this.hasShield = char.id === 'valkyrie';
+    this.shieldCooldown = 0;
     this.magnetTimer = 0;
     this.vehicleTimer = 0;
     this.invulnTimer = 0;
@@ -1592,10 +1948,17 @@ export class MetroRushEngine {
     this.abilitiesUsedCount = 0;
     this.slowMoUsedCount = 0;
     this.secretsFoundRun = 0;
+    this.obstaclesDodgedRun = 0;
+    this.trainsPassedRun = 0;
+    this.shieldBreaksRun = 0;
+    this.doubleJumpsRun = 0;
+    this.parkourChainsRun = 0;
+    this.bossPhasesClearedRun = 0;
+    this.fiveLaneDistanceRun = 0;
     this.highlights = [];
 
-    this.nextEventDistance = 380;
-    this.nextAerialSpawnDist = 340;
+    this.nextEventDistance = 420;
+    this.nextAerialSpawnDist = 420;
     this.activeDynamicEvent = null;
     this.dynamicEventTimer = 0;
     this.powerOutageActive = false;
@@ -1615,15 +1978,16 @@ export class MetroRushEngine {
       mode === 'tutorial' ? 'Paso 1/6: Cambia de carril con [A] y [D] (0/2)' : null;
 
     // Pursuer Enforcer setup
-    this.pursuerDistance = mode === 'freerun' || mode === 'tutorial' ? 99 : 24;
+    this.pursuerDistance = mode === 'freerun' || mode === 'tutorial' ? 99 : 25;
     this.pursuerSirenCooldown = 0;
     this.pursuerMesh.visible = mode !== 'freerun' && mode !== 'tutorial';
     this.pursuerMesh.position.set(0, 0, 10);
 
-    // Random Boss Ambush setup for normal runs
+    // Random Boss Ambush setup for normal runs (§15: raised threshold >= 1650m)
     this.randomBossActive = false;
     this.randomBossTimer = 0;
-    this.nextRandomBossDist = 760 + Math.random() * 240;
+    this.inBossArena = false;
+    this.nextRandomBossDist = 1650 + Math.random() * 450;
 
     const evt = eventId ? LIVE_EVENTS.find((e) => e.id === eventId) : null;
     const candidateBossId =
@@ -1637,22 +2001,23 @@ export class MetroRushEngine {
       mode === 'bosschase' && !isBossUnlocked(candidateBossId, this.save.defeatedBosses ?? [])
         ? unlockedBosses[unlockedBosses.length - 1] ?? BOSSES[0].id
         : candidateBossId;
-    const bossDef = getBossById(chosenBossId);
-    this.swapBossModel(chosenBossId);
 
+    this.activeRunContext.bossId = chosenBossId;
     this.bossDefeatedId = null;
     if (mode === 'bosschase') {
-      this.bossMaxHp = bossDef.hpSegments;
-      this.bossHp = bossDef.hpSegments;
-      this.bossPhase = 1;
-      this.bossEntranceTimer = 1.6;
-      this.bossDistance = 24;
-      this.bossAttackTimer = 4.6;
-      this.bossMesh.position.set(0, 4.5, -48);
-      this.bossMesh.visible = true;
-      audioEngine.playBossEntrance();
+      this.beginBossEncounter(chosenBossId, false);
     } else {
+      this.swapBossModel(chosenBossId);
       this.bossHp = 0;
+      this.bossPhase = 1;
+      this.bossPhaseIndex = 0;
+      this.bossPhaseHp = 0;
+      this.bossPhaseMaxHp = 3;
+      this.bossPhaseName = '';
+      this.bossIntroTitle = '';
+      this.bossIntroQuote = '';
+      this.bossIntroTimer = 0;
+      this.bossPhaseTransitionTimer = 0;
       this.bossEntranceTimer = 0;
       this.bossDistance = null;
       this.bossMesh.visible = false;
@@ -1670,33 +2035,35 @@ export class MetroRushEngine {
         : mode === 'timetrial'
           ? 1400
           : mode === 'parkour'
-            ? 1200
+            ? 1400
             : null;
 
-    this.showBanner(
-      mode === 'tutorial'
-        ? 'TUTORIAL INTERACTIVO — ENTRENAMIENTO PARKOUR'
-        : mode === 'bosschase'
-          ? `JEFE: ${bossDef.name} — ${bossDef.title.toUpperCase()}`
+    if (mode !== 'bosschase') {
+      this.showBanner(
+        mode === 'tutorial'
+          ? 'TUTORIAL INTERACTIVO — ENTRENAMIENTO PARKOUR'
           : mode === 'story'
             ? `CAPÍTULO ${chapterDef.chapter}: ${chapterDef.title.toUpperCase()}`
-            : evt
-              ? `${evt.title.toUpperCase()} · ${evt.modifierTag}`
-              : `${this.district.name.toUpperCase()} · ${this.district.subtitle}`,
-    );
-    if (mode === 'tutorial') {
-      this.showSubtitle('Sigue cada paso en pantalla para dominar el parkour en Neon City.');
-    } else if (mode === 'story' && chapterDef.dialogueBeats[0]) {
-      this.showSubtitle(
-        `[${chapterDef.dialogueBeats[0].speaker}]: ${chapterDef.dialogueBeats[0].text}`,
+            : mode === 'parkour'
+              ? `PARKOUR EXTREMO 2 PISOS · ${this.district.name.toUpperCase()}`
+              : evt
+                ? `${evt.title.toUpperCase()} · ${evt.modifierTag}`
+                : `${this.district.name.toUpperCase()} · ${this.district.subtitle}`,
       );
-      this.storyBeatIndex = 1;
-    } else {
-      this.showSubtitle(
-        mode === 'bosschase'
-          ? bossDef.counterHint
-          : `Despliegue en ${this.district.name}. ¡Buena suerte, ${char.name}!`,
-      );
+      if (mode === 'tutorial') {
+        this.showSubtitle('Sigue cada paso en pantalla para dominar el parkour en Neon City.');
+      } else if (mode === 'story' && chapterDef.dialogueBeats[0]) {
+        this.showSubtitle(
+          `[${chapterDef.dialogueBeats[0].speaker}]: ${chapterDef.dialogueBeats[0].text}`,
+        );
+        this.storyBeatIndex = 1;
+      } else {
+        this.showSubtitle(
+          mode === 'parkour'
+            ? 'Sube al Piso 2 por rampas o plataformas de salto, usa barras y vigas!'
+            : `Despliegue en ${this.district.name} (${this.getLaneCount()} carriles). ¡Suerte, ${char.name}!`,
+        );
+      }
     }
 
     this.playerRig.root.rotation.set(0, 0, 0);
@@ -1705,7 +2072,7 @@ export class MetroRushEngine {
     this.nextChunkIndex = -1;
     const count = this.getVisibleChunksCount();
     for (let i = 0; i < count; i++) {
-      this.spawnChunk(this.nextChunkIndex++, i <= 1 || mode === 'tutorial');
+      this.spawnChunk(this.nextChunkIndex++, i <= 2 || mode === 'tutorial');
     }
 
     this.emitHud();
@@ -1731,17 +2098,22 @@ export class MetroRushEngine {
     this.phase = 'title';
     this.revivePrompt = null;
     this.randomBossActive = false;
+    this.inBossArena = false;
+    this.bossIntroTimer = 0;
+    this.bossPhaseTransitionTimer = 0;
     this.mpPausedOverlay = false;
     this.clearDynamicThreats();
+    this.clearTransientVfx();
     this.clearRemoteRunners();
     this.rainEventState.active = false;
     this.heldKeys.clear();
     this.isSlowMo = false;
     this.powerOutageActive = false;
+    if (this.captureDroneMesh) this.captureDroneMesh.visible = false;
     audioEngine.setBossPhase(1);
     audioEngine.setMusicMode('lobby');
     audioEngine.setMusicParams({ slowMo: false, intensity: 0.28, danger: 0 });
-    this.applyDistrictTheme(getDistrictById(this.save.selectedDistrictId));
+    this.applyDistrictTheme(getDistrictById(this.save.selectedDistrictId), false);
     this.resetWorldForTitle();
     this.emitHud();
   }
@@ -1806,22 +2178,42 @@ export class MetroRushEngine {
     const collectibles: CollectibleEntity[] = [];
     const abyssGaps: AbyssGap[] = [];
 
+    const roadW = this.getRoadWidth();
+    const walkCenter = this.getWalkCenter();
+    const bOffset = this.getBuildingOffset();
+    const wallOff = this.getWallOffset();
+    const laneCount = this.getLaneCount();
+
     const hasAbyss =
       !safeMode &&
       this.mode !== 'tutorial' &&
+      !this.inBossArena &&
       this.district.id === 'skyline' &&
       chunkIdx % 3 === 1;
 
     if (hasAbyss) {
       // RoadFront spans [0, -23.52], RoadBack spans [-32.48, -56] -> Gap [-32.48, -23.52]
-      const roadFront = new THREE.Mesh(this.roadHalfGeo, this.textures.roadMat);
+      const halfRoadGeo = this.buildElevatedRoadGeo(
+        roadW,
+        CHUNK_LEN * 0.42,
+        zStart - CHUNK_LEN * 0.21,
+      );
+      const roadFront = new THREE.Mesh(halfRoadGeo, this.textures.roadMat);
       roadFront.position.set(0, 0, -CHUNK_LEN * 0.21);
       roadFront.receiveShadow = true;
-      const roadBack = new THREE.Mesh(this.roadHalfGeo, this.textures.roadMat);
+      const backRoadGeo = this.buildElevatedRoadGeo(
+        roadW,
+        CHUNK_LEN * 0.42,
+        zStart - CHUNK_LEN * 0.79,
+      );
+      const roadBack = new THREE.Mesh(backRoadGeo, this.textures.roadMat);
       roadBack.position.set(0, 0, -CHUNK_LEN * 0.79);
       roadBack.receiveShadow = true;
 
-      const ledgeFront = new THREE.Mesh(new THREE.BoxGeometry(11.6, 0.14, 0.35), this.textures.hazardMat);
+      const ledgeFront = new THREE.Mesh(
+        new THREE.BoxGeometry(roadW, 0.14, 0.35),
+        this.textures.hazardMat,
+      );
       ledgeFront.position.set(0, 0.05, -23.52);
       const ledgeBack = ledgeFront.clone();
       ledgeBack.position.set(0, 0.05, -32.48);
@@ -1832,7 +2224,7 @@ export class MetroRushEngine {
         zMax: zStart - 23.65,
       });
     } else {
-      const roadGeo = this.buildElevatedRoadGeo(11.6, CHUNK_LEN, zStart - CHUNK_LEN / 2);
+      const roadGeo = this.buildElevatedRoadGeo(roadW, CHUNK_LEN, zStart - CHUNK_LEN / 2);
       const road = new THREE.Mesh(roadGeo, this.textures.roadMat);
       road.position.set(0, 0, -CHUNK_LEN / 2);
       road.receiveShadow = true;
@@ -1841,21 +2233,25 @@ export class MetroRushEngine {
 
     const walkGeoL = this.buildElevatedWalkGeo(5, 0.35, CHUNK_LEN, zStart - CHUNK_LEN / 2);
     const walkL = new THREE.Mesh(walkGeoL, this.textures.walkMat);
-    walkL.position.set(-8.2, 0.17, -CHUNK_LEN / 2);
+    walkL.position.set(-walkCenter, 0.17, -CHUNK_LEN / 2);
     const walkR = new THREE.Mesh(walkGeoL, this.textures.walkMat);
-    walkR.position.set(8.2, 0.17, -CHUNK_LEN / 2);
+    walkR.position.set(walkCenter, 0.17, -CHUNK_LEN / 2);
     group.add(walkL, walkR);
 
-    // Animated Ocean Strip along Neon Beach!
-    if (this.district.id === 'beach' && this.textures.waterMat) {
+    // Animated Ocean / Harbor Strip
+    if ((this.district.id === 'beach' || this.district.id === 'cyber_port') && this.textures.waterMat) {
       const oceanR = new THREE.Mesh(this.oceanGeo, this.textures.waterMat);
-      oceanR.position.set(34, -0.7 + this.getRoadElevationY(zStart - CHUNK_LEN / 2), -CHUNK_LEN / 2);
+      oceanR.position.set(walkCenter + 26, -0.7 + this.getRoadElevationY(zStart - CHUNK_LEN / 2), -CHUNK_LEN / 2);
       group.add(oceanR);
     }
 
     // Enclosed Subterranean Metro Tunnel Vault for Underground district
     if (this.district.isUnderground) {
-      const tunnelSeg = buildUndergroundTunnelSegment(CHUNK_LEN, this.textures);
+      const tunnelSeg = buildUndergroundTunnelSegment(
+        CHUNK_LEN,
+        this.textures,
+        this.getTunnelRadius(),
+      );
       tunnelSeg.position.set(0, this.getRoadElevationY(zStart - CHUNK_LEN / 2), 0);
       group.add(tunnelSeg);
     }
@@ -1876,7 +2272,7 @@ export class MetroRushEngine {
       for (const side of [-1, 1] as const) {
         if (this.district.id === 'beach' && side === 1 && s % 2 === 1) {
           const landmark = buildDistrictLandmark(this.district, side, this.textures);
-          landmark.position.set(side * 7.8, bGroundY + 0.35, bz);
+          landmark.position.set(side * (walkCenter - 0.4), bGroundY + 0.35, bz);
           group.add(landmark);
           continue;
         }
@@ -1888,7 +2284,7 @@ export class MetroRushEngine {
             ? 12 + Math.random() * 10
             : 18 + Math.random() * 24;
         const bd = 14;
-        const bx = side * (12.0 + bw * 0.5);
+        const bx = side * (bOffset + bw * 0.5);
 
         const lod = buildBuildingLOD(
           this.unitBoxGeo,
@@ -1904,7 +2300,7 @@ export class MetroRushEngine {
 
         if (s === 1) {
           const landmark = buildDistrictLandmark(this.district, side, this.textures);
-          landmark.position.set(side * 7.8, bGroundY + 0.35, bz);
+          landmark.position.set(side * (walkCenter - 0.4), bGroundY + 0.35, bz);
           group.add(landmark);
         }
 
@@ -1914,29 +2310,36 @@ export class MetroRushEngine {
               Math.floor(Math.random() * this.textures.billboardMats.length)
             ];
           const bb = new THREE.Mesh(this.billboardGeo, bbMat);
-          bb.position.set(side * 9.8, bGroundY + 8.2 + Math.random() * 4, bz);
+          bb.position.set(side * (bOffset - 2.2), bGroundY + 8.2 + Math.random() * 4, bz);
           bb.rotation.y = side > 0 ? -Math.PI * 0.38 : Math.PI * 0.38;
           group.add(bb);
         }
       }
     }
 
-    // Distinct City Overhead Arches / Viaducts
-    if (this.district.id === 'future' || this.district.id === 'oldcity') {
+    // Distinct City Overhead Arches / Viaducts scaled to 3 or 5 lanes
+    const archScale = laneCount === 5 ? 1.48 : 1.0;
+    if (
+      this.district.id === 'future' ||
+      this.district.id === 'oldcity' ||
+      this.district.id === 'crimson_metropolis'
+    ) {
       for (let a = 0; a < 2; a++) {
         const az = -a * 28 - 14;
         const ay = this.getRoadElevationY(zStart + az);
         const arch = new THREE.Mesh(this.archGeo, this.textures.walkMat);
+        arch.scale.set(archScale, 1, 1);
         arch.position.set(0, ay + 6.2, az);
         group.add(arch);
         const archGlow = new THREE.Mesh(this.archGlowGeo, this.textures.neonTrimMat);
+        archGlow.scale.set(archScale, 1, 1);
         archGlow.position.set(0, ay + 6.2, az);
         group.add(archGlow);
       }
-    } else if (this.district.id === 'downtown' && chunkIdx % 2 === 0) {
+    } else if ((this.district.id === 'downtown' || this.district.id === 'obsidian_citadel') && chunkIdx % 2 === 0) {
       const vy = this.getRoadElevationY(zStart - 26);
       const viaduct = new THREE.Mesh(this.unitBoxGeo, this.textures.darkMetalMat);
-      viaduct.scale.set(22, 1.3, 4.2);
+      viaduct.scale.set(roadW + 10.5, 1.3, 4.2);
       viaduct.position.set(0, vy + 9.2, -26);
       group.add(viaduct);
     }
@@ -1956,7 +2359,7 @@ export class MetroRushEngine {
         const cz = -10 - i * 6.5;
         this.spawnCollectible(
           'coin',
-          LANES[cLane],
+          this.getLaneX(cLane),
           0.95,
           zStart + cz,
           group,
@@ -1974,6 +2377,7 @@ export class MetroRushEngine {
         enemies,
         collectibles,
         hasAbyss,
+        wallOff,
       );
     } else {
       for (let i = 0; i < 6; i++) {
@@ -2073,7 +2477,8 @@ export class MetroRushEngine {
     zMin: number,
     zMax: number,
   ): boolean {
-    for (let l = 0; l < 3; l++) {
+    const laneCount = this.getLaneCount();
+    for (let l = 0; l < laneCount; l++) {
       let laneBlocked = false;
       for (const r of reservations) {
         if (
@@ -2101,28 +2506,30 @@ export class MetroRushEngine {
     enemies: EnemyEntity[],
     collectibles: CollectibleEntity[],
     hasAbyss: boolean,
+    wallOff = 5.05,
   ): void {
-    const inBossArena = this.mode === 'bosschase' || this.randomBossActive;
+    const laneCount = this.getLaneCount();
+    const centerLane = this.getCenterLane();
+    const roadW = this.getRoadWidth();
+    const inBossArena = this.mode === 'bosschase' || this.randomBossActive || this.inBossArena;
     const pattern = (chunkIdx + Math.floor(Math.random() * 5)) % 9;
     const reservations: TrackReservation[] = [];
-    let parkourTrail: { x: number; y: number; zLocal: number; kind: CollectibleEntity['kind'] }[] = [];
+    const parkourTrail: { x: number; y: number; zLocal: number; kind: CollectibleEntity['kind'] }[] = [];
 
-    // Boss Arena Mode: Clean high-visibility combat corridor with EMP cells + 1.25-1.5x drops
+    // Boss Arena Mode (§2 & §15): 100% CLEAN HIGH-VISIBILITY ARENA — ZERO CLUTTER TRAPS OR TRAINS!
     if (inBossArena) {
-      const lSafe = chunkIdx % 3;
-      this.spawnBarrier(chunkIdx % 2 === 0 ? 'lowBarrier' : 'highGate', lSafe, -28, zStart, group, obstacles, reservations);
-      const empLane = (lSafe + 1) % 3;
-      const empZ = zStart - 36;
+      const empLane = (chunkIdx + 1) % laneCount;
+      const empZ = zStart - 34;
       const empGy = this.getRoadElevationY(empZ);
-      this.spawnCollectible('empCell', LANES[empLane], empGy + 1.15, empZ, group, collectibles, obstacles, enemies);
+      this.spawnCollectible('empCell', this.getLaneX(empLane), empGy + 1.15, empZ, group, collectibles, obstacles, enemies);
 
-      const bonusLane = (lSafe + 2) % 3;
+      const bonusLane = (empLane + 1) % laneCount;
       for (let i = 0; i < 4; i++) {
         const bz = -14 - i * 5.2;
         const gy = this.getRoadElevationY(zStart + bz);
         this.spawnCollectible(
           i === 3 ? 'gem' : 'coin',
-          LANES[bonusLane],
+          this.getLaneX(bonusLane),
           gy + 0.95,
           zStart + bz,
           group,
@@ -2134,9 +2541,230 @@ export class MetroRushEngine {
       return;
     }
 
+    // Mode: 2-Floor Extreme Parkour Circuit (§20)
+    if (this.mode === 'parkour' && !hasAbyss) {
+      const pLane = (chunkIdx + 1) % laneCount;
+      const altLane = (pLane + 1) % laneCount;
+      const lowerLane = (pLane + laneCount - 1) % laneCount;
+      const pX = this.getLaneX(pLane);
+      const aX = this.getLaneX(altLane);
+
+      // Floor 2 Entry A: Climb Ramp leading to 2nd floor deck (y = ground + 4.0m)
+      const rampGy = this.getRoadElevationY(zStart - 11.5);
+      const rampMesh = buildParkourModule('climb_ramp', 2.7, 7.5, this.textures);
+      rampMesh.position.set(pX, rampGy, -11.5);
+      group.add(rampMesh);
+      obstacles.push({
+        id: this.obstacleSeq++,
+        kind: 'climbRamp',
+        mesh: rampMesh,
+        lane: pLane,
+        baseX: pX,
+        baseY: 2.0,
+        groundY: rampGy,
+        x: pX,
+        y: rampGy + 2.0,
+        z: zStart - 11.5,
+        width: 2.7,
+        height: 4.0,
+        length: 7.5,
+        speedZ: 0,
+        phase: 0,
+        hit: false,
+        interacted: false,
+        rampTopY: 4.0,
+      });
+      reservations.push({
+        lane: pLane,
+        zMin: -15.3,
+        zMax: -7.7,
+        topY: 4.0,
+        walkableRoof: true,
+        slideUnder: false,
+        impassableGround: false,
+      });
+
+      // Floor 2 Main Deck
+      const deckGy = this.getRoadElevationY(zStart - 24);
+      const useBalanceBeam = chunkIdx % 3 === 1;
+      if (useBalanceBeam) {
+        const beamMesh = buildParkourModule('balance_beam', 2.4, 15, this.textures);
+        beamMesh.position.set(pX, deckGy + 4.0, -23.5);
+        group.add(beamMesh);
+        obstacles.push({
+          id: this.obstacleSeq++,
+          kind: 'balanceBeam',
+          mesh: beamMesh,
+          lane: pLane,
+          baseX: pX,
+          baseY: 4.0,
+          groundY: deckGy,
+          x: pX,
+          y: deckGy + 4.0,
+          z: zStart - 23.5,
+          width: 1.4,
+          height: 4.0,
+          length: 15,
+          speedZ: 0,
+          phase: 0,
+          hit: false,
+          interacted: false,
+        });
+      } else {
+        const deckMesh = buildParkourModule('floor2_deck', 2.95, 16, this.textures);
+        deckMesh.position.set(pX, deckGy + 4.0, -24);
+        group.add(deckMesh);
+        obstacles.push({
+          id: this.obstacleSeq++,
+          kind: 'floor2Deck',
+          mesh: deckMesh,
+          lane: pLane,
+          baseX: pX,
+          baseY: 4.0,
+          groundY: deckGy,
+          x: pX,
+          y: deckGy + 4.0,
+          z: zStart - 24,
+          width: 2.95,
+          height: 4.0,
+          length: 16,
+          speedZ: 0,
+          phase: 0,
+          hit: false,
+          interacted: false,
+        });
+        if (chunkIdx % 2 === 0) {
+          // Floor 2 High Conduit overhead beam requiring slide at Floor 2!
+          const condMesh = buildParkourModule('high_conduit', 2.9, 1.0, this.textures);
+          condMesh.position.set(pX, deckGy + 4.0, -24);
+          group.add(condMesh);
+          obstacles.push({
+            id: this.obstacleSeq++,
+            kind: 'highConduit',
+            mesh: condMesh,
+            lane: pLane,
+            baseX: pX,
+            baseY: 5.5,
+            groundY: deckGy + 4.0,
+            x: pX,
+            y: deckGy + 5.9,
+            z: zStart - 24,
+            width: 2.7,
+            height: 2.4,
+            length: 0.9,
+            speedZ: 0,
+            phase: 0,
+            hit: false,
+            interacted: false,
+          });
+        }
+      }
+      reservations.push({
+        lane: pLane,
+        zMin: -32,
+        zMax: -16,
+        topY: 4.0,
+        walkableRoof: true,
+        slideUnder: true,
+        impassableGround: false,
+      });
+
+      // Floor 2 Swing Bar spanning to Rear Deck (-36.5) + Rear Floor 2 Deck (-45)
+      const swingGy = this.getRoadElevationY(zStart - 35.5);
+      const swingMesh = buildParkourModule('swing_bar', 3.0, 2.0, this.textures);
+      swingMesh.position.set(pX, swingGy + 4.0, -35.5);
+      group.add(swingMesh);
+      obstacles.push({
+        id: this.obstacleSeq++,
+        kind: 'swingBar',
+        mesh: swingMesh,
+        lane: pLane,
+        baseX: pX,
+        baseY: 6.75,
+        groundY: swingGy,
+        x: pX,
+        y: swingGy + 6.75,
+        z: zStart - 35.5,
+        width: 3.1,
+        height: 3.2,
+        length: 6.5,
+        speedZ: 0,
+        phase: 0,
+        hit: false,
+        interacted: false,
+      });
+
+      const rearDeckGy = this.getRoadElevationY(zStart - 45);
+      const rearDeck = buildParkourModule('floor2_deck', 2.95, 11, this.textures);
+      rearDeck.position.set(pX, rearDeckGy + 4.0, -45);
+      group.add(rearDeck);
+      obstacles.push({
+        id: this.obstacleSeq++,
+        kind: 'floor2Deck',
+        mesh: rearDeck,
+        lane: pLane,
+        baseX: pX,
+        baseY: 4.0,
+        groundY: rearDeckGy,
+        x: pX,
+        y: rearDeckGy + 4.0,
+        z: zStart - 45,
+        width: 2.95,
+        height: 4.0,
+        length: 11,
+        speedZ: 0,
+        phase: 0,
+        hit: false,
+        interacted: false,
+      });
+
+      // Alternate route: Jump Pad on Floor 1 launching up to upper route!
+      const jpGy = this.getRoadElevationY(zStart - 13);
+      const jpMesh = buildParkourModule('jump_pad', 2.4, 2.4, this.textures);
+      jpMesh.position.set(aX, jpGy, -13);
+      group.add(jpMesh);
+      obstacles.push({
+        id: this.obstacleSeq++,
+        kind: 'jumpPad',
+        mesh: jpMesh,
+        lane: altLane,
+        baseX: aX,
+        baseY: 0.2,
+        groundY: jpGy,
+        x: aX,
+        y: jpGy + 0.2,
+        z: zStart - 13,
+        width: 2.4,
+        height: 0.6,
+        length: 2.6,
+        speedZ: 0,
+        phase: 0,
+        hit: false,
+        interacted: false,
+      });
+
+      // Floor 2 gem + coin trail
+      parkourTrail.push(
+        { x: pX, y: 2.2, zLocal: -10.5, kind: 'coin' },
+        { x: pX, y: 3.9, zLocal: -14.2, kind: 'coin' },
+        { x: pX, y: 4.85, zLocal: -20.5, kind: 'coin' },
+        { x: pX, y: 4.55, zLocal: -24.0, kind: 'gem' },
+        { x: pX, y: 5.0, zLocal: -29.0, kind: 'coin' },
+        { x: pX, y: 5.8, zLocal: -35.5, kind: 'gem' },
+        { x: pX, y: 5.05, zLocal: -45.0, kind: 'secret' },
+      );
+
+      // Solvable Floor 1 ground option
+      this.spawnBarrier('highGate', lowerLane, -26, zStart, group, obstacles, reservations);
+      if (laneCount === 5) {
+        this.spawnCityHazard((pLane + 2) % laneCount, -30, zStart, group, obstacles, reservations);
+      }
+    }
+
     // Skyline abyss bridging via retractBridge + zipline + wall-run
     if (hasAbyss) {
-      const bridgeLane = (chunkIdx + 1) % 3;
+      const bridgeLane = (chunkIdx + 1) % laneCount;
+      const bridgeX = this.getLaneX(bridgeLane);
       const bridgeGrp = new THREE.Group();
       const deck = new THREE.Mesh(
         new THREE.BoxGeometry(2.9, 0.28, 10.6),
@@ -2155,7 +2783,7 @@ export class MetroRushEngine {
         bridgeGrp.add(rail);
       }
       bridgeGrp.add(deck, glowCenter);
-      bridgeGrp.position.set(LANES[bridgeLane], 0.08, -28);
+      bridgeGrp.position.set(bridgeX, 0.08, -28);
       group.add(bridgeGrp);
 
       obstacles.push({
@@ -2163,10 +2791,10 @@ export class MetroRushEngine {
         kind: 'retractBridge',
         mesh: bridgeGrp,
         lane: bridgeLane,
-        baseX: LANES[bridgeLane],
+        baseX: bridgeX,
         baseY: 0.08,
         groundY: 0,
-        x: LANES[bridgeLane],
+        x: bridgeX,
         y: 0.08,
         z: zStart - 28,
         width: 2.9,
@@ -2178,7 +2806,7 @@ export class MetroRushEngine {
         interacted: false,
       });
 
-      for (let l = 0; l < 3; l++) {
+      for (let l = 0; l < laneCount; l++) {
         if (l === bridgeLane) {
           reservations.push({
             lane: l,
@@ -2204,39 +2832,41 @@ export class MetroRushEngine {
 
       for (let i = 0; i < 3; i++) {
         parkourTrail.push({
-          x: LANES[bridgeLane],
+          x: bridgeX,
           y: 1.1,
           zLocal: -25 - i * 3,
           kind: i === 2 ? 'gem' : 'coin',
         });
       }
 
+      const poleX = wallOff - 0.05;
       for (const gz of [-17, -39]) {
         const archL = new THREE.Mesh(new THREE.BoxGeometry(0.35, 5.5, 0.35), this.gantryMat);
-        archL.position.set(-5.0, 2.75, gz);
+        archL.position.set(-poleX, 2.75, gz);
         const archR = archL.clone();
-        archR.position.x = 5.0;
-        const beam = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.3, 0.35), this.gantryMat);
+        archR.position.x = poleX;
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(poleX * 2 + 0.4, 0.3, 0.35), this.gantryMat);
         beam.position.set(0, 5.35, gz);
         group.add(archL, archR, beam);
       }
 
+      const zipX = this.getLaneX(centerLane);
       const zipMesh = new THREE.Mesh(
         new THREE.CylinderGeometry(0.065, 0.065, 22, 8),
         this.textures.secTrimMat,
       );
       zipMesh.rotation.x = Math.PI / 2;
-      zipMesh.position.set(LANES[1], 5.1, -28);
+      zipMesh.position.set(zipX, 5.1, -28);
       group.add(zipMesh);
       obstacles.push({
         id: this.obstacleSeq++,
         kind: 'zipline',
         mesh: zipMesh,
-        lane: 1,
-        baseX: LANES[1],
+        lane: centerLane,
+        baseX: zipX,
         baseY: 5.1,
         groundY: 0,
-        x: LANES[1],
+        x: zipX,
         y: 5.1,
         z: zStart - 28,
         width: 2.6,
@@ -2255,7 +2885,7 @@ export class MetroRushEngine {
       const wallZ = -CHUNK_LEN * 0.5;
       const wallGy = this.getRoadElevationY(zStart + wallZ);
       const wallMesh = new THREE.Mesh(this.magWallGeo, this.textures.magWallMat);
-      const wx = side * 5.05;
+      const wx = side * wallOff;
       wallMesh.position.set(wx, wallGy + 2.4, wallZ);
       group.add(wallMesh);
 
@@ -2263,7 +2893,7 @@ export class MetroRushEngine {
         id: this.obstacleSeq++,
         kind: side < 0 ? 'wallLeft' : 'wallRight',
         mesh: wallMesh,
-        lane: side < 0 ? 0 : 2,
+        lane: side < 0 ? 0 : laneCount - 1,
         baseX: wx,
         baseY: 2.4,
         groundY: wallGy,
@@ -2283,7 +2913,7 @@ export class MetroRushEngine {
         const cz = zStart - 19 - i * 4.2;
         this.spawnCollectible(
           i === 3 ? 'gem' : 'coin',
-          side * 4.3,
+          side * (wallOff - 0.75),
           this.getRoadElevationY(cz) + 2.55,
           cz,
           group,
@@ -2294,18 +2924,19 @@ export class MetroRushEngine {
       }
     }
 
-    if (!hasAbyss) {
+    if (!hasAbyss && this.mode !== 'parkour') {
       if (pattern === 0 || pattern === 3) {
         // Contextual Railway Corridor + Train + Flush Climb Ramp
-        const trainLane = Math.floor(Math.random() * 3);
+        const trainLane = Math.floor(Math.random() * laneCount);
         const isMoving =
           this.activeDynamicEvent === 'express_train' || Math.random() < 0.44;
-        const isCargo = this.district.id === 'industrial' && !isMoving;
-        const tx = LANES[trainLane];
+        const isCargo =
+          (this.district.id === 'industrial' || this.district.id === 'cyber_port') &&
+          !isMoving;
+        const tx = this.getLaneX(trainLane);
         const tzLocal = -30;
         const gy = this.getRoadElevationY(zStart + tzLocal);
 
-        // Contextual railway bed + crossing barrier gates ONLY on train corridors
         const railStrip = new THREE.Mesh(
           new THREE.PlaneGeometry(2.8, 34),
           this.textures.railBedMat,
@@ -2315,10 +2946,10 @@ export class MetroRushEngine {
         group.add(railStrip);
 
         const crossGate = buildRailCrossingBarrier(
-          trainLane === 0 ? -1 : 1,
+          trainLane < centerLane ? -1 : 1,
           this.textures,
         );
-        crossGate.position.set(0, this.getRoadElevationY(zStart - 10), -10);
+        crossGate.position.set(tx > 0 ? wallOff - 1.2 : -(wallOff - 1.2), this.getRoadElevationY(zStart - 10), -10);
         group.add(crossGate);
 
         const train = buildCyberTrainModel(
@@ -2405,19 +3036,23 @@ export class MetroRushEngine {
           );
         }
 
-        const otherLane = (trainLane + 1) % 3;
+        const otherLane = (trainLane + 1) % laneCount;
         this.spawnCityHazard(otherLane, -24, zStart, group, obstacles, reservations);
+        if (laneCount === 5) {
+          this.spawnCityHazard((trainLane + 3) % laneCount, -36, zStart, group, obstacles, reservations);
+        }
       } else if (pattern === 2) {
-        // Zipline with Proper Outer Gantry Arches + Center Slide-Under Gate
-        const zipLane = 1;
+        const zipLane = centerLane;
+        const zipX = this.getLaneX(zipLane);
         const zipGy = this.getRoadElevationY(zStart - 28);
+        const poleX = wallOff - 0.05;
         for (const gz of [-13, -43]) {
           const gzY = this.getRoadElevationY(zStart + gz);
           const poleL = new THREE.Mesh(new THREE.BoxGeometry(0.36, 5.5, 0.36), this.gantryMat);
-          poleL.position.set(-5.0, gzY + 2.75, gz);
+          poleL.position.set(-poleX, gzY + 2.75, gz);
           const poleR = poleL.clone();
-          poleR.position.x = 5.0;
-          const topBeam = new THREE.Mesh(new THREE.BoxGeometry(10.4, 0.32, 0.36), this.gantryMat);
+          poleR.position.x = poleX;
+          const topBeam = new THREE.Mesh(new THREE.BoxGeometry(poleX * 2 + 0.4, 0.32, 0.36), this.gantryMat);
           topBeam.position.set(0, gzY + 5.35, gz);
           group.add(poleL, poleR, topBeam);
         }
@@ -2426,7 +3061,7 @@ export class MetroRushEngine {
           this.textures.neonTrimMat,
         );
         cable.rotation.x = Math.PI / 2;
-        cable.position.set(LANES[zipLane], zipGy + 5.1, -28);
+        cable.position.set(zipX, zipGy + 5.1, -28);
         group.add(cable);
 
         obstacles.push({
@@ -2434,10 +3069,10 @@ export class MetroRushEngine {
           kind: 'zipline',
           mesh: cable,
           lane: zipLane,
-          baseX: LANES[zipLane],
+          baseX: zipX,
           baseY: 5.1,
           groundY: zipGy,
-          x: LANES[zipLane],
+          x: zipX,
           y: zipGy + 5.1,
           z: zStart - 28,
           width: 2.6,
@@ -2450,10 +3085,9 @@ export class MetroRushEngine {
         });
 
         this.spawnCityHazard(0, -28, zStart, group, obstacles, reservations);
-        this.spawnBarrier('highGate', 1, -28, zStart, group, obstacles, reservations);
-        this.spawnCityHazard(2, -28, zStart, group, obstacles, reservations);
+        this.spawnBarrier('highGate', centerLane, -28, zStart, group, obstacles, reservations);
+        this.spawnCityHazard(laneCount - 1, -28, zStart, group, obstacles, reservations);
       } else if (pattern === 5) {
-        // Grapple Ring + Hover-Bike Pickup + Moving Platform
         const gGy = this.getRoadElevationY(zStart - 24);
         const ring = new THREE.Mesh(
           new THREE.TorusGeometry(1.15, 0.14, 10, 22),
@@ -2473,7 +3107,7 @@ export class MetroRushEngine {
           x: 0,
           y: gGy + 5.6,
           z: zStart - 24,
-          width: 10,
+          width: roadW,
           height: 4,
           length: 8,
           speedZ: 0,
@@ -2483,29 +3117,31 @@ export class MetroRushEngine {
         });
 
         this.spawnCityHazard(0, -28, zStart, group, obstacles, reservations);
-        this.spawnBarrier('lowBarrier', 1, -28, zStart, group, obstacles, reservations);
+        this.spawnBarrier('lowBarrier', centerLane, -28, zStart, group, obstacles, reservations);
 
         if (Math.random() < 0.52) {
           const vid = this.save.selectedVehicleId ?? 'hover_bike';
           const vDef = getVehicleById(vid);
           const vPaint = this.save.vehiclePaints?.[vid] || vDef.defaultPaint;
+          const bLane = laneCount - 1;
+          const bX = this.getLaneX(bLane);
           const bGy = this.getRoadElevationY(zStart - 44);
           const bikePickup = buildHoverBikePickupModel(
             this.district.colors.primaryNeon,
             vid,
             vPaint,
           );
-          bikePickup.position.set(LANES[2], bGy + 1.15, -44);
+          bikePickup.position.set(bX, bGy + 1.15, -44);
           group.add(bikePickup);
           obstacles.push({
             id: this.obstacleSeq++,
             kind: 'hoverBikePickup',
             mesh: bikePickup,
-            lane: 2,
-            baseX: LANES[2],
+            lane: bLane,
+            baseX: bX,
             baseY: 1.15,
             groundY: bGy,
-            x: LANES[2],
+            x: bX,
             y: bGy + 1.15,
             z: zStart - 44,
             width: 1.8,
@@ -2517,7 +3153,7 @@ export class MetroRushEngine {
             interacted: false,
           });
           reservations.push({
-            lane: 2,
+            lane: bLane,
             zMin: -46,
             zMax: -42,
             topY: 1.8,
@@ -2527,8 +3163,8 @@ export class MetroRushEngine {
           });
         }
       } else if (pattern === 6 || this.activeDynamicEvent === 'sky_bridge') {
-        // Elevated Skybridge + Flush Ramp + Urban Hover-Car OR Traffic Truck (MilkTruck GLB)
-        const bridgeLane = 1;
+        const bridgeLane = centerLane;
+        const bridgeX = this.getLaneX(bridgeLane);
         const deckGy = this.getRoadElevationY(zStart - 30);
         const deckGrp = new THREE.Group();
         const deck = new THREE.Mesh(
@@ -2543,7 +3179,7 @@ export class MetroRushEngine {
         const railR = railL.clone();
         railR.position.x = 1.55;
         deckGrp.add(deck, railL, railR);
-        deckGrp.position.set(LANES[bridgeLane], deckGy + 3.1, -30);
+        deckGrp.position.set(bridgeX, deckGy + 3.1, -30);
         group.add(deckGrp);
 
         obstacles.push({
@@ -2551,10 +3187,10 @@ export class MetroRushEngine {
           kind: 'skyBridge',
           mesh: deckGrp,
           lane: bridgeLane,
-          baseX: LANES[bridgeLane],
+          baseX: bridgeX,
           baseY: 3.1,
           groundY: deckGy,
-          x: LANES[bridgeLane],
+          x: bridgeX,
           y: deckGy + 3.1,
           z: zStart - 30,
           width: 3.2,
@@ -2578,17 +3214,17 @@ export class MetroRushEngine {
 
         const rampGy = this.getRoadElevationY(zStart - 17.0);
         const ramp = this.buildFlushRampMesh(2.6, 6.0, 3.15);
-        ramp.position.set(LANES[bridgeLane], rampGy + 1.57, -17.0);
+        ramp.position.set(bridgeX, rampGy + 1.57, -17.0);
         group.add(ramp);
         obstacles.push({
           id: this.obstacleSeq++,
           kind: 'climbRamp',
           mesh: ramp,
           lane: bridgeLane,
-          baseX: LANES[bridgeLane],
+          baseX: bridgeX,
           baseY: 1.57,
           groundY: rampGy,
-          x: LANES[bridgeLane],
+          x: bridgeX,
           y: rampGy + 1.57,
           z: zStart - 17.0,
           width: 2.6,
@@ -2610,10 +3246,11 @@ export class MetroRushEngine {
           impassableGround: false,
         });
 
-        const carLane = Math.random() < 0.5 ? 0 : 2;
+        const carLane = Math.random() < 0.5 ? 0 : laneCount - 1;
+        const carX = this.getLaneX(carLane);
         const carGy = this.getRoadElevationY(zStart - 28);
         const useMilkTruck =
-          (this.district.id === 'downtown' || this.district.id === 'oldcity' || this.district.id === 'beach') &&
+          (this.district.id === 'downtown' || this.district.id === 'oldcity' || this.district.id === 'beach' || this.district.id === 'cyber_port') &&
           Math.random() < 0.45;
 
         if (useMilkTruck) {
@@ -2621,17 +3258,17 @@ export class MetroRushEngine {
             this.district.colors.primaryNeon,
             this.district.colors.secondaryNeon,
           );
-          truck.position.set(LANES[carLane], carGy, -28);
+          truck.position.set(carX, carGy, -28);
           group.add(truck);
           obstacles.push({
             id: this.obstacleSeq++,
             kind: 'milkTruck',
             mesh: truck,
             lane: carLane,
-            baseX: LANES[carLane],
+            baseX: carX,
             baseY: 1.0,
             groundY: carGy,
-            x: LANES[carLane],
+            x: carX,
             y: carGy + 1.0,
             z: zStart - 28,
             width: 2.15,
@@ -2653,17 +3290,17 @@ export class MetroRushEngine {
           });
         } else {
           const car = buildHoverCarModel(this.district.colors.secondaryNeon);
-          car.position.set(LANES[carLane], carGy, -28);
+          car.position.set(carX, carGy, -28);
           group.add(car);
           obstacles.push({
             id: this.obstacleSeq++,
             kind: 'hoverCar',
             mesh: car,
             lane: carLane,
-            baseX: LANES[carLane],
+            baseX: carX,
             baseY: 0.7,
             groundY: carGy,
-            x: LANES[carLane],
+            x: carX,
             y: carGy + 0.7,
             z: zStart - 28,
             width: 2.1,
@@ -2686,40 +3323,48 @@ export class MetroRushEngine {
         }
 
         parkourTrail.push(
-          { x: LANES[bridgeLane], y: 1.45, zLocal: -15.0, kind: 'coin' },
-          { x: LANES[bridgeLane], y: 2.85, zLocal: -18.2, kind: 'coin' },
-          { x: LANES[bridgeLane], y: 4.1, zLocal: -22.5, kind: 'gem' },
-          { x: LANES[bridgeLane], y: 4.1, zLocal: -27.5, kind: 'gem' },
-          { x: LANES[bridgeLane], y: 4.1, zLocal: -32.5, kind: 'gem' },
-          { x: LANES[bridgeLane], y: 4.2, zLocal: -37.5, kind: 'secret' },
+          { x: bridgeX, y: 1.45, zLocal: -15.0, kind: 'coin' },
+          { x: bridgeX, y: 2.85, zLocal: -18.2, kind: 'coin' },
+          { x: bridgeX, y: 4.1, zLocal: -22.5, kind: 'gem' },
+          { x: bridgeX, y: 4.1, zLocal: -27.5, kind: 'gem' },
+          { x: bridgeX, y: 4.1, zLocal: -32.5, kind: 'gem' },
+          { x: bridgeX, y: 4.2, zLocal: -37.5, kind: 'secret' },
         );
       } else {
-        // City-themed composite hazards & verified clear powerup
-        const l1 = chunkIdx % 3;
-        const l2 = (l1 + 1) % 3;
+        // City-themed composite hazards & verified clear powerup (§17.4: halved shield drops!)
+        const l1 = chunkIdx % laneCount;
+        const l2 = (l1 + 1) % laneCount;
         this.spawnCityHazard(l1, -18, zStart, group, obstacles, reservations);
         this.spawnCityHazard(l2, -36, zStart, group, obstacles, reservations);
+        if (laneCount === 5) {
+          this.spawnCityHazard((l1 + 3) % laneCount, -24, zStart, group, obstacles, reservations);
+        }
 
-        const pLane = (l2 + 1) % 3;
+        const pLane = (l2 + 1) % laneCount;
         if (this.isLaneZoneClear(reservations, pLane, -28, 1.5, 2.0)) {
           const roll = Math.random();
           const talismanChance =
-            this.activeDynamicEvent === 'talisman_signal' ? 0.36 : 0.08;
+            this.activeDynamicEvent === 'talisman_signal' ? 0.34 : 0.07;
+          // Reduce shield availability ~50%, and suppress while already shielded or on cooldown
+          const shieldCutoff =
+            this.hasShield || this.shieldCooldown > 0
+              ? talismanChance + 0.04
+              : talismanChance + 0.13;
           const kind =
             roll < talismanChance
               ? 'talisman'
-              : roll < 0.36
+              : roll < shieldCutoff
                 ? 'shield'
-                : roll < 0.68
+                : roll < 0.56
                   ? 'magnet'
-                  : roll < 0.9
+                  : roll < 0.82
                     ? 'slowmo'
                     : 'secret';
           const pWorldZ = zStart - 28;
           const pGy = this.getRoadElevationY(pWorldZ);
           this.spawnCollectible(
             kind,
-            LANES[pLane],
+            this.getLaneX(pLane),
             pGy + (kind === 'secret' ? 2.45 : 1.05),
             pWorldZ,
             group,
@@ -2765,11 +3410,7 @@ export class MetroRushEngine {
       [-40.5, -44.0, -47.5, -51.0],
     ];
     let groundRibbonPlaced = false;
-    const laneOrder = [
-      (chunkIdx + 2) % 3,
-      chunkIdx % 3,
-      (chunkIdx + 1) % 3,
-    ];
+    const laneOrder = Array.from({ length: laneCount }, (_, i) => (chunkIdx + 2 + i) % laneCount);
 
     for (const zPts of coinZCandidates) {
       if (groundRibbonPlaced) break;
@@ -2787,7 +3428,7 @@ export class MetroRushEngine {
             const wZ = zStart + zl;
             this.spawnCollectible(
               'coin',
-              LANES[cLane],
+              this.getLaneX(cLane),
               this.getRoadElevationY(wZ) + 0.95,
               wZ,
               group,
@@ -2815,7 +3456,7 @@ export class MetroRushEngine {
             const wZ = zStart + zl;
             this.spawnCollectible(
               'coin',
-              LANES[cLane],
+              this.getLaneX(cLane),
               this.getRoadElevationY(wZ) + 0.95,
               wZ,
               group,
@@ -2842,7 +3483,7 @@ export class MetroRushEngine {
     const roll = Math.random();
     let kind: ObstacleKind = 'lowBarrier';
 
-    if (d === 'industrial') {
+    if (d === 'industrial' || d === 'cyber_port') {
       kind =
         roll < 0.28
           ? 'containerStack'
@@ -2851,14 +3492,14 @@ export class MetroRushEngine {
             : roll < 0.8
               ? 'turbineHazard'
               : 'maintBot';
-    } else if (d === 'underground') {
+    } else if (d === 'underground' || d === 'obsidian_citadel') {
       kind =
         roll < 0.34
           ? 'laserGrid'
           : roll < 0.66
             ? 'blastDoor'
             : 'maintBot';
-    } else if (d === 'future') {
+    } else if (d === 'future' || d === 'crimson_metropolis') {
       kind =
         roll < 0.34
           ? 'laserGrid'
@@ -2902,7 +3543,7 @@ export class MetroRushEngine {
     const gy = this.getRoadElevationY(zStart + zLocal);
 
     if (kind === 'milkTruck') {
-      const tx = LANES[lane];
+      const tx = this.getLaneX(lane);
       const truck = buildTrafficTruckObstacle(
         this.district.colors.primaryNeon,
         this.district.colors.secondaryNeon,
@@ -2940,8 +3581,9 @@ export class MetroRushEngine {
       return;
     }
 
-    const effectiveLane = kind === 'movingBarrier' ? 1 : lane;
-    const x = kind === 'movingBarrier' ? 0 : LANES[effectiveLane];
+    const laneCount = this.getLaneCount();
+    const effectiveLane = kind === 'movingBarrier' ? this.getCenterLane() : lane;
+    const x = kind === 'movingBarrier' ? 0 : this.getLaneX(effectiveLane);
 
     const mesh = buildCityObstacleModel(kind as Parameters<typeof buildCityObstacleModel>[0], this.textures);
     mesh.position.set(x, gy, zLocal);
@@ -2987,7 +3629,7 @@ export class MetroRushEngine {
       kind === 'steamPipe' || kind === 'scaffolding' || kind === 'turbineHazard';
     const isWalkRoof = kind === 'containerStack';
     if (kind === 'movingBarrier') {
-      for (let l = 0; l < 3; l++) {
+      for (let l = 0; l < laneCount; l++) {
         reservations.push({
           lane: l,
           zMin: zLocal - dim.l * 0.5 - 0.5,
@@ -3019,6 +3661,7 @@ export class MetroRushEngine {
     reservations: TrackReservation[],
     hasAbyss: boolean,
   ): void {
+    const laneCount = this.getLaneCount();
     const evt = this.activeEventId
       ? LIVE_EVENTS.find((e) => e.id === this.activeEventId)
       : null;
@@ -3030,7 +3673,7 @@ export class MetroRushEngine {
           : 1.0;
     const stageMult = 0.88 + this.difficultyStage * 0.08;
     const spawnChance =
-      (this.activeDynamicEvent === 'drone_pursuit' ? 0.92 : 0.66) *
+      (this.activeDynamicEvent === 'drone_pursuit' ? 0.92 : 0.64) *
       stageMult *
       (evt ? evt.droneIntensity : 1.0) *
       densityScale;
@@ -3062,8 +3705,8 @@ export class MetroRushEngine {
     const isGround = pick === 'ground_bot' || pick === 'security_bot';
     const isMovingFwd = pick === 'pursuit' || pick === 'intervention';
     const candidateZs = isGround && hasAbyss ? [-44, -14] : [-42, -38, -14];
-    const startLane = (chunkIdx + Math.floor(Math.random() * 3)) % 3;
-    const laneOrder = [startLane, (startLane + 1) % 3, (startLane + 2) % 3];
+    const startLane = (chunkIdx + Math.floor(Math.random() * laneCount)) % laneCount;
+    const laneOrder = Array.from({ length: laneCount }, (_, i) => (startLane + i) % laneCount);
 
     let chosenLane = -1;
     let chosenZ = -38;
@@ -3106,19 +3749,25 @@ export class MetroRushEngine {
           ? 2.1
           : 1.25;
     const mesh = buildEnemyModel(pick);
-    mesh.position.set(LANES[chosenLane], gy + yPos, chosenZ);
+    const ex = this.getLaneX(chosenLane);
+    mesh.position.set(ex, gy + yPos, chosenZ);
     group.add(mesh);
+
+    // Balanced speed proportional to difficulty (§15.1)
+    const balancedFwdSpeed = isMovingFwd
+      ? Math.min(this.forwardSpeed * 0.34, 6.5 + this.difficultyStage * 0.7)
+      : 0;
 
     enemies.push({
       id: this.obstacleSeq++,
       enemyClass: pick,
       mesh,
-      x: LANES[chosenLane],
+      x: ex,
       y: gy + yPos,
       groundY: gy,
       z: zStart + chosenZ,
       baseLane: chosenLane,
-      speedZ: isMovingFwd ? 7.5 + this.difficultyStage * 0.8 : 0,
+      speedZ: balancedFwdSpeed,
       phase: Math.random() * Math.PI * 2,
       shiftTimer: 1.4,
       evaded: false,
@@ -3135,7 +3784,7 @@ export class MetroRushEngine {
     obstacles: ObstacleEntity[],
     reservations?: TrackReservation[],
   ): void {
-    const x = LANES[lane];
+    const x = this.getLaneX(lane);
     const gy = this.getRoadElevationY(zStart + zLocal);
     const barGroup = new THREE.Group();
 
@@ -3260,7 +3909,13 @@ export class MetroRushEngine {
           ob.kind === 'skyBridge' ||
           ob.kind === 'retractBridge' ||
           ob.kind === 'zipline' ||
-          ob.kind === 'grappleAnchor'
+          ob.kind === 'grappleAnchor' ||
+          ob.kind === 'floor2Deck' ||
+          ob.kind === 'swingBar' ||
+          ob.kind === 'jumpPad' ||
+          ob.kind === 'balanceBeam' ||
+          ob.kind === 'highConduit' ||
+          ob.kind === 'sectorGate'
         ) {
           continue;
         }
@@ -3271,7 +3926,7 @@ export class MetroRushEngine {
           const obTopWorld = ob.groundY + ob.height;
           if (finalY < obTopWorld + 0.6) {
             if (kind === 'coin' && obTopWorld > ob.groundY + 2.1) {
-              return; // Never embed coins inside tall trains/trucks/laserGrids
+              return;
             }
             finalY = obTopWorld + 0.85;
           }
@@ -3493,6 +4148,18 @@ export class MetroRushEngine {
       } else {
         this.updateGameplay(dt);
       }
+    } else if (this.phase === 'reviving' && this.revivePrompt) {
+      this.reviveCountdownTimer = Math.max(0, this.reviveCountdownTimer - dt);
+      this.revivePrompt.remainingSeconds = Number(this.reviveCountdownTimer.toFixed(1));
+      this.hudEmitReviveAccum += dt;
+      if (this.reviveCountdownTimer <= 0) {
+        this.declineRevive();
+      } else if (this.hudEmitReviveAccum >= 0.1) {
+        this.hudEmitReviveAccum = 0;
+        this.emitHud('stumble');
+      }
+    } else if (this.phase === 'gameover') {
+      this.updateDefeatScene(dt);
     }
 
     this.textures.waterTimeUniform.value += dt;
@@ -3536,8 +4203,56 @@ export class MetroRushEngine {
     this.frameId = window.setTimeout(poll, 5);
   }
 
+  private updateDefeatScene(dt: number): void {
+    this.elapsedTotal += dt;
+    const hoverY = this.playerY + 2.75 + Math.sin(this.elapsedTotal * 3.4) * 0.14;
+    if (this.captureDroneMesh) {
+      this.captureDroneMesh.visible = true;
+      this.captureDroneMesh.position.set(
+        THREE.MathUtils.damp(this.captureDroneMesh.position.x, this.playerX, 6, dt),
+        THREE.MathUtils.damp(this.captureDroneMesh.position.y, hoverY, 6, dt),
+        THREE.MathUtils.damp(this.captureDroneMesh.position.z, this.playerZ, 6, dt),
+      );
+      this.captureDroneMesh.rotation.y = Math.sin(this.elapsedTotal * 0.9) * 0.25;
+      const rotors = this.captureDroneMesh.userData.rotors as THREE.Object3D[] | undefined;
+      if (rotors) {
+        for (const r of rotors) r.rotation.y += dt * 24;
+      }
+    }
+
+    // Struggling suspended runner gripped beneath Capture Drone (§4)
+    this.playerRig.root.position.set(
+      this.playerX,
+      hoverY - 2.15 + Math.sin(this.elapsedTotal * 6.5) * 0.05,
+      this.playerZ,
+    );
+    this.playerRig.root.rotation.y = THREE.MathUtils.damp(
+      this.playerRig.root.rotation.y,
+      Math.PI * 0.15,
+      4,
+      dt,
+    );
+    animateCharacterRig(this.playerRig, 'captureStruggle', this.elapsedTotal, 0, 0, dt);
+
+    // Smooth cinematic camera orbit framing the 3D Capture Drone on the left/center
+    const orbitAngle = Math.sin(this.elapsedTotal * 0.45) * 0.45 + 0.35;
+    const camX = this.playerX + Math.sin(orbitAngle) * 5.2 - 1.25;
+    const camY = hoverY - 0.15 + Math.cos(this.elapsedTotal * 0.6) * 0.25;
+    const camZ = this.playerZ + Math.cos(orbitAngle) * 5.2;
+    this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, camX, 4.5, dt);
+    this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, camY, 4.5, dt);
+    this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, camZ, 4.5, dt);
+    this.camera.lookAt(this.playerX - 0.85, hoverY - 1.0, this.playerZ);
+    this.playerPointLight.position.set(this.playerX, hoverY + 0.8, this.playerZ + 1.5);
+  }
+
   private updateTitleScene(dt: number): void {
     this.elapsedTotal += dt;
+    if (this.hangarGroup) {
+      this.hangarGroup.visible = this.showcaseMode !== 'city';
+      const turntable = this.hangarGroup.getObjectByName('hangarTurntable');
+      if (turntable) turntable.rotation.y += dt * 0.28;
+    }
     if (this.companionFox) {
       const petEquipped = this.save.equippedPetId === 'fox_cyber';
       this.companionFox.group.visible = petEquipped && this.showcaseMode === 'title';
@@ -3727,6 +4442,9 @@ export class MetroRushEngine {
     this.runDurationSec += dt;
     const kb = this.settings.keybindings;
     const char = getCharacterById(this.save.selectedCharacterId);
+    const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
+    const ridingVehicle = this.vehicleTimer > 0;
+    const canDoubleJumpInForm = !ridingVehicle || Boolean(vDef.isShip);
     const jumpSkill = this.save.skillLevels['aerial_thrusters'] ?? 0;
     const chronoSkill = this.save.skillLevels['chrono_capacitor'] ?? 0;
     const magSkill = this.save.skillLevels['mag_collector'] ?? 0;
@@ -3743,14 +4461,22 @@ export class MetroRushEngine {
       }
     }
 
-    // 1. Slow Motion (Zero Passive: 25% slower Slow-Mo drain)
-    const slowMoHeld =
+    // 1. Slow Motion (Softened 0.58x + STRICTLY BLOCKED while driving vehicles §8)
+    const slowMoRequested =
       this.heldKeys.has(kb.slowMo) ||
       this.heldKeys.has('Tab') ||
       (char.id === 'zero' && this.abilityActiveTimer > 0);
+    if (ridingVehicle && (this.heldKeys.has(kb.slowMo) || this.heldKeys.has('Tab'))) {
+      if (this.vehicleLockNoticeTimer <= 0) {
+        this.showSubtitle('Impulso y Tiempo Lento bloqueados al conducir vehículos.');
+      }
+      this.vehicleLockNoticeTimer = 1.6;
+    }
+
     if (
-      slowMoHeld &&
-      (this.slowMoEnergy > 2 || (char.id === 'zero' && this.abilityActiveTimer > 0))
+      !ridingVehicle &&
+      slowMoRequested &&
+      (this.slowMoEnergy > 3 || (char.id === 'zero' && this.abilityActiveTimer > 0))
     ) {
       if (!this.isSlowMo) {
         this.isSlowMo = true;
@@ -3759,8 +4485,8 @@ export class MetroRushEngine {
         this.advanceTutorialStep('power');
       }
       if (!(char.id === 'zero' && this.abilityActiveTimer > 0)) {
-        const zeroFactor = char.id === 'zero' ? 0.75 : 1.0;
-        const drainRate = (28 * zeroFactor) / (1 + chronoSkill * 0.18);
+        const zeroFactor = char.id === 'zero' ? 0.78 : 1.0;
+        const drainRate = (40 * zeroFactor) / (1 + chronoSkill * 0.14);
         this.slowMoEnergy = Math.max(0, this.slowMoEnergy - drainRate * dt);
       }
     } else {
@@ -3768,14 +4494,14 @@ export class MetroRushEngine {
         this.isSlowMo = false;
         audioEngine.playSlowMo(false);
       }
-      const regenRate = 10 * (1 + chronoSkill * 0.12);
+      const regenRate = 7.5 * (1 + chronoSkill * 0.1);
       this.slowMoEnergy = Math.min(100, this.slowMoEnergy + regenRate * dt);
     }
 
-    const timeScale = this.isSlowMo ? 0.38 : 1.0;
+    const timeScale = this.isSlowMo ? 0.58 : 1.0;
     const simDt = dt * timeScale;
 
-    // 2. Timers
+    // 2. Timers & Cooldowns
     if (this.bannerTimer > 0) {
       this.bannerTimer -= dt;
       if (this.bannerTimer <= 0) this.activeBanner = null;
@@ -3800,11 +4526,84 @@ export class MetroRushEngine {
     if (this.vehicleTimer > 0) this.vehicleTimer -= simDt;
     if (this.stumbleTimer > 0) this.stumbleTimer -= simDt;
     if (this.vaultTimer > 0) this.vaultTimer -= simDt;
+    if (this.shieldCooldown > 0) this.shieldCooldown = Math.max(0, this.shieldCooldown - dt);
+    if (this.doubleJumpCooldown > 0) this.doubleJumpCooldown = Math.max(0, this.doubleJumpCooldown - dt);
+    if (this.doubleJumpBlockedTimer > 0) {
+      this.doubleJumpBlockedTimer = Math.max(0, this.doubleJumpBlockedTimer - dt);
+      if (this.doubleJumpBlockedTimer <= 0) this.doubleJumpBlockedReason = null;
+    }
+    if (this.vehicleLockNoticeTimer > 0) {
+      this.vehicleLockNoticeTimer = Math.max(0, this.vehicleLockNoticeTimer - dt);
+    }
+    if (this.celebrateTimer > 0) this.celebrateTimer = Math.max(0, this.celebrateTimer - dt);
+    if (this.objectiveToastTimer > 0) {
+      this.objectiveToastTimer = Math.max(0, this.objectiveToastTimer - dt);
+      if (this.objectiveToastTimer <= 0) this.objectiveToastText = null;
+    }
+    if (this.sectorTransitionTimer > 0) {
+      this.sectorTransitionTimer = Math.max(0, this.sectorTransitionTimer - dt);
+      if (this.sectorTransitionTimer <= 0) this.sectorTransitionText = null;
+    }
     if (this.doubleJumpFlipTimer > 0) {
       this.doubleJumpFlipTimer = Math.max(0, this.doubleJumpFlipTimer - simDt * 2.1);
     }
     if (this.cameraShake > 0) {
       this.cameraShake = Math.max(0, this.cameraShake - dt * 3.5);
+    }
+
+    // Update transient Shield Shatter & Sector Gate VFX
+    for (let vi = this.shieldShatterVfx.length - 1; vi >= 0; vi--) {
+      const vfx = this.shieldShatterVfx[vi];
+      vfx.timer -= dt;
+      const prog = 1 - Math.max(0, vfx.timer) / vfx.maxTimer;
+      const ring = vfx.group.userData.ring as THREE.Mesh | undefined;
+      if (ring) {
+        ring.scale.setScalar(1 + prog * 11.5);
+        const rMat = ring.material as THREE.Material & { opacity: number };
+        rMat.opacity = Math.max(0, 0.9 * (1 - prog));
+      }
+      const shards = vfx.group.userData.shards as
+        | { mesh: THREE.Mesh; vx: number; vy: number; vz: number }[]
+        | undefined;
+      if (shards) {
+        for (const s of shards) {
+          s.vy -= 14 * dt;
+          s.mesh.position.x += s.vx * dt;
+          s.mesh.position.y += s.vy * dt;
+          s.mesh.position.z += s.vz * dt;
+          s.mesh.rotation.x += dt * 9;
+          s.mesh.rotation.y += dt * 7;
+          s.mesh.scale.setScalar(Math.max(0.05, 1 - prog));
+        }
+      }
+      if (vfx.timer <= 0) {
+        this.scene.remove(vfx.group);
+        vfx.group.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry.dispose();
+            if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+            else m.material.dispose();
+          }
+        });
+        this.shieldShatterVfx.splice(vi, 1);
+      }
+    }
+    for (let si = this.sectorGates.length - 1; si >= 0; si--) {
+      const sg = this.sectorGates[si];
+      sg.timer -= dt;
+      if (sg.timer <= 0 || sg.group.position.z > this.playerZ + 18) {
+        this.scene.remove(sg.group);
+        sg.group.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            const m = obj as THREE.Mesh;
+            m.geometry.dispose();
+            if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+            else m.material.dispose();
+          }
+        });
+        this.sectorGates.splice(si, 1);
+      }
     }
 
     if (this.abilityActiveTimer > 0) {
@@ -3846,7 +4645,7 @@ export class MetroRushEngine {
       this.advanceTutorialStep('power');
     }
 
-    // 4. Speed, Progressive Difficulty Stage (1..4) & Momentum
+    // 4. Speed, Progressive Difficulty Stage (1..4) & Rebalanced Sprint Boost (§8)
     const nextStage =
       this.distance >= 1800
         ? 4
@@ -3860,11 +4659,34 @@ export class MetroRushEngine {
       this.showStunt(`INTENSIDAD FASE ${nextStage}`, 1);
     }
 
-    const sprinting =
-      (this.heldKeys.has(kb.sprint) || this.heldKeys.has('ShiftRight')) &&
-      this.momentum > 5;
+    const sprintKeyHeld =
+      this.heldKeys.has(kb.sprint) || this.heldKeys.has('ShiftRight');
+    if (this.sprintCooldown > 0) {
+      this.sprintCooldown = Math.max(0, this.sprintCooldown - dt);
+    }
+    if (ridingVehicle && sprintKeyHeld) {
+      if (this.vehicleLockNoticeTimer <= 0) {
+        this.showSubtitle('Impulso y Tiempo Lento bloqueados al conducir vehículos.');
+      }
+      this.vehicleLockNoticeTimer = 1.6;
+    }
+
+    const canSprint = !ridingVehicle && this.sprintCooldown <= 0 && this.momentum > 8;
+    const sprinting = sprintKeyHeld && canSprint;
     if (sprinting) {
-      this.momentum = Math.max(0, this.momentum - 16 * dt);
+      this.boostActive = true;
+      this.momentum = Math.max(0, this.momentum - 34 * dt);
+      if (this.momentum <= 1) {
+        this.sprintCooldown = this.SPRINT_COOLDOWN_MAX;
+      }
+    } else {
+      if (this.boostActive) {
+        this.boostActive = false;
+        this.sprintCooldown = this.SPRINT_COOLDOWN_MAX;
+      }
+      if (!ridingVehicle && this.sprintCooldown <= 0) {
+        this.momentum = Math.min(100, this.momentum + 9 * dt);
+      }
     }
 
     const difficultyRamp =
@@ -3872,8 +4694,8 @@ export class MetroRushEngine {
         ? 0
         : Math.min(18, this.distance / 210) + (this.difficultyStage - 1) * 1.65;
     let targetSpeed = this.baseSpeed + difficultyRamp;
-    if (sprinting) targetSpeed *= 1.32;
-    if (this.vehicleTimer > 0) targetSpeed *= 1.2 + this.activeVehicleStats.speed * 0.032;
+    if (sprinting) targetSpeed *= 1.24;
+    if (ridingVehicle) targetSpeed *= 1.2 + this.activeVehicleStats.speed * 0.032;
     // Blaze Passive: +15% faster slide boost
     if (this.slideTimer > 0) targetSpeed *= char.id === 'blaze' ? 1.3 : 1.15;
     // Mika Passive: +35% faster zipline & grapple traversal
@@ -3897,12 +4719,16 @@ export class MetroRushEngine {
     const dz = this.forwardSpeed * simDt;
     this.playerZ -= dz;
     this.distance += dz;
+    if (this.getLaneCount() === 5) {
+      this.fiveLaneDistanceRun += dz;
+    }
     this.score += dz * (1.25 * this.combo);
     this.advanceTutorialStep('distance');
 
-    // 5. Lateral Movement & Wall-Running
+    // 5. Lateral Movement & Wall-Running (Supports 3 & 5 lanes!)
     const goLeft = this.consumePress(kb.left, ['ArrowLeft', 'KeyQ']);
     const goRight = this.consumePress(kb.right, ['ArrowRight']);
+    const maxLane = this.getLaneCount() - 1;
 
     if (this.wallRunTimer > 0) {
       this.wallRunTimer -= simDt;
@@ -3910,13 +4736,13 @@ export class MetroRushEngine {
         this.wallRunTimer = 0;
         this.wallRunSide = 0;
         this.velY = 12.5;
-        this.targetLane = 1;
+        this.targetLane = this.getCenterLane();
         this.showStunt('WALL JUMP +250', 2);
         audioEngine.playJump(true, char.voicePitch);
       } else if (this.wallRunTimer <= 0) {
         this.wallRunSide = 0;
       }
-    } else if (this.ziplineTimer <= 0 && this.grappleTimer <= 0) {
+    } else if (this.ziplineTimer <= 0 && this.grappleTimer <= 0 && this.swingBarTimer <= 0) {
       if (goLeft) {
         if (this.targetLane > 0) {
           this.targetLane--;
@@ -3927,7 +4753,7 @@ export class MetroRushEngine {
         }
       }
       if (goRight) {
-        if (this.targetLane < 2) {
+        if (this.targetLane < maxLane) {
           this.targetLane++;
           audioEngine.playLaneSwitch();
           this.advanceTutorialStep('lane');
@@ -3939,8 +4765,8 @@ export class MetroRushEngine {
 
     const desiredX =
       this.wallRunTimer > 0
-        ? this.wallRunSide * 4.25
-        : LANES[this.targetLane];
+        ? this.wallRunSide * (this.getWallOffset() - 0.8)
+        : this.getLaneX(this.targetLane);
     const prevX = this.playerX;
     const latSpeed =
       16 *
@@ -3951,7 +4777,7 @@ export class MetroRushEngine {
     this.playerX += this.getMovingPlatformCarryX();
     const laneTilt = THREE.MathUtils.clamp((this.playerX - prevX) * 14, -1.5, 1.5);
 
-    // 6. Jump, Double Jump, Slide, Dive (use simDt for time-scale consistency)
+    // 6. Jump, Rebuilt Double Jump (§18), Slide, Dive
     if (this.consumePress(kb.jump, ['ArrowUp', 'KeyW'])) {
       this.jumpBufferTimer = this.settings.parkourAssist ? 0.18 : 0.12;
     } else if (this.jumpBufferTimer > 0) {
@@ -3969,7 +4795,7 @@ export class MetroRushEngine {
       (13.2 + char.stats.jump * 0.25) * (1 + jumpSkill * 0.05);
 
     if (this.jumpBufferTimer > 0) {
-      if (this.coyoteTimer > 0 || this.wallRunTimer > 0 || this.ziplineTimer > 0) {
+      if (this.coyoteTimer > 0 || this.wallRunTimer > 0 || this.ziplineTimer > 0 || this.swingBarTimer > 0) {
         this.velY = jumpThrust;
         this.grounded = false;
         this.diveQueued = false;
@@ -3977,6 +4803,7 @@ export class MetroRushEngine {
         this.wallRunTimer = 0;
         this.wallRunSide = 0;
         this.ziplineTimer = 0;
+        this.swingBarTimer = 0;
         this.slideTimer = 0;
         this.jumpsUsed = 1;
         this.jumpBufferTimer = 0;
@@ -3984,15 +4811,24 @@ export class MetroRushEngine {
         this.advanceTutorialStep('jump');
         this.spawnParticles(this.playerX, this.playerY + 0.1, this.playerZ, 8, this.district.colors.primaryNeon);
       } else if (this.jumpsUsed < 2) {
-        this.velY = jumpThrust * 0.94;
-        this.jumpsUsed = 2;
-        this.diveQueued = false;
-        this.doubleJumpFlipTimer = 1.0;
-        this.jumpBufferTimer = 0;
-        this.showStunt('DOBLE SALTO', 1);
-        audioEngine.playJump(true, char.voicePitch);
-        this.advanceTutorialStep('jump');
-        this.spawnParticles(this.playerX, this.playerY, this.playerZ, 12, this.district.colors.secondaryNeon);
+        if (!canDoubleJumpInForm) {
+          this.doubleJumpBlockedReason = 'Doble salto solo a pie o con nave aérea';
+          this.doubleJumpBlockedTimer = 1.6;
+          this.jumpBufferTimer = 0;
+          this.showStunt('SOLO A PIE O NAVE', 0);
+        } else if (this.doubleJumpCooldown <= 0) {
+          this.velY = jumpThrust * 0.94;
+          this.jumpsUsed = 2;
+          this.doubleJumpsRun += 1;
+          this.doubleJumpCooldown = this.DOUBLE_JUMP_COOLDOWN_MAX;
+          this.diveQueued = false;
+          this.doubleJumpFlipTimer = 1.0;
+          this.jumpBufferTimer = 0;
+          this.showStunt('DOBLE SALTO', 1);
+          audioEngine.playJump(true, char.voicePitch);
+          this.advanceTutorialStep('jump');
+          this.spawnParticles(this.playerX, this.playerY, this.playerZ, 16, this.district.colors.secondaryNeon, 5.2);
+        }
       }
     }
 
@@ -4015,11 +4851,11 @@ export class MetroRushEngine {
     }
     if (this.slideTimer > 0) this.slideTimer -= simDt;
 
-    // 7. Contextual Parkour
+    // 7. Contextual Parkour (Swing Bar, Jump Pad, Zipline, Grapple)
     const interactPressed = this.consumePress(kb.interact);
     this.updateContextualParkour(interactPressed);
 
-    // 8. Gravity & Abyssal/Surface Support
+    // 8. Gravity & Abyssal/Surface Support + Landing Audio (§18)
     const evt = this.activeEventId
       ? LIVE_EVENTS.find((e) => e.id === this.activeEventId)
       : null;
@@ -4029,6 +4865,7 @@ export class MetroRushEngine {
       (this.lowGravTimer > 0 ? 0.55 : 1.0) *
       kageGrav;
 
+    const wasGrounded = this.grounded;
     if (this.wallRunTimer > 0) {
       this.velY = 0;
       this.playerY = THREE.MathUtils.damp(
@@ -4037,6 +4874,20 @@ export class MetroRushEngine {
         10,
         simDt,
       );
+    } else if (this.swingBarTimer > 0) {
+      const prevSwing = this.swingBarTimer;
+      this.swingBarTimer -= simDt;
+      this.velY = 0;
+      this.playerY = THREE.MathUtils.damp(
+        this.playerY,
+        this.getRoadElevationY(this.playerZ) + 4.45,
+        14,
+        simDt,
+      );
+      if (prevSwing > 0 && this.swingBarTimer <= 0) {
+        this.velY = 9.0;
+        this.jumpsUsed = 1;
+      }
     } else if (this.ziplineTimer > 0) {
       const prevZip = this.ziplineTimer;
       this.ziplineTimer -= simDt;
@@ -4081,12 +4932,15 @@ export class MetroRushEngine {
 
       const floorY = this.getSupportSurfaceY();
       if (floorY > -5 && this.playerY <= floorY) {
-        if (!this.grounded && (this.diveQueued || this.velY < -20)) {
+        if (!wasGrounded && (this.diveQueued || this.velY < -20)) {
           this.slideTimer = char.id === 'blaze' ? 0.68 : 0.55;
           this.diveQueued = false;
           if (!this.settings.reduceCameraMotion) this.cameraShake = 0.28;
           this.spawnParticles(this.playerX, floorY + 0.1, this.playerZ, 16, this.district.colors.primaryNeon, 6.0);
           audioEngine.playSlide();
+        } else if (!wasGrounded) {
+          audioEngine.playLanding();
+          this.spawnParticles(this.playerX, floorY + 0.08, this.playerZ, 7, this.district.colors.primaryNeon, 2.4);
         }
         this.diveQueued = false;
         this.playerY = floorY;
@@ -4106,7 +4960,8 @@ export class MetroRushEngine {
     // 9. Animate Character Rig & Cyber-Companion Fox
     let action: ParkourAction = 'run';
     if (this.stumbleTimer > 0) action = 'stumble';
-    else if (this.vehicleTimer > 0) action = 'vehicle';
+    else if (ridingVehicle) action = 'vehicle';
+    else if (this.swingBarTimer > 0) action = 'swingBar';
     else if (this.grappleTimer > 0) action = 'grapple';
     else if (this.ziplineTimer > 0) action = 'zipline';
     else if (this.wallRunSide === -1) action = 'wallRunLeft';
@@ -4118,6 +4973,8 @@ export class MetroRushEngine {
       else if (this.doubleJumpFlipTimer > 0) action = 'doubleJump';
       else action = 'jump';
     } else if (this.slideTimer > 0) action = 'slide';
+    else if (this.celebrateTimer > 0) action = 'celebrate';
+    else if (this.onBalanceBeam) action = 'balanceBeam';
     else if (sprinting) action = 'sprint';
 
     this.lastAction = action;
@@ -4145,7 +5002,7 @@ export class MetroRushEngine {
         const foxZ = this.playerZ + 1.3;
         const foxGy = this.getRoadElevationY(foxZ);
         this.companionFox.group.position.set(
-          -4.65,
+          -this.getWallOffset() + 0.35,
           foxGy + 0.35 + Math.abs(Math.sin(this.elapsedTotal * 7)) * 0.08,
           foxZ,
         );
@@ -4154,7 +5011,7 @@ export class MetroRushEngine {
       }
     }
 
-    if (this.grounded && (action === 'run' || action === 'sprint')) {
+    if (this.grounded && (action === 'run' || action === 'sprint' || action === 'balanceBeam')) {
       this.stepSoundTimer -= simDt;
       if (this.stepSoundTimer <= 0) {
         this.stepSoundTimer =
@@ -4197,7 +5054,7 @@ export class MetroRushEngine {
       (this.slideTimer > 0 ? 2.6 : 3.5) +
       this.mouseOffsetY +
       shakeY;
-    const camTargetZ = this.playerZ + (this.vehicleTimer > 0 ? camDist + 1.2 : camDist);
+    const camTargetZ = this.playerZ + (ridingVehicle ? camDist + 1.2 : camDist);
 
     this.camera.position.x = THREE.MathUtils.damp(
       this.camera.position.x,
@@ -4234,24 +5091,30 @@ export class MetroRushEngine {
     this.updatePursuer(dt, simDt, sprinting);
     if (this.phase !== 'playing') return;
 
-    // 12. Chunk Recycling & Endless District Transition (supports non-repeating randomMap!)
+    // 12. Chunk Recycling & Dynamic Non-Repeating Map Transitions (§19)
     this.recycleChunks();
 
-    if (this.mode === 'endless') {
-      const swapDist = this.settings.randomMap ? 1100 : 1200;
+    if (this.mode === 'endless' || (this.settings.randomMap && this.mode === 'parkour')) {
+      const swapDist = this.settings.randomMap ? 720 : 1200;
       const stageCheck = Math.floor(this.distance / swapDist);
       if (stageCheck > 0 && Math.floor((this.distance - dz) / swapDist) < stageCheck) {
         let nextDist: DistrictDef;
         if (this.settings.randomMap) {
-          const candidates = DISTRICTS.filter((d) => d.id !== this.district.id);
-          nextDist = candidates[Math.floor(Math.random() * candidates.length)] ?? DISTRICTS[0];
+          const recentSet = new Set(this.recentDistrictIds.slice(-3));
+          const candidates = DISTRICTS.filter((d) => !recentSet.has(d.id));
+          const pool = candidates.length > 0 ? candidates : DISTRICTS.filter((d) => d.id !== this.district.id);
+          nextDist = pool[Math.floor(Math.random() * pool.length)] ?? DISTRICTS[0];
+          this.recentDistrictIds.push(nextDist.id);
+          if (this.recentDistrictIds.length > 6) this.recentDistrictIds.shift();
         } else {
           nextDist = DISTRICTS[stageCheck % DISTRICTS.length];
         }
         if (nextDist.id !== this.district.id) {
-          this.applyDistrictTheme(nextDist);
-          this.showBanner(`ENTRANDO A ${nextDist.name.toUpperCase()}`);
-          this.showSubtitle(`Accediendo a ${nextDist.name}.`);
+          this.applyDistrictTheme(nextDist, true);
+          this.sectorTransitionText = `${nextDist.name.toUpperCase()} (${nextDist.laneCount} CARRILES)`;
+          this.sectorTransitionTimer = 3.2;
+          this.showBanner(`CAMBIO DE SECTOR · ${nextDist.name.toUpperCase()}`);
+          this.showSubtitle(`Accediendo a ${nextDist.name} — Carriles activos: ${nextDist.laneCount}.`);
         }
       }
     }
@@ -4334,12 +5197,12 @@ export class MetroRushEngine {
           (ch) => dropZ <= ch.zStart && dropZ >= ch.zStart - CHUNK_LEN,
         );
         if (targetChunk) {
-          const lane = Math.floor(Math.random() * 3);
+          const lane = Math.floor(Math.random() * this.getLaneCount());
           const gy = this.getRoadElevationY(dropZ);
           const kind = Math.random() < 0.14 ? 'gem' : 'coin';
           this.spawnCollectible(
             kind,
-            LANES[lane],
+            this.getLaneX(lane),
             gy + 1.05,
             dropZ,
             targetChunk.group,
@@ -4372,20 +5235,22 @@ export class MetroRushEngine {
 
   private updateAerialThreats(dt: number, simDt: number): void {
     if (
+      !this.inBossArena &&
       !this.district.isUnderground &&
       this.distance >= this.nextAerialSpawnDist &&
       this.aerialThreats.length < 2
     ) {
       this.nextAerialSpawnDist += 280 + Math.random() * 140;
       const isJet = Math.random() < 0.55;
-      const lane = Math.floor(Math.random() * 3);
+      const lane = Math.floor(Math.random() * this.getLaneCount());
+      const spawnX = this.getLaneX(lane);
       const spawnZ = this.playerZ - 110;
       const gy = this.getRoadElevationY(spawnZ);
       const y = isJet ? gy + 2.6 : gy + 2.15;
       const mesh = isJet
         ? buildFighterJetModel(this.district.colors.primaryNeon, '#ef4444')
         : buildHelicopterModel('#f97316', this.district.colors.primaryNeon);
-      mesh.position.set(LANES[lane], y, spawnZ);
+      mesh.position.set(spawnX, y, spawnZ);
       this.scene.add(mesh);
 
       this.aerialThreats.push({
@@ -4393,10 +5258,12 @@ export class MetroRushEngine {
         kind: isJet ? 'jet' : 'helicopter',
         mesh,
         lane,
-        x: LANES[lane],
+        x: spawnX,
         y,
         z: spawnZ,
-        speedZ: isJet ? 54 : 18,
+        speedZ: isJet
+          ? Math.max(46, this.forwardSpeed * 1.95)
+          : Math.max(18, this.forwardSpeed * 0.72),
         warnPlayed: false,
         hit: false,
       });
@@ -4443,9 +5310,7 @@ export class MetroRushEngine {
           if (this.phaseThroughTimer > 0 || this.invulnTimer > 0 || this.vehicleTimer > 0) {
             this.showStunt('INTERCEPTOR EVADIDO!', 2);
           } else if (this.hasShield) {
-            this.hasShield = false;
-            this.invulnTimer = 1.4;
-            this.showStunt('ESCUDO ABSORBIÓ IMPACTO', 0);
+            this.triggerShieldChainExplosion(a.x, a.y, a.z, a.id);
           } else {
             this.handleFatalOrStumbleCrash(
               a.kind === 'jet'
@@ -4476,12 +5341,13 @@ export class MetroRushEngine {
     const bossDef = getBossById(this.activeBossId);
     const spawnZ = this.bossMesh.position.z + 1.5;
     const gy = this.getRoadElevationY(spawnZ);
-    const x = kind === 'shockwave' ? 0 : LANES[lane];
+    const clampedLane = THREE.MathUtils.clamp(lane, 0, this.getLaneCount() - 1);
+    const x = kind === 'shockwave' ? 0 : this.getLaneX(clampedLane);
     let mesh: THREE.Group;
     let y = gy + 1.1;
 
     if (kind === 'shockwave') {
-      mesh = buildBossShockwave(bossDef.secondaryColor);
+      mesh = buildBossShockwave(bossDef.secondaryColor, this.getRoadWidth() - 0.8);
       y = gy + 0.15;
     } else if (kind === 'laser' || kind === 'laneStrike') {
       mesh = buildBossLaserBeam(bossDef.secondaryColor);
@@ -4497,7 +5363,7 @@ export class MetroRushEngine {
       id: this.obstacleSeq++,
       kind,
       mesh,
-      lane,
+      lane: clampedLane,
       x,
       y,
       z: spawnZ,
@@ -4534,9 +5400,7 @@ export class MetroRushEngine {
             if (this.phaseThroughTimer > 0 || this.invulnTimer > 0) {
               this.showStunt('ATAQUE DE JEFE EVADIDO!', 2);
             } else if (this.hasShield) {
-              this.hasShield = false;
-              this.invulnTimer = 1.4;
-              this.showStunt('ESCUDO ABSORBIÓ ATAQUE', 0);
+              this.triggerShieldChainExplosion(h.x, h.y, h.z, h.id);
             } else {
               this.handleFatalOrStumbleCrash('Impacto por ataque especial del Jefe');
               return;
@@ -4709,7 +5573,41 @@ export class MetroRushEngine {
     this.contextPrompt = null;
     for (const c of this.chunks) {
       for (const ob of c.obstacles) {
-        if (ob.kind === 'zipline' && !ob.interacted) {
+        if (ob.kind === 'jumpPad' && !ob.interacted) {
+          if (
+            Math.abs(this.playerZ - ob.z) < 1.65 &&
+            Math.abs(this.playerX - ob.x) < 1.55 &&
+            this.playerY <= ob.groundY + 1.1
+          ) {
+            ob.interacted = true;
+            this.velY = 18.4;
+            this.grounded = false;
+            this.jumpsUsed = 1;
+            this.parkourChainsRun += 1;
+            this.showStunt('IMPULSO AL PISO 2!', 2);
+            audioEngine.playJump(true, 1.18);
+            this.spawnParticles(ob.x, ob.groundY + 0.3, ob.z, 14, this.district.colors.primaryNeon, 5.5);
+            return;
+          }
+        } else if (ob.kind === 'swingBar' && !ob.interacted) {
+          if (
+            Math.abs(this.playerZ - ob.z) < 2.2 &&
+            Math.abs(this.playerX - ob.x) < 1.9 &&
+            this.playerY >= ob.groundY + 1.2
+          ) {
+            if (this.playerY >= ob.groundY + 1.6 || interactPressed) {
+              ob.interacted = true;
+              this.swingBarTimer = 0.68;
+              this.velY = 0;
+              this.parkourChainsRun += 1;
+              this.showStunt('BARRA DE IMPULSO!', 2);
+              audioEngine.playGrapple();
+              return;
+            } else {
+              this.contextPrompt = '[E] o SALTA — Barra de Impulso';
+            }
+          }
+        } else if (ob.kind === 'zipline' && !ob.interacted) {
           const dz = this.playerZ - ob.z;
           if (
             Math.abs(dz) < ob.length * 0.5 &&
@@ -4719,6 +5617,7 @@ export class MetroRushEngine {
               ob.interacted = true;
               this.ziplineTimer = 1.15;
               this.grapplesCount++;
+              this.parkourChainsRun += 1;
               this.showStunt('TIROLINA EXTREMA', 2);
               audioEngine.playGrapple();
               return;
@@ -4735,6 +5634,7 @@ export class MetroRushEngine {
               this.grappleTimer = 0.62;
               this.grappleTarget.set(ob.x, ob.y, ob.z);
               this.grapplesCount++;
+              this.parkourChainsRun += 1;
               this.showStunt('GANCHO CYBER!', 2);
               audioEngine.playGrapple();
               return;
@@ -4749,6 +5649,8 @@ export class MetroRushEngine {
     const roadY = this.getRoadElevationY(this.playerZ);
     let support = roadY;
     let overAbyss = false;
+    this.onFloor2 = false;
+    this.onBalanceBeam = false;
 
     for (const c of this.chunks) {
       for (const gap of c.abyssGaps) {
@@ -4763,15 +5665,30 @@ export class MetroRushEngine {
           ob.kind === 'movingTrain' ||
           ob.kind === 'skyBridge' ||
           ob.kind === 'movingPlatform' ||
-          ob.kind === 'containerStack'
+          ob.kind === 'containerStack' ||
+          ob.kind === 'floor2Deck'
         ) {
           const topWorldY = ob.groundY + ob.height;
           if (
             Math.abs(this.playerX - ob.x) < ob.width * 0.58 &&
             Math.abs(this.playerZ - ob.z) < ob.length * 0.52 &&
-            this.playerY >= topWorldY - 0.82
+            this.playerY >= topWorldY - 0.85
           ) {
             support = Math.max(support, topWorldY + 0.05);
+            if (topWorldY >= roadY + 3.4) {
+              this.onFloor2 = true;
+            }
+          }
+        } else if (ob.kind === 'balanceBeam') {
+          const topWorldY = ob.groundY + ob.height;
+          if (
+            Math.abs(this.playerX - ob.x) < ob.width * 0.88 &&
+            Math.abs(this.playerZ - ob.z) < ob.length * 0.52 &&
+            this.playerY >= topWorldY - 0.85
+          ) {
+            support = Math.max(support, topWorldY + 0.05);
+            this.onFloor2 = true;
+            this.onBalanceBeam = true;
           }
         } else if (ob.kind === 'retractBridge') {
           if (
@@ -4791,7 +5708,11 @@ export class MetroRushEngine {
               1,
             );
             this.climbTimer = 0.1;
-            support = Math.max(support, ob.groundY + t * 3.15);
+            const rampTop = ob.rampTopY ?? 3.15;
+            support = Math.max(support, ob.groundY + t * rampTop);
+            if (rampTop >= 3.8 && t > 0.72) {
+              this.onFloor2 = true;
+            }
           }
         }
       }
@@ -4806,9 +5727,11 @@ export class MetroRushEngine {
     const char = getCharacterById(charId);
     this.abilityCharge = 0;
     this.abilitiesUsedCount++;
+    this.celebrateTimer = 0.45;
     audioEngine.playAbility(char.voicePitch);
     this.showSubtitle(`[${char.name}: ${char.abilityName}]`);
-    this.spawnParticles(this.playerX, this.playerY + 1.2, this.playerZ, 22, char.colors.accent, 7.5);
+    this.spawnParticles(this.playerX, this.playerY + 1.2, this.playerZ, 26, char.colors.accent, 8.0);
+    this.spawnParticles(this.playerX, this.playerY + 0.5, this.playerZ, 12, '#ffffff', 5.0);
 
     switch (charId) {
       case 'kai':
@@ -4876,7 +5799,14 @@ export class MetroRushEngine {
               ob.z > this.playerZ - 45 &&
               ob.kind !== 'wallLeft' &&
               ob.kind !== 'wallRight' &&
-              ob.kind !== 'retractBridge'
+              ob.kind !== 'retractBridge' &&
+              ob.kind !== 'skyBridge' &&
+              ob.kind !== 'climbRamp' &&
+              ob.kind !== 'floor2Deck' &&
+              ob.kind !== 'swingBar' &&
+              ob.kind !== 'jumpPad' &&
+              ob.kind !== 'balanceBeam' &&
+              ob.kind !== 'sectorGate'
             ) {
               ob.hit = true;
               ob.mesh.visible = false;
@@ -4905,41 +5835,127 @@ export class MetroRushEngine {
     }
   }
 
-  private damageBossFromEmp(): void {
-    if (this.randomBossActive && this.bossHp > 0) {
-      this.bossHp -= 1;
-      this.bossPhase = Math.min(4, this.bossMaxHp - this.bossHp + 1);
-      audioEngine.setBossPhase(this.bossPhase);
-      audioEngine.playEmpHit();
-      if (!this.settings.reduceCameraMotion) this.cameraShake = 0.4;
-      this.spawnParticles(
-        this.bossMesh.position.x,
-        this.bossMesh.position.y,
-        this.bossMesh.position.z,
-        24,
-        '#22d3ee',
-        7.5,
-      );
-      if (this.bossHp <= 0) {
-        this.randomBossActive = false;
-        this.bossMesh.visible = false;
-        this.bossWarningText = null;
-        this.coinsRun += 280;
-        this.gemsRun += 6;
-        this.score += 1800;
-        this.highlights.unshift('Emboscada de jefe superada');
-        this.showBanner('JEFE DE EMBOSCADA DERROTADO +280M +6G');
-        audioEngine.playVictory();
-      } else {
-        this.showStunt('IMPACTO EMP AL JEFE!', 3);
+  private isStructuralParkourKind(kind: ObstacleKind): boolean {
+    return (
+      kind === 'wallLeft' ||
+      kind === 'wallRight' ||
+      kind === 'climbRamp' ||
+      kind === 'retractBridge' ||
+      kind === 'skyBridge' ||
+      kind === 'zipline' ||
+      kind === 'grappleAnchor' ||
+      kind === 'movingPlatform' ||
+      kind === 'floor2Deck' ||
+      kind === 'swingBar' ||
+      kind === 'jumpPad' ||
+      kind === 'balanceBeam' ||
+      kind === 'sectorGate' ||
+      kind === 'hoverBikePickup'
+    );
+  }
+
+  private triggerShieldChainExplosion(
+    impactX: number,
+    impactY: number,
+    impactZ: number,
+    primaryEntityId?: number,
+  ): void {
+    this.hasShield = false;
+    this.shieldCooldown = this.SHIELD_COOLDOWN_MAX;
+    this.invulnTimer = 1.6;
+    this.shieldBreaksRun += 1;
+    this.hitstopTimer = 0.055;
+    if (!this.settings.reduceCameraMotion) this.cameraShake = 0.52;
+    audioEngine.playShieldShatter();
+
+    const shatterGroup = buildShieldShatterEffect('#38bdf8');
+    shatterGroup.position.set(impactX, impactY, impactZ);
+    this.scene.add(shatterGroup);
+    this.shieldShatterVfx.push({ group: shatterGroup, timer: 0.72, maxTimer: 0.72 });
+
+    const shieldSkill = this.save.skillLevels['shield_matrix'] ?? 0;
+    const blastRadius = 14 + shieldSkill * 1.25;
+    const radiusSq = blastRadius * blastRadius;
+    const destroyedIds = new Set<number>();
+    if (primaryEntityId !== undefined) destroyedIds.add(primaryEntityId);
+    let brokenCount = 0;
+
+    for (const c of this.chunks) {
+      for (const ob of c.obstacles) {
+        if (ob.hit || this.isStructuralParkourKind(ob.kind)) continue;
+        const dx = ob.x - impactX;
+        const dz = ob.z - impactZ;
+        if (dx * dx + dz * dz <= radiusSq) {
+          if (!destroyedIds.has(ob.id)) {
+            destroyedIds.add(ob.id);
+            brokenCount++;
+          }
+          ob.hit = true;
+          ob.mesh.visible = false;
+          this.spawnParticles(ob.x, ob.groundY + 1.0, ob.z, 10, '#38bdf8', 5.5);
+        }
       }
-      return;
+      for (const dr of c.enemies) {
+        if (dr.disabled) continue;
+        const dx = dr.x - impactX;
+        const dz = dr.z - impactZ;
+        if (dx * dx + dz * dz <= radiusSq) {
+          if (!destroyedIds.has(dr.id)) {
+            destroyedIds.add(dr.id);
+            brokenCount++;
+          }
+          dr.disabled = true;
+          dr.mesh.visible = false;
+          this.dronesEvadedRun++;
+          this.spawnParticles(dr.x, dr.y + 0.5, dr.z, 12, '#22d3ee', 6.5);
+        }
+      }
     }
 
-    if (this.mode !== 'bosschase' || this.bossHp <= 0) return;
-    this.bossHp -= 1;
-    this.bossPhase = Math.min(4, this.bossMaxHp - this.bossHp + 1);
-    audioEngine.setBossPhase(this.bossPhase);
+    for (const h of this.bossHazards) {
+      if (h.hit) continue;
+      const dz = h.z - impactZ;
+      if (dz * dz <= radiusSq) {
+        if (!destroyedIds.has(h.id)) {
+          destroyedIds.add(h.id);
+          brokenCount++;
+        }
+        h.hit = true;
+        h.mesh.visible = false;
+      }
+    }
+
+    for (const a of this.aerialThreats) {
+      if (a.hit) continue;
+      const dx = a.x - impactX;
+      const dz = a.z - impactZ;
+      if (dx * dx + dz * dz <= radiusSq) {
+        if (!destroyedIds.has(a.id)) {
+          destroyedIds.add(a.id);
+          brokenCount++;
+        }
+        a.hit = true;
+        a.mesh.visible = false;
+        this.spawnParticles(a.x, a.y, a.z, 14, '#f97316', 7);
+      }
+    }
+
+    this.score += 50 * Math.max(1, brokenCount);
+    this.showStunt(
+      brokenCount > 1
+        ? `RUPTURA DE ESCUDO · ${brokenCount} TRAMPAS DESTRUIDAS!`
+        : 'ESCUDO DESTRUIDO · ONDA EXPANSIVA!',
+      2,
+    );
+  }
+
+  private damageBossFromEmp(): void {
+    const activeFight = this.randomBossActive || this.mode === 'bosschase';
+    if (!activeFight || this.bossHp <= 0) return;
+
+    const bossDef = getBossById(this.activeBossId);
+    this.bossHp = Math.max(0, this.bossHp - 1);
+    this.bossPhaseHp = Math.max(0, this.bossPhaseHp - 1);
     audioEngine.playEmpHit();
     if (!this.settings.reduceCameraMotion) this.cameraShake = 0.45;
     this.spawnParticles(
@@ -4951,9 +5967,42 @@ export class MetroRushEngine {
       8,
     );
 
-    const bossDef = getBossById(this.activeBossId);
-    if (this.bossHp <= 0) {
-      this.bossDefeatedId = bossDef.id;
+    if (this.bossPhaseHp <= 0) {
+      this.bossPhasesClearedRun += 1;
+
+      if (this.bossPhaseIndex < 3) {
+        this.bossPhaseIndex += 1;
+        this.bossPhase = this.bossPhaseIndex + 1;
+        const nextCfg = bossDef.phasesConfig[this.bossPhaseIndex];
+        this.bossPhaseMaxHp = nextCfg.hpUnits;
+        this.bossPhaseHp = nextCfg.hpUnits;
+        this.bossPhaseName = nextCfg.name;
+        this.bossPhaseTransitionTimer = 1.9;
+        this.bossAttackTimer = nextCfg.attackCooldownSec + 1.9;
+        this.bossEmpSpawnTimer = nextCfg.empSpawnSec;
+        this.celebrateTimer = 0.65;
+        this.objectiveToastText = `FASE ${this.bossPhase}/4: ${nextCfg.name}`;
+        this.objectiveToastTimer = 2.6;
+
+        for (const h of this.bossHazards) {
+          h.hit = true;
+          h.mesh.visible = false;
+        }
+        applyBossPhaseVisuals(this.bossMesh, bossDef, this.bossPhaseIndex);
+        audioEngine.setBossPhase(this.bossPhase);
+        audioEngine.playBossPhaseTransition(this.bossPhase);
+        this.showBanner(`FASE ${this.bossPhase}/4 · ${nextCfg.name.toUpperCase()}`);
+        this.showSubtitle(nextCfg.description);
+        this.showStunt(`FASE ${this.bossPhase} DESBLOQUEADA!`, 3);
+        return;
+      }
+
+      // Phase 4 HP reached 0 -> True Boss Defeat!
+      this.bossHp = 0;
+      this.bossPhaseHp = 0;
+      this.inBossArena = false;
+      this.bossWarningText = null;
+      this.celebrateTimer = 0.9;
       this.spawnParticles(
         this.bossMesh.position.x,
         this.bossMesh.position.y,
@@ -4970,18 +6019,34 @@ export class MetroRushEngine {
         bossDef.secondaryColor,
         9,
       );
+
+      if (this.randomBossActive) {
+        this.randomBossActive = false;
+        this.bossMesh.visible = false;
+        this.coinsRun += 340;
+        this.gemsRun += 8;
+        this.score += 2400;
+        audioEngine.setBossPhase(1);
+        this.highlights.unshift(`Emboscada de ${bossDef.name} (4 Fases) superada`);
+        this.showBanner(`${bossDef.name.toUpperCase()} DERROTADO +340M +8G`);
+        audioEngine.playVictory();
+        return;
+      }
+
+      this.bossDefeatedId = bossDef.id;
       const bonusCoins = Math.round(bossDef.rewardCoins * 1.35);
       const bonusGems = Math.round(bossDef.rewardGems * 1.35);
       this.coinsRun += bonusCoins;
       this.gemsRun += bonusGems;
-      this.highlights.unshift(`Jefe ${bossDef.name} derrotado`);
+      this.highlights.unshift(`Jefe ${bossDef.name} derrotado en 4 fases`);
       this.showBanner(`${bossDef.name} DESTRUIDO +${bonusCoins} MONEDAS +${bonusGems} GEMAS`);
       audioEngine.playVictory();
       this.finishRun(true);
-    } else {
-      this.showBanner(`IMPACTO EMP · FASE ${this.bossPhase}/4: ${bossDef.phases[this.bossPhase - 1] ?? ''}`);
-      this.showStunt('SOBRECARGA EMP +500', 3);
+      return;
     }
+
+    this.showBanner(`IMPACTO EMP · FASE ${this.bossPhase}/4 (${this.bossPhaseHp}/${this.bossPhaseMaxHp})`);
+    this.showStunt('SOBRECARGA EMP +500', 3);
   }
 
   private updateEntitiesAndCollisions(simDt: number, magSkill: number): void {
@@ -5062,6 +6127,9 @@ export class MetroRushEngine {
             this.damageBossFromEmp();
             if (this.phase !== 'playing') return;
           } else if (col.kind === 'shield') {
+            if (this.shieldCooldown > 0 && !this.hasShield) {
+              this.shieldCooldown = Math.max(0, this.shieldCooldown - 6);
+            }
             this.hasShield = true;
             audioEngine.playGem();
             this.showStunt('ESCUDO ACTIVO', 1);
@@ -5077,7 +6145,9 @@ export class MetroRushEngine {
         }
       }
 
-      // Enemies AI (Staggered distant ticks for optimization!)
+      // Enemies AI (supports 3 & 5 lanes!)
+      const sweepBound = this.getWallOffset() * 0.68;
+      const laneCount = this.getLaneCount();
       for (let ei = 0; ei < c.enemies.length; ei++) {
         const dr = c.enemies[ei];
         if (dr.disabled) continue;
@@ -5089,7 +6159,7 @@ export class MetroRushEngine {
         dr.phase += aiDt * 3.2;
 
         if (dr.enemyClass === 'scout' || dr.enemyClass === 'surveillance') {
-          dr.x = Math.sin(dr.phase * 0.7) * 3.4;
+          dr.x = Math.sin(dr.phase * 0.7) * sweepBound;
           dr.mesh.position.x = dr.x;
         } else if (dr.enemyClass === 'pursuit' || dr.enemyClass === 'intervention') {
           dr.z += dr.speedZ * aiDt;
@@ -5101,13 +6171,13 @@ export class MetroRushEngine {
           dr.shiftTimer -= aiDt;
           if (dr.shiftTimer <= 0) {
             dr.shiftTimer = 1.3;
-            dr.baseLane = (dr.baseLane + 1) % 3;
+            dr.baseLane = (dr.baseLane + 1) % laneCount;
           }
-          dr.x = THREE.MathUtils.lerp(dr.x, LANES[dr.baseLane], aiDt * 6);
+          dr.x = THREE.MathUtils.lerp(dr.x, this.getLaneX(dr.baseLane), aiDt * 6);
           dr.mesh.position.x = dr.x;
         } else if (dr.enemyClass === 'elite') {
           dr.mesh.rotation.y += aiDt * 3.5;
-          dr.x = Math.cos(dr.phase * 0.9) * 3.2;
+          dr.x = Math.cos(dr.phase * 0.9) * sweepBound;
           dr.mesh.position.x = dr.x;
         } else if (dr.enemyClass === 'ground_bot' || dr.enemyClass === 'security_bot') {
           dr.mesh.position.y = dr.groundY + Math.abs(Math.sin(dr.phase * 2.5)) * 0.12;
@@ -5146,17 +6216,13 @@ export class MetroRushEngine {
           playerBottom < hitTop
         ) {
           if (this.phaseThroughTimer > 0) continue;
-          if (this.invulnTimer > 0 || this.vehicleTimer > 0 || this.hasShield) {
-            if (this.hasShield && this.invulnTimer <= 0 && this.vehicleTimer <= 0) {
-              this.hasShield = false;
-              this.invulnTimer = 1.4;
-              this.showStunt('ESCUDO ABSORBIÓ IMPACTO', 0);
-            } else {
-              this.showStunt('ENEMIGO DESTRUIDO!', 2);
-            }
+          if (this.hasShield && this.invulnTimer <= 0 && this.vehicleTimer <= 0) {
+            this.triggerShieldChainExplosion(dr.x, dr.y + 0.5, dr.z, dr.id);
+          } else if (this.invulnTimer > 0 || this.vehicleTimer > 0) {
             dr.disabled = true;
             dr.mesh.visible = false;
             this.dronesEvadedRun++;
+            this.showStunt('ENEMIGO DESTRUIDO!', 2);
             audioEngine.playCrash(true);
             this.spawnParticles(dr.x, dr.y + 0.8, dr.z, 16, DRONE_CODEX[dr.enemyClass].color, 6);
           } else {
@@ -5170,8 +6236,23 @@ export class MetroRushEngine {
       }
 
       // Dynamic & Static Obstacles
+      const barrierClamp = this.getRoadWidth() * 0.41;
       for (const ob of c.obstacles) {
         if (ob.hit) continue;
+
+        if (!ob.passedCounted && ob.z > this.playerZ + 1.6) {
+          ob.passedCounted = true;
+          if (!this.isStructuralParkourKind(ob.kind)) {
+            this.obstaclesDodgedRun += 1;
+            if (
+              ob.kind === 'train' ||
+              ob.kind === 'cargoTrain' ||
+              ob.kind === 'movingTrain'
+            ) {
+              this.trainsPassedRun += 1;
+            }
+          }
+        }
 
         if (ob.kind === 'movingTrain') {
           ob.z += ob.speedZ * simDt;
@@ -5184,7 +6265,11 @@ export class MetroRushEngine {
           }
         } else if (ob.kind === 'movingBarrier') {
           ob.phase += simDt * 1.8;
-          ob.x = THREE.MathUtils.clamp(ob.baseX + Math.sin(ob.phase) * 3.15, -3.25, 3.25);
+          ob.x = THREE.MathUtils.clamp(
+            ob.baseX + Math.sin(ob.phase) * 3.15,
+            -barrierClamp,
+            barrierClamp,
+          );
           ob.mesh.position.x = ob.x;
         } else if (ob.kind === 'movingPlatform') {
           ob.prevX = ob.x;
@@ -5214,6 +6299,8 @@ export class MetroRushEngine {
             const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
             this.vehicleTimer = this.activeVehicleStats.boostDuration;
             this.vehiclesCount++;
+            this.isSlowMo = false;
+            this.boostActive = false;
             this.highlights.push(`${vDef.name} pilotado a ${Math.floor(this.distance)}m`);
             this.showStunt(`${vDef.name.toUpperCase()} ACTIVADO!`, 3);
             audioEngine.playAbility(1.1);
@@ -5222,16 +6309,7 @@ export class MetroRushEngine {
           continue;
         }
 
-        if (
-          ob.kind === 'wallLeft' ||
-          ob.kind === 'wallRight' ||
-          ob.kind === 'climbRamp' ||
-          ob.kind === 'zipline' ||
-          ob.kind === 'grappleAnchor' ||
-          ob.kind === 'skyBridge' ||
-          ob.kind === 'retractBridge' ||
-          ob.kind === 'movingPlatform'
-        ) {
+        if (this.isStructuralParkourKind(ob.kind)) {
           continue;
         }
 
@@ -5257,6 +6335,9 @@ export class MetroRushEngine {
         ) {
           obBottom = ob.groundY + 1.12;
           obTop = ob.groundY + 2.8;
+        } else if (ob.kind === 'highConduit') {
+          obBottom = ob.groundY + 1.05;
+          obTop = ob.groundY + 2.6;
         } else if (ob.kind === 'blastDoor') {
           obBottom = Math.max(ob.groundY, ob.y - 1.3);
           obTop = ob.y + 1.3;
@@ -5301,15 +6382,9 @@ export class MetroRushEngine {
         }
 
         if (this.hasShield) {
-          this.hasShield = false;
-          this.invulnTimer = 1.4;
           ob.hit = true;
           ob.mesh.visible = false;
-          this.hitstopTimer = 0.05;
-          if (!this.settings.reduceCameraMotion) this.cameraShake = 0.4;
-          audioEngine.playCrash(true);
-          this.spawnParticles(this.playerX, this.playerY + 1, this.playerZ, 16, '#38bdf8', 6.5);
-          this.showStunt('ESCUDO ABSORBIÓ IMPACTO', 0);
+          this.triggerShieldChainExplosion(this.playerX, this.playerY + 1.0, this.playerZ, ob.id);
           continue;
         }
 
@@ -5335,11 +6410,7 @@ export class MetroRushEngine {
       for (const ob of c.obstacles) {
         if (
           Math.abs(ob.z - this.playerZ) < radius &&
-          ob.kind !== 'wallLeft' &&
-          ob.kind !== 'wallRight' &&
-          ob.kind !== 'retractBridge' &&
-          ob.kind !== 'skyBridge' &&
-          ob.kind !== 'climbRamp'
+          !this.isStructuralParkourKind(ob.kind)
         ) {
           ob.hit = true;
           ob.mesh.visible = false;
@@ -5395,16 +6466,19 @@ export class MetroRushEngine {
       return;
     }
 
-    // 2. Progressive Revive Token Prompt
+    // 2. Progressive Revive Token Prompt with live 10.0s countdown (§5)
     const nextCost = getReviveCostForAttempt(this.revivesUsedRun);
     this.phase = 'reviving';
     this.heldKeys.clear();
+    this.reviveCountdownTimer = 10.0;
+    this.hudEmitReviveAccum = 0;
     this.revivePrompt = {
       defeatCause: cause,
       costTokens: nextCost,
       attemptNumber: this.revivesUsedRun + 1,
       availableTokens: this.liveReviveTokensHeld,
       canAfford: this.liveReviveTokensHeld >= nextCost,
+      remainingSeconds: 10.0,
     };
     this.emitHud('stumble');
   }
@@ -5466,85 +6540,208 @@ export class MetroRushEngine {
         this.storyBeatIndex++;
       }
       if (ch.bossId && !this.randomBossActive && progress >= 0.65) {
-        this.swapBossModel(ch.bossId);
         this.randomBossActive = true;
-        this.randomBossTimer = 32;
-        this.bossHp = 3;
-        this.bossMaxHp = 3;
-        this.bossPhase = 1;
-        this.bossEntranceTimer = 1.5;
-        this.bossAttackTimer = 3.9;
-        this.bossMesh.position.set(0, 4.5, this.playerZ - 48);
-        this.bossMesh.visible = true;
-        audioEngine.setBossPhase(1);
-        audioEngine.playBossEntrance();
-        this.showBanner(`EMBOSCADA DE CAPÍTULO: ${getBossById(ch.bossId).name.toUpperCase()}`);
+        this.randomBossTimer = 46;
+        this.beginBossEncounter(ch.bossId, true);
       }
     }
 
-    // Surprise Random Boss Ambush during Normal Runs (only from unlocked bosses)
+    // Surprise Random Boss Ambush during Normal Runs (§15: high distance >= 1650m)
     if (
       (this.mode === 'endless' || this.mode === 'parkour') &&
       !this.randomBossActive &&
       this.distance >= this.nextRandomBossDist
     ) {
-      this.nextRandomBossDist += 920 + Math.random() * 280;
+      this.nextRandomBossDist += 1100 + Math.random() * 450;
       const unlockedPool = getUnlockedBossIds(this.save.defeatedBosses ?? []);
       const randId = unlockedPool[Math.floor(Math.random() * unlockedPool.length)] ?? ORDERED_BOSS_IDS[0];
-      const randBoss = getBossById(randId);
-      this.swapBossModel(randBoss.id);
       this.randomBossActive = true;
-      this.randomBossTimer = 24;
-      this.bossHp = 3;
-      this.bossMaxHp = 3;
-      this.bossPhase = 1;
-      this.bossEntranceTimer = 1.5;
-      this.bossAttackTimer = 4.0;
-      this.bossMesh.position.set(0, 4.5, this.playerZ - 48);
-      this.bossMesh.visible = true;
-      audioEngine.setBossPhase(1);
-      audioEngine.playBossEntrance();
-      this.showBanner(`¡EMBOSCADA SORPRESA: ${randBoss.name.toUpperCase()}!`);
-      this.showSubtitle('Esquiva ataques telegrafiados y recoge celdas EMP cian.');
+      this.randomBossTimer = 42;
+      this.beginBossEncounter(randId, true);
     }
 
-    if (this.randomBossActive) {
-      this.randomBossTimer -= simDt;
-      if (this.bossEntranceTimer > 0) {
-        this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
-      }
-      const targetDist = this.getBossCombatDistance(this.activeBossId);
-      const introProgress = 1 - this.bossEntranceTimer / 1.5;
-      const bossZOffset = THREE.MathUtils.lerp(48, targetDist, Math.min(1, introProgress));
-      const bossGy = this.getRoadElevationY(this.playerZ - bossZOffset);
-      this.bossMesh.position.set(
-        THREE.MathUtils.lerp(this.bossMesh.position.x, this.playerX, dt * 3.2),
-        bossGy + 4.3 + Math.sin(this.elapsedTotal * 3.2) * 0.45,
-        this.playerZ - bossZOffset,
-      );
-      this.bossMesh.rotation.y = Math.sin(this.elapsedTotal * 2) * 0.25;
-      this.animateBossMesh(simDt, this.bossPhase);
+    const activeBossEncounter =
+      this.randomBossActive || (this.mode === 'bosschase' && this.bossDistance !== null);
 
-      const prevAtk = this.bossAttackTimer;
-      this.bossAttackTimer -= simDt;
-      if (this.bossAttackTimer <= 1.1 && this.bossAttackTimer > 0) {
-        if (prevAtk > 1.1) audioEngine.playBossTelegraph();
-        this.bossWarningText = '¡ALERTA! ATAQUE DE EMBOSCADA EN CAMINO';
-      } else if (this.bossAttackTimer <= 0) {
-        this.bossWarningText = null;
-        this.bossAttackTimer = Math.max(2.6, 4.4 - this.bossPhase * 0.45);
-        this.spawnBossHazard(Math.random() < 0.4 ? 'shockwave' : 'projectile', this.targetLane);
-        if (this.bossHazards.length > 0 && this.bossHazards[this.bossHazards.length - 1].kind === 'shockwave') {
-          audioEngine.playBossShockwave();
+    if (activeBossEncounter && this.bossHp > 0) {
+      const bossDef = getBossById(this.activeBossId);
+      const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(3, this.bossPhaseIndex))];
+      const laneCount = this.getLaneCount();
+
+      if (this.randomBossActive) {
+        this.randomBossTimer -= simDt;
+        if (this.randomBossTimer <= 0) {
+          this.randomBossActive = false;
+          this.inBossArena = false;
+          this.bossMesh.visible = false;
+          this.bossWarningText = null;
+          audioEngine.setBossPhase(1);
+          this.showBanner('JEFE RETIRADO — RUTA DESPEJADA');
+          return;
         }
       }
 
-      if (this.randomBossTimer <= 0) {
-        this.randomBossActive = false;
-        this.bossMesh.visible = false;
-        this.bossWarningText = null;
-        audioEngine.setBossPhase(1);
-        this.showBanner('JEFE RETIRADO — RUTA DESPEJADA');
+      if (this.bossIntroTimer > 0) {
+        this.bossIntroTimer = Math.max(0, this.bossIntroTimer - dt);
+        if (!this.settings.reduceCameraMotion && this.bossIntroTimer > 2.2) {
+          this.cameraShake = 0.18;
+        }
+      }
+      if (this.bossPhaseTransitionTimer > 0) {
+        this.bossPhaseTransitionTimer = Math.max(0, this.bossPhaseTransitionTimer - dt);
+      }
+      if (this.bossEntranceTimer > 0) {
+        this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
+      }
+
+      const targetDist = this.getBossCombatDistance(this.activeBossId);
+      const introProgress = 1 - this.bossEntranceTimer / 3.2;
+      const bossZOffset = THREE.MathUtils.lerp(56, targetDist, Math.min(1, introProgress));
+
+      const targetX =
+        this.activeBossId === 'neon_wraith'
+          ? this.getLaneX(Math.floor(this.elapsedTotal * (1.2 + this.bossPhase * 0.28)) % laneCount)
+          : this.activeBossId === 'cryo_leviathan'
+            ? Math.sin(this.elapsedTotal * (1.4 + this.bossPhase * 0.2)) * (this.getWallOffset() * 0.65)
+            : this.playerX;
+      const bossGy = this.getRoadElevationY(this.playerZ - bossZOffset);
+      const hoverY =
+        this.activeBossId === 'iron_hunter'
+          ? bossGy + 1.65 + Math.abs(Math.sin(this.elapsedTotal * 5)) * 0.35
+          : bossGy + 4.35 + Math.sin(this.elapsedTotal * 3) * 0.45;
+      this.bossMesh.position.set(
+        THREE.MathUtils.lerp(this.bossMesh.position.x, targetX, dt * 3.5),
+        hoverY,
+        this.playerZ - bossZOffset,
+      );
+      this.bossMesh.rotation.y =
+        this.bossPhaseTransitionTimer > 0
+          ? this.bossMesh.rotation.y + dt * 5.2
+          : Math.sin(this.elapsedTotal * 2) * 0.25;
+      this.animateBossMesh(simDt, this.bossPhase);
+
+      // Pause attacks during dramatic Intro or Phase Transition beats (§2 & §15)
+      if (this.bossIntroTimer <= 0 && this.bossPhaseTransitionTimer <= 0) {
+        // Guaranteed periodic EMP spawn inside clean Boss Arena
+        this.bossEmpSpawnTimer -= simDt;
+        if (this.bossEmpSpawnTimer <= 0 && this.chunks.length > 0) {
+          this.bossEmpSpawnTimer = phaseCfg?.empSpawnSec ?? 4.2;
+          const empZ = this.playerZ - (36 + Math.random() * 14);
+          const targetChunk = this.chunks.find(
+            (ch) => empZ <= ch.zStart && empZ >= ch.zStart - CHUNK_LEN,
+          );
+          if (targetChunk) {
+            const empLane = Math.floor(Math.random() * laneCount);
+            this.spawnCollectible(
+              'empCell',
+              this.getLaneX(empLane),
+              this.getRoadElevationY(empZ) + 1.15,
+              empZ,
+              targetChunk.group,
+              targetChunk.collectibles,
+              targetChunk.obstacles,
+              targetChunk.enemies,
+            );
+          }
+        }
+
+        const prevAtk = this.bossAttackTimer;
+        this.bossAttackTimer -= simDt;
+        if (this.bossAttackTimer <= 1.15 && this.bossAttackTimer > 0) {
+          if (prevAtk > 1.15) {
+            audioEngine.playBossTelegraph();
+          }
+          const warnMap: Record<BossId, string> = {
+            titan_drone: '¡PROYECTILES Y BARRIDO LÁSER — CAMBIA DE CARRIL!',
+            iron_hunter: '¡ONDA EXPANSIVA SÍSMICA — SALTA!',
+            overseer: '¡RAYO DE BARRIDO EN CARRIL — ESQUIVA YA!',
+            neon_wraith: '¡BOMBARDEO HOLOGRÁFICO EN CARRIL!',
+            cryo_leviathan: '¡LANZAS DE ESCARCHA Y PULSO CRIOGÉNICO!',
+            volt_archon: '¡DESCARGA VOLTAICA EN CADENA — CAMBIA DE CARRIL!',
+            the_sentinel: '¡TORMENTA ORBITAL MULTIFASE — ESQUIVA!',
+            omega_core: '¡SINGULARIDAD OMEGA — MÁXIMA ALERTA EN PISTA!',
+          };
+          this.bossWarningText = warnMap[this.activeBossId] ?? '¡JEFE ATACANDO!';
+          this.contextPrompt = 'RECOGE CELDAS EMP CIAN PARA DAÑAR AL JEFE';
+        }
+
+        if (this.bossAttackTimer <= 0) {
+          this.bossWarningText = null;
+          this.bossAttackTimer = Math.max(
+            1.75,
+            (phaseCfg?.attackCooldownSec ?? 3.6) - this.bossPhase * 0.12,
+          );
+          if (this.bossDistance !== null) {
+            this.bossDistance = Math.max(2, this.bossDistance - 2.6);
+            if (this.forwardSpeed > 28 || this.vehicleTimer > 0) {
+              this.bossDistance = Math.min(26, this.bossDistance + 3.4);
+            }
+          }
+
+          // Boss-specific telegraphed 4-phase choreography using active phase patterns
+          const nextLane = (this.targetLane + 1) % laneCount;
+          const farLane = (this.targetLane + 2) % laneCount;
+          const altLane = (this.targetLane + laneCount - 1) % laneCount;
+
+          if (this.activeBossId === 'iron_hunter') {
+            this.spawnBossHazard(this.bossPhase === 2 ? 'projectile' : 'shockwave', this.targetLane);
+            if (this.bossPhase !== 2) audioEngine.playBossShockwave();
+            if (this.bossPhase >= 3) this.spawnBossHazard('projectile', nextLane);
+            if (this.bossPhase >= 4) this.spawnBossHazard('laneStrike', farLane);
+          } else if (this.activeBossId === 'overseer') {
+            this.spawnBossHazard('laser', this.targetLane);
+            if (this.bossPhase >= 2) this.spawnBossHazard('projectile', nextLane);
+            if (this.bossPhase >= 3) {
+              this.spawnBossHazard('shockwave', this.getCenterLane());
+              audioEngine.playBossShockwave();
+            }
+            if (this.bossPhase >= 4) this.spawnBossHazard('laser', altLane);
+          } else if (this.activeBossId === 'neon_wraith') {
+            this.spawnBossHazard('laneStrike', this.targetLane);
+            if (this.bossPhase >= 2) this.spawnBossHazard('laneStrike', nextLane);
+            if (this.bossPhase >= 3) {
+              this.spawnBossHazard('shockwave', this.getCenterLane());
+              audioEngine.playBossShockwave();
+            }
+            if (this.bossPhase >= 4) this.spawnBossHazard('projectile', altLane);
+          } else if (this.activeBossId === 'cryo_leviathan') {
+            this.spawnBossHazard('projectile', this.targetLane);
+            if (this.bossPhase >= 2) this.spawnBossHazard('projectile', altLane);
+            if (this.bossPhase >= 3) {
+              this.spawnBossHazard('shockwave', this.getCenterLane());
+              audioEngine.playBossShockwave();
+            }
+            if (this.bossPhase >= 4) this.spawnBossHazard('laser', this.targetLane);
+          } else if (this.activeBossId === 'volt_archon') {
+            this.spawnBossHazard('laser', this.targetLane);
+            if (this.bossPhase >= 2) {
+              this.spawnBossHazard('projectile', nextLane);
+              this.spawnBossHazard('projectile', altLane);
+            }
+            if (this.bossPhase >= 3) {
+              this.spawnBossHazard('shockwave', this.getCenterLane());
+              audioEngine.playBossShockwave();
+            }
+          } else if (this.activeBossId === 'omega_core') {
+            this.spawnBossHazard('laser', this.targetLane);
+            this.spawnBossHazard('projectile', nextLane);
+            if (this.bossPhase >= 2) {
+              this.spawnBossHazard('shockwave', this.getCenterLane());
+              audioEngine.playBossShockwave();
+            }
+            if (this.bossPhase >= 4) this.spawnBossHazard('laneStrike', farLane);
+          } else {
+            // titan_drone & the_sentinel
+            this.spawnBossHazard('projectile', this.targetLane);
+            if (this.bossPhase >= 2) {
+              this.spawnBossHazard(this.bossPhase >= 4 ? 'shockwave' : 'laser', farLane);
+              if (this.bossPhase >= 4) audioEngine.playBossShockwave();
+            }
+            if (this.bossPhase >= 3) {
+              this.spawnBossHazard('laneStrike', nextLane);
+            }
+          }
+        }
       }
     }
 
@@ -5557,157 +6754,36 @@ export class MetroRushEngine {
       this.finishRun(true);
       return;
     }
-
-    if (this.mode === 'bosschase' && this.bossDistance !== null) {
-      if (this.bossEntranceTimer > 0) {
-        this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
-      }
-      const targetDist = this.getBossCombatDistance(this.activeBossId);
-      const introProgress = 1 - this.bossEntranceTimer / 1.6;
-      const bossZOffset = THREE.MathUtils.lerp(48, targetDist, Math.min(1, introProgress));
-
-      const targetX =
-        this.activeBossId === 'neon_wraith'
-          ? LANES[Math.floor(this.elapsedTotal * (1.2 + this.bossPhase * 0.28)) % 3]
-          : this.activeBossId === 'cryo_leviathan'
-            ? Math.sin(this.elapsedTotal * (1.4 + this.bossPhase * 0.2)) * 3.1
-            : this.playerX;
-      const bossGy = this.getRoadElevationY(this.playerZ - bossZOffset);
-      const hoverY =
-        this.activeBossId === 'iron_hunter'
-          ? bossGy + 1.6 + Math.abs(Math.sin(this.elapsedTotal * 5)) * 0.35
-          : bossGy + 4.35 + Math.sin(this.elapsedTotal * 3) * 0.45;
-      this.bossMesh.position.set(
-        THREE.MathUtils.lerp(this.bossMesh.position.x, targetX, dt * 3.5),
-        hoverY,
-        this.playerZ - bossZOffset,
-      );
-      this.bossMesh.rotation.y = Math.sin(this.elapsedTotal * 2) * 0.25;
-      this.animateBossMesh(simDt, this.bossPhase);
-
-      const prevAtk = this.bossAttackTimer;
-      this.bossAttackTimer -= simDt;
-      if (this.bossAttackTimer <= 1.15 && this.bossAttackTimer > 0) {
-        if (prevAtk > 1.15) {
-          audioEngine.playBossTelegraph();
-        }
-        const warnMap: Record<BossId, string> = {
-          titan_drone: '¡PROYECTILES Y BARRIDO LÁSER — CAMBIA DE CARRIL!',
-          iron_hunter: '¡ONDA EXPANSIVA SÍSMICA — SALTA!',
-          overseer: '¡RAYO DE BARRIDO EN CARRIL — ESQUIVA YA!',
-          neon_wraith: '¡BOMBARDEO HOLOGRÁFICO EN CARRIL!',
-          cryo_leviathan: '¡LANZAS DE ESCARCHA Y PULSO CRIOGÉNICO!',
-          volt_archon: '¡DESCARGA VOLTAICA EN CADENA — CAMBIA DE CARRIL!',
-          the_sentinel: '¡TORMENTA ORBITAL MULTIFASE — ESQUIVA!',
-          omega_core: '¡SINGULARIDAD OMEGA — MÁXIMA ALERTA EN PISTA!',
-        };
-        this.bossWarningText = warnMap[this.activeBossId] ?? '¡JEFE ATACANDO!';
-        this.contextPrompt = 'RECOGE CELDAS EMP CIAN PARA DAÑAR AL JEFE';
-      }
-      if (this.bossAttackTimer <= 0) {
-        this.bossWarningText = null;
-        this.bossAttackTimer = Math.max(2.15, 4.8 - this.bossPhase * 0.55);
-        this.bossDistance = Math.max(2, this.bossDistance - 3.2);
-        if (this.forwardSpeed > 28 || this.vehicleTimer > 0) {
-          this.bossDistance = Math.min(26, this.bossDistance + 3.8);
-        }
-
-        // Boss-specific telegraphed 4-phase choreography across all 8 bosses
-        if (this.activeBossId === 'iron_hunter') {
-          this.spawnBossHazard(this.bossPhase === 2 ? 'projectile' : 'shockwave', this.targetLane);
-          if (this.bossPhase !== 2) audioEngine.playBossShockwave();
-          if (this.bossPhase >= 3) {
-            this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
-          }
-          if (this.bossPhase >= 4) {
-            this.spawnBossHazard('laneStrike', (this.targetLane + 2) % 3);
-          }
-        } else if (this.activeBossId === 'overseer') {
-          this.spawnBossHazard('laser', this.targetLane);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
-          }
-          if (this.bossPhase >= 3) {
-            this.spawnBossHazard('shockwave', 1);
-            audioEngine.playBossShockwave();
-          }
-          if (this.bossPhase >= 4) {
-            this.spawnBossHazard('laser', (this.targetLane + 2) % 3);
-          }
-        } else if (this.activeBossId === 'neon_wraith') {
-          this.spawnBossHazard('laneStrike', this.targetLane);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard('laneStrike', (this.targetLane + 1) % 3);
-          }
-          if (this.bossPhase >= 3) {
-            this.spawnBossHazard('shockwave', 1);
-            audioEngine.playBossShockwave();
-          }
-        } else if (this.activeBossId === 'cryo_leviathan') {
-          this.spawnBossHazard('projectile', this.targetLane);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard('projectile', (this.targetLane + 2) % 3);
-          }
-          if (this.bossPhase >= 3) {
-            this.spawnBossHazard('shockwave', 1);
-            audioEngine.playBossShockwave();
-          }
-          if (this.bossPhase >= 4) {
-            this.spawnBossHazard('laser', this.targetLane);
-          }
-        } else if (this.activeBossId === 'volt_archon') {
-          this.spawnBossHazard('laser', this.targetLane);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
-            this.spawnBossHazard('projectile', (this.targetLane + 2) % 3);
-          }
-          if (this.bossPhase >= 3) {
-            this.spawnBossHazard('shockwave', 1);
-            audioEngine.playBossShockwave();
-          }
-        } else if (this.activeBossId === 'omega_core') {
-          this.spawnBossHazard('laser', this.targetLane);
-          this.spawnBossHazard('projectile', (this.targetLane + 1) % 3);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard('shockwave', 1);
-            audioEngine.playBossShockwave();
-          }
-          if (this.bossPhase >= 4) {
-            this.spawnBossHazard('laneStrike', (this.targetLane + 2) % 3);
-          }
-        } else {
-          // titan_drone & the_sentinel
-          this.spawnBossHazard('projectile', this.targetLane);
-          if (this.bossPhase >= 2) {
-            this.spawnBossHazard(
-              this.bossPhase >= 4 ? 'shockwave' : 'laser',
-              (this.targetLane + 2) % 3,
-            );
-            if (this.bossPhase >= 4) audioEngine.playBossShockwave();
-          }
-          if (this.bossPhase >= 3 && this.activeBossId === 'the_sentinel') {
-            this.spawnBossHazard('laneStrike', (this.targetLane + 1) % 3);
-          }
-        }
-      }
-    }
   }
 
   private finishRun(victory: boolean, defeatCause?: string): void {
     this.phase = victory ? 'victory' : 'gameover';
     this.revivePrompt = null;
     this.randomBossActive = false;
+    this.inBossArena = false;
+    this.bossIntroTimer = 0;
+    this.bossPhaseTransitionTimer = 0;
     this.mpPausedOverlay = false;
     this.bossWarningText = null;
     this.rainEventState.active = false;
     this.clearDynamicThreats();
     this.heldKeys.clear();
     this.isSlowMo = false;
+    this.boostActive = false;
     this.powerOutageActive = false;
     audioEngine.setBossPhase(1);
     audioEngine.setMusicMode(victory ? 'victory' : 'defeat');
     audioEngine.setMusicParams({ slowMo: false, intensity: 0.25, danger: 0 });
-    this.emitHud(victory ? 'celebrate' : 'stumble');
+
+    if (!victory && this.captureDroneMesh) {
+      this.captureDroneMesh.position.set(this.playerX, this.playerY + 2.8, this.playerZ);
+      this.captureDroneMesh.visible = true;
+      audioEngine.playCaptureDroneGrab();
+    } else if (this.captureDroneMesh) {
+      this.captureDroneMesh.visible = false;
+    }
+
+    this.emitHud(victory ? 'celebrate' : 'captureStruggle');
 
     if (this.maxCombo >= 5) {
       this.highlights.unshift(`Combo máximo x${this.maxCombo}`);
@@ -5715,6 +6791,14 @@ export class MetroRushEngine {
     if (this.dronesEvadedRun >= 3) {
       this.highlights.push(`${this.dronesEvadedRun} enemigos evadidos`);
     }
+    if (this.shieldBreaksRun > 0) {
+      this.highlights.push(`${this.shieldBreaksRun} explosiones de escudo`);
+    }
+
+    const bossDef =
+      this.mode === 'bosschase' || this.bossPhasesClearedRun > 0 || this.bossDefeatedId
+        ? getBossById(this.activeBossId)
+        : null;
 
     this.onRunComplete({
       victory,
@@ -5722,6 +6806,7 @@ export class MetroRushEngine {
       districtId: this.district.id,
       characterId: this.save.selectedCharacterId,
       eventId: this.activeEventId,
+      activeRunContext: { ...this.activeRunContext },
       score: this.score,
       distance: this.distance,
       durationSec: this.runDurationSec,
@@ -5734,6 +6819,14 @@ export class MetroRushEngine {
       vehicles: this.vehiclesCount,
       dronesEvaded: this.dronesEvadedRun,
       enemiesEliminated: this.dronesEvadedRun,
+      obstaclesDodged: this.obstaclesDodgedRun,
+      trainsPassed: this.trainsPassedRun,
+      shieldBreaks: this.shieldBreaksRun,
+      doubleJumps: this.doubleJumpsRun,
+      parkourChains: this.parkourChainsRun,
+      bossPhasesCleared: this.bossPhasesClearedRun,
+      bossPhaseReached: bossDef ? this.bossPhase : 0,
+      bossEncounteredId: bossDef ? bossDef.id : null,
       revivesUsed: this.revivesUsedRun,
       talismanAutoRevives: this.talismanUsedRun ? 1 : 0,
       storyChapterPlayed: this.mode === 'story' ? this.storyChapterNum : null,
@@ -5852,6 +6945,9 @@ export class MetroRushEngine {
       this.mode === 'bosschase' || this.randomBossActive
         ? getBossById(this.activeBossId)
         : null;
+    const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
+    const ridingVehicle = this.vehicleTimer > 0;
+    const canDoubleJumpInForm = !ridingVehicle || Boolean(vDef.isShip);
     const memInfo = (
       performance as unknown as {
         memory?: { usedJSHeapSize: number };
@@ -5863,6 +6959,7 @@ export class MetroRushEngine {
       mode: this.mode,
       districtId: this.district.id,
       districtName: this.district.name,
+      laneCount: this.getLaneCount(),
       timePeriod: this.currentPeriod,
       score: Math.floor(this.score),
       distance: Math.floor(this.distance),
@@ -5873,21 +6970,41 @@ export class MetroRushEngine {
       combo: this.combo,
       comboTimer: THREE.MathUtils.clamp(this.comboTimer / 4.2, 0, 1),
       momentum: Math.floor(this.momentum),
+      boostCooldown: Number(this.sprintCooldown.toFixed(1)),
+      boostMaxCooldown: this.SPRINT_COOLDOWN_MAX,
+      boostActive: this.boostActive,
       slowMoEnergy: Math.floor(this.slowMoEnergy),
       isSlowMo: this.isSlowMo,
+      vehicleAbilityLocked: ridingVehicle,
       abilityCharge: Math.floor(this.abilityCharge),
       abilityActive: this.abilityActiveTimer > 0,
       hasShield: this.hasShield,
+      shieldCooldown: Number(this.shieldCooldown.toFixed(1)),
+      shieldMaxCooldown: this.SHIELD_COOLDOWN_MAX,
+      doubleJumpCharges: !canDoubleJumpInForm || this.doubleJumpCooldown > 0
+        ? 0
+        : this.jumpsUsed >= 2
+          ? 0
+          : 1,
+      maxDoubleJumpCharges: 1,
+      doubleJumpCooldown: Number(this.doubleJumpCooldown.toFixed(1)),
+      doubleJumpBlockedReason: !canDoubleJumpInForm
+        ? 'Bloqueado en vehículos terrestres'
+        : this.doubleJumpBlockedReason,
       hasMagnet: this.magnetTimer > 0,
       magnetTimer: this.magnetTimer,
-      isRidingVehicle: this.vehicleTimer > 0,
+      isRidingVehicle: ridingVehicle,
+      vehicleIsShip: Boolean(vDef.isShip),
       vehicleTimer: this.vehicleTimer,
       selectedVehicleId: this.save.selectedVehicleId ?? 'hover_bike',
       talismansHeld: this.liveTalismansHeld,
       reviveTokensHeld: this.liveReviveTokensHeld,
       talismanUsedRun: this.talismanUsedRun,
       revivePrompt: this.revivePrompt,
-      pursuerDistance: Math.round(this.pursuerDistance),
+      pursuerDistance:
+        this.mode === 'freerun' || this.mode === 'tutorial'
+          ? null
+          : Math.round(this.pursuerDistance),
       pursuerThreat:
         this.mode === 'freerun' || this.mode === 'tutorial'
           ? 0
@@ -5895,18 +7012,28 @@ export class MetroRushEngine {
       randomBossActive: this.randomBossActive,
       storyChapter: this.storyChapterNum,
       storyObjectiveText: this.storyObjectiveText,
-      enemiesEliminatedRun: this.dronesEvadedRun,
+      parkourFloor: this.onFloor2 ? 2 : 1,
+      parkourChain: this.parkourChainsRun,
       action,
       contextPrompt: this.contextPrompt,
       tutorialHint: this.tutorialHint,
       subtitleText: this.subtitleText,
       activeEventBanner: evt ? evt.title : null,
       activeDynamicEvent: this.activeDynamicEvent,
+      sectorTransitionLabel: this.sectorTransitionText,
+      objectiveCelebrationText: this.objectiveToastText,
       bossId: bossDef ? bossDef.id : null,
       bossName: bossDef ? bossDef.name : null,
       bossHp: this.bossHp,
       bossMaxHp: this.bossMaxHp,
       bossPhase: this.bossPhase,
+      bossPhaseName: bossDef ? this.bossPhaseName : null,
+      bossPhaseHp: this.bossPhaseHp,
+      bossPhaseMaxHp: this.bossPhaseMaxHp,
+      bossIntroActive: Boolean(bossDef && this.bossIntroTimer > 0),
+      bossIntroTitle: bossDef && this.bossIntroTimer > 0 ? this.bossIntroTitle : null,
+      bossIntroSubtitle: bossDef && this.bossIntroTimer > 0 ? this.bossIntroQuote : null,
+      bossTransitionActive: Boolean(bossDef && this.bossPhaseTransitionTimer > 0),
       bossDistance: this.bossDistance,
       timeRemaining: this.timeRemaining,
       targetDistance: this.targetDistance,
@@ -5918,6 +7045,12 @@ export class MetroRushEngine {
         (this.lowGravTimer > 0 ? 0.55 : 1),
       secretsFoundRun: this.secretsFoundRun,
       dronesEvadedRun: this.dronesEvadedRun,
+      enemiesEliminatedRun: this.dronesEvadedRun,
+      obstaclesDodgedRun: this.obstaclesDodgedRun,
+      trainsPassedRun: this.trainsPassedRun,
+      shieldBreaksRun: this.shieldBreaksRun,
+      doubleJumpsRun: this.doubleJumpsRun,
+      activeRunContext: { ...this.activeRunContext },
       fps: this.currentFps,
       frameTimeMs: this.avgFrameTimeMs,
       drawCalls: this.renderer.info.render.calls,
@@ -5950,11 +7083,24 @@ export class MetroRushEngine {
     audioEngine.stopMusic();
     this.clearChunks();
     this.clearDynamicThreats();
+    this.clearTransientVfx();
     this.clearRemoteRunners();
     this.companionFox?.dispose();
     this.playerRig?.dispose();
     this.vehicleShowcase?.dispose();
+    if (this.hangarGroup) {
+      this.scene.remove(this.hangarGroup);
+      this.hangarGroup = null;
+    }
     this.pursuerMesh?.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const m = obj as THREE.Mesh;
+        m.geometry.dispose();
+        if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+        else m.material.dispose();
+      }
+    });
+    this.captureDroneMesh?.traverse((obj) => {
       if ((obj as THREE.Mesh).isMesh) {
         const m = obj as THREE.Mesh;
         m.geometry.dispose();

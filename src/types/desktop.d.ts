@@ -1,4 +1,9 @@
-import { LanHostState, TunnelState } from '../game/types';
+import {
+  LanHostState,
+  ReleaseUpdateInfo,
+  TunnelState,
+  UpdateProgressState,
+} from '../game/types';
 
 export interface DesktopInfo {
   isElectron: boolean;
@@ -56,9 +61,26 @@ export interface MetroDesktopBridge {
     targetPort: number,
   ) => Promise<{ ok: boolean; state: TunnelState; error?: string }>;
   stopCloudflaredTunnel: () => Promise<{ ok: boolean; state: TunnelState }>;
+  checkFirewallPort: (
+    port: number,
+  ) => Promise<{ ok: boolean; supported: boolean; allowed: boolean; ruleName?: string }>;
+  allowFirewallPort: (
+    port: number,
+  ) => Promise<{ ok: boolean; allowed?: boolean; message?: string; error?: string }>;
   quitApp: () => Promise<{ ok: boolean }>;
   restartLocalServer: () => Promise<{ ok: boolean; port?: number }>;
+  checkForUpdates: (repo?: string) => Promise<ReleaseUpdateInfo>;
+  downloadUpdate: (
+    info: ReleaseUpdateInfo,
+  ) => Promise<{ ok: boolean; filePath?: string; error?: string }>;
+  installUpdate: (
+    installerPath: string,
+    targetVersion?: string,
+  ) => Promise<{ ok: boolean; snapshotDir?: string; error?: string }>;
+  getUpdateState: () => Promise<UpdateProgressState>;
+  openExternalUrl: (url: string) => Promise<{ ok: boolean; error?: string }>;
   onServerStatus: (callback: (evt: DesktopServerStatusEvent) => void) => () => void;
+  onUpdateProgress: (callback: (evt: UpdateProgressState) => void) => () => void;
 }
 
 declare global {

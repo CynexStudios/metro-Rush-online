@@ -10,6 +10,7 @@ import {
   NetworkConnectionMode,
   PersistentInviteRecord,
   PlayerSaveData,
+  ReleaseUpdateInfo,
   RoomRulesConfig,
   TunnelState,
   VehicleId,
@@ -627,12 +628,18 @@ export function mergeSavesWithoutDuplication(
   localSave: PlayerSaveData,
   onlineSave: PlayerSaveData,
 ): PlayerSaveData {
-  const vehicles = ['hover_bike', 'cyber_coupe', 'quantum_glider', 'titan_rammer'] as VehicleId[];
+  const vehicles = [
+    'hover_bike',
+    'cyber_coupe',
+    'quantum_glider',
+    'titan_rammer',
+    'star_viper',
+  ] as VehicleId[];
   const vehicleUpgrades = { ...localSave.vehicleUpgrades };
   for (const v of vehicles) {
     vehicleUpgrades[v] = Math.max(
-      localSave.vehicleUpgrades?.[v] ?? 1,
-      onlineSave.vehicleUpgrades?.[v] ?? 1,
+      localSave.vehicleUpgrades?.[v] ?? 0,
+      onlineSave.vehicleUpgrades?.[v] ?? 0,
     );
   }
 
@@ -696,6 +703,12 @@ export function mergeSavesWithoutDuplication(
     claimableMissions,
     completedEvents: unionArrays(localSave.completedEvents, onlineSave.completedEvents),
     defeatedBosses: unionArrays(localSave.defeatedBosses, onlineSave.defeatedBosses),
+    customBossMeta: {
+      ...(onlineSave.customBossMeta ?? {}),
+      ...(localSave.customBossMeta ?? {}),
+    },
+    useCustomBossModels:
+      localSave.useCustomBossModels ?? onlineSave.useCustomBossModels ?? true,
     unlockedAchievements: unionArrays(localSave.unlockedAchievements, onlineSave.unlockedAchievements),
     storyChapter: Math.max(localSave.storyChapter, onlineSave.storyChapter),
     tutorialCompleted: localSave.tutorialCompleted || onlineSave.tutorialCompleted,
@@ -769,7 +782,57 @@ export function mergeSavesWithoutDuplication(
         localSave.stats.mpBestPlacement > 0 && onlineSave.stats.mpBestPlacement > 0
           ? Math.min(localSave.stats.mpBestPlacement, onlineSave.stats.mpBestPlacement)
           : Math.max(localSave.stats.mpBestPlacement ?? 0, onlineSave.stats.mpBestPlacement ?? 0),
+      shieldBreaks: Math.max(localSave.stats.shieldBreaks ?? 0, onlineSave.stats.shieldBreaks ?? 0),
+      doubleJumps: Math.max(localSave.stats.doubleJumps ?? 0, onlineSave.stats.doubleJumps ?? 0),
+      parkourChains: Math.max(localSave.stats.parkourChains ?? 0, onlineSave.stats.parkourChains ?? 0),
+      bossPhasesCleared: Math.max(
+        localSave.stats.bossPhasesCleared ?? 0,
+        onlineSave.stats.bossPhasesCleared ?? 0,
+      ),
+      fiveLaneDistance: Math.max(
+        localSave.stats.fiveLaneDistance ?? 0,
+        onlineSave.stats.fiveLaneDistance ?? 0,
+      ),
+      obstaclesDodged: Math.max(
+        localSave.stats.obstaclesDodged ?? 0,
+        onlineSave.stats.obstaclesDodged ?? 0,
+      ),
+      trainsPassed: Math.max(localSave.stats.trainsPassed ?? 0, onlineSave.stats.trainsPassed ?? 0),
+      noReviveWins: Math.max(localSave.stats.noReviveWins ?? 0, onlineSave.stats.noReviveWins ?? 0),
     },
+  };
+}
+
+export async function checkReleaseUpdatesApi(repo?: string): Promise<ReleaseUpdateInfo> {
+  if (typeof window !== 'undefined' && window.metroDesktop?.checkForUpdates) {
+    return window.metroDesktop.checkForUpdates(repo);
+  }
+  try {
+    const query = repo ? `?repo=${encodeURIComponent(repo)}` : '';
+    const res = await fetch(`${getOnlineBackendUrl()}/api/updates/check${query}`, {
+      method: 'GET',
+      cache: 'no-store',
+    });
+    if (res.ok) {
+      return (await res.json()) as ReleaseUpdateInfo;
+    }
+  } catch {
+    // Fallback offline response
+  }
+  return {
+    currentVersion: GAME_VERSION,
+    latestVersion: GAME_VERSION,
+    hasUpdate: false,
+    repo: repo || 'CynexStudios/metro-Rush-online',
+    releaseUrl: `https://github.com/${repo || 'CynexStudios/metro-Rush-online'}/releases/latest`,
+    downloadUrl: null,
+    assetName: null,
+    sizeBytes: null,
+    sha256: null,
+    releaseDate: null,
+    releaseNotes: '',
+    source: 'offline',
+    error: 'Sin conexión con el servidor de comprobación de actualizaciones.',
   };
 }
 
@@ -1291,24 +1354,80 @@ export async function fetchOnlineEvents(): Promise<WeeklyChallengeInfo | null> {
 
 /* ---------------- REAL WEBSOCKET MULTIPLAYER CLIENT (LAN + INTERNET + TUNNEL) ---------------- */
 
+export function parseQuickConnectInput(rawInput: string): {
+  targetAddr: string;
+  roomCode?: string;
+} {
+  const trimmed = rawInput.trim();
+  const hashIdx = trimmed.indexOf('#');
+  if (hashIdx >= 0) {
+    const addr = trimmed.slice(0, hashIdx).trim();
+    const code = trimmed
+      .slice(hashIdx + 1)
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9]/g, '');
+    return {
+      targetAddr: addr,
+      roomCode: code.length >= 4 ? code.slice(0, 8) : undefined,
+    };
+  }
+  return { targetAddr: trimmed };
+}
+
+export function wsUrlToHttpBase(wsUrl: string): string | null {
+  try {
+    const u = new URL(normalizeWsTargetUrl(wsUrl));
+    const proto = u.protocol === 'wss:' ? 'https:' : 'http:';
+    return `${proto}//${u.host}`;
+  } catch {
+    return null;
+  }
+}
+
+export interface RemoteHostProbeResult {
+  ok: boolean;
+  httpBase?: string;
+  gameVersion?: string | null;
+  rooms?: PublicRoomListing[];
+  activeRoomCount?: number | null;
+  reason?: string;
+  error?: string;
+}
+
+export async function probeRemoteHost(target: string): Promise<RemoteHostProbeResult> {
+  const res = await apiFetch<RemoteHostProbeResult>('/api/net/probe', {
+    method: 'POST',
+    body: JSON.stringify({ target }),
+  });
+  if (!res.ok || !res.data) {
+    return { ok: false, error: res.error || 'No se pudo diagnosticar la conexión.' };
+  }
+  return res.data;
+}
+
 export function normalizeWsTargetUrl(rawInput?: string): string {
-  const trimmed = (rawInput || '').trim();
-  if (!trimmed) {
+  const { targetAddr } = parseQuickConnectInput(rawInput || '');
+  if (!targetAddr) {
     const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${proto}//${window.location.host}/ws`;
   }
-  let url = trimmed;
+  let url = targetAddr;
   if (url.startsWith('http://')) {
     url = `ws://${url.slice(7)}`;
   } else if (url.startsWith('https://')) {
     url = `wss://${url.slice(8)}`;
   } else if (!url.startsWith('ws://') && !url.startsWith('wss://')) {
-    // Host/IP:port shorthand (e.g. 192.168.1.35:3077 or host.playit.gg)
+    // If bare IPv4 without port (e.g. 26.35.27.51 or 192.168.1.45), default to port 3077
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(url)) {
+      url = `${url}:3077`;
+    }
     const isLocalOrIp =
       /^(localhost|127\.|10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/i.test(url) ||
       /^\d{1,3}(\.\d{1,3}){3}(:\d+)?/.test(url);
     url = `${isLocalOrIp ? 'ws' : 'wss'}://${url}`;
   }
+  // Remove trailing slashes, normalize /ws/ -> /ws
   url = url.replace(/\/+$/, '');
   if (!url.endsWith('/ws')) {
     url = `${url}/ws`;
@@ -1385,7 +1504,7 @@ class MultiplayerWsClient {
     optsOrGuestName:
       | string
       | { targetUrl?: string; guestName?: string; clientId?: string } = 'RUNNER_PC',
-    timeoutMs = 7000,
+    timeoutMs = 11500,
   ): Promise<boolean> {
     const opts =
       typeof optsOrGuestName === 'string' ? { guestName: optsOrGuestName } : optsOrGuestName;
@@ -1475,8 +1594,10 @@ class MultiplayerWsClient {
     }
 
     this.ws = ws;
+    let errorNotified = false;
     this.connectTimeoutTimer = window.setTimeout(() => {
       if (ws.readyState === WebSocket.CONNECTING) {
+        errorNotified = true;
         try {
           ws.close();
         } catch {
@@ -1485,12 +1606,12 @@ class MultiplayerWsClient {
         this.resolveConnectWaiters(false);
         this.listeners.forEach((l) =>
           l.onNotice?.(
-            `Tiempo agotado conectando a ${nextUrl}. Revisa que la IP/puerto estén abiertos y el firewall lo permita.`,
+            `Tiempo agotado conectando a ${nextUrl}. Revisa que la IP/puerto estén abiertos y el Firewall de Windows permita el puerto 3077.`,
             true,
           ),
         );
       }
-    }, 6500);
+    }, 10500);
 
     ws.onopen = () => {
       if (this.connectTimeoutTimer !== null) {
@@ -1503,12 +1624,15 @@ class MultiplayerWsClient {
 
     ws.onerror = () => {
       this.resolveConnectWaiters(false);
-      this.listeners.forEach((l) =>
-        l.onNotice?.(
-          `No se pudo establecer conexión WebSocket con ${nextUrl}.`,
-          true,
-        ),
-      );
+      if (!errorNotified) {
+        errorNotified = true;
+        this.listeners.forEach((l) =>
+          l.onNotice?.(
+            `No se pudo establecer conexión WebSocket con ${nextUrl}.`,
+            true,
+          ),
+        );
+      }
     };
 
     ws.onmessage = (evt) => {

@@ -19,7 +19,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
-import { CHARACTERS, getCharacterById } from '../game/data';
+import { CHARACTERS, DISTRICTS, getCharacterById, VEHICLES } from '../game/data';
 import { createInitialSave, xpRequiredForLevel } from '../game/storage';
 import { LocalProfileSummary, PlayerSaveData } from '../game/types';
 import {
@@ -398,7 +398,7 @@ export const UserProfileView: React.FC<UserProfileViewProps> = ({
             </div>
           </div>
           <div className="text-xs font-mono-num text-slate-400 pt-1">
-            {save.unlockedCharacters.length}/8 corredores · {save.unlockedDistricts.length}/7 distritos · {save.ownedVehicles.length}/4 vehículos
+            {save.unlockedCharacters.length}/{CHARACTERS.length} corredores · {save.unlockedDistricts.length}/{DISTRICTS.length} distritos · {save.ownedVehicles.length}/{VEHICLES.length} vehículos
           </div>
         </div>
       </div>

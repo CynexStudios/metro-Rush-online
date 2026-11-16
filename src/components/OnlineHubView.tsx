@@ -93,6 +93,8 @@ import {
   normalizeWsTargetUrl,
   OnlineRankingEntry,
   OnlineUser,
+  parseQuickConnectInput,
+  probeRemoteHost,
   PublicRoomListing,
   RankingScope,
   recoverOnlinePassword,
@@ -112,6 +114,7 @@ import {
   syncSaveToSqlite,
   updateOnlineAvatar,
   WeeklyChallengeInfo,
+  wsUrlToHttpBase,
 } from '../services/onlineClient';
 import { rtcClient, RtcPeerStatus } from '../services/rtcClient';
 
@@ -134,6 +137,7 @@ interface OnlineHubViewProps {
   ) => Promise<void>;
   onDismissConflict: () => void;
   onDismissInvite: () => void;
+  onClearNotice?: () => void;
   onOnlineUserChange: (user: OnlineUser | null) => void;
   onSwitchLocalProfile: (profileId: string, nextSave: PlayerSaveData) => void;
   onReplaceSave: (next: PlayerSaveData) => void;
@@ -180,6 +184,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   onResolveConflict,
   onDismissConflict,
   onDismissInvite,
+  onClearNotice,
   onOnlineUserChange,
   onSwitchLocalProfile,
   onReplaceSave,
@@ -232,6 +237,11 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   const [internetWsInput, setInternetWsInput] = useState('');
   const [tunnelState, setTunnelState] = useState<TunnelState | null>(null);
   const [tunnelBusy, setTunnelBusy] = useState(false);
+  const [firewallStatus, setFirewallStatus] = useState<{
+    supported: boolean;
+    allowed: boolean;
+    busy?: boolean;
+  } | null>(null);
 
   // User search & persistent invites
   const [userSearchQuery, setUserSearchQuery] = useState('');
@@ -298,6 +308,32 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     setTunnelState(tState);
   }, []);
 
+  const refreshFirewallStatus = useCallback(async () => {
+    if (!window.metroDesktop?.checkFirewallPort) return;
+    const portNum = Math.min(65535, Math.max(1024, Math.floor(Number(lanPort) || 3077)));
+    const st = await window.metroDesktop.checkFirewallPort(portNum);
+    if (st.ok) {
+      setFirewallStatus({ supported: st.supported, allowed: st.allowed });
+    }
+  }, [lanPort]);
+
+  const handleAllowFirewallPort = async () => {
+    if (!window.metroDesktop?.allowFirewallPort) return;
+    const portNum = Math.min(65535, Math.max(1024, Math.floor(Number(lanPort) || 3077)));
+    setFirewallStatus((prev) => ({
+      supported: prev?.supported ?? true,
+      allowed: prev?.allowed ?? false,
+      busy: true,
+    }));
+    const res = await window.metroDesktop.allowFirewallPort(portNum);
+    await refreshFirewallStatus();
+    setLocalMpMsg(
+      res.ok
+        ? res.message || `Puerto TCP ${portNum} habilitado en Firewall de Windows.`
+        : res.error || 'No se pudo habilitar la regla de Firewall.',
+    );
+  };
+
   const refreshInvitesList = useCallback(async () => {
     if (!serverOnline || !onlineUser) {
       setIncomingInvites([]);
@@ -327,15 +363,25 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   const loadDbAndRooms = useCallback(async () => {
     if (!serverOnline) return;
-    const [info, rooms] = await Promise.all([fetchDatabaseInfo(), fetchPublicRooms()]);
+    const remoteHttp = mpTargetUrl ? wsUrlToHttpBase(mpTargetUrl) : null;
+    const isExternalOrLanHost =
+      Boolean(remoteHttp) &&
+      remoteHttp !== window.location.origin;
+    const [info, rooms] = await Promise.all([
+      fetchDatabaseInfo(),
+      isExternalOrLanHost && remoteHttp
+        ? fetchPublicRooms(remoteHttp)
+        : fetchPublicRooms(),
+    ]);
     if (info) setDbInfo(info);
     setPublicRooms(rooms);
-  }, [serverOnline]);
+  }, [serverOnline, mpTargetUrl]);
 
   useEffect(() => {
     void refreshLocalProfiles();
     void refreshLanState();
     void refreshTunnelState();
+    void refreshFirewallStatus();
     void rtcClient.refreshIceConfig().then((cfg) => {
       setRtcSummary({
         hasTurn: cfg.hasTurn,
@@ -344,7 +390,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       });
     });
     return rtcClient.subscribe(setRtcPeers);
-  }, [refreshLocalProfiles, refreshLanState, refreshTunnelState]);
+  }, [refreshLocalProfiles, refreshLanState, refreshTunnelState, refreshFirewallStatus]);
 
   useEffect(() => {
     void refreshInvitesList();
@@ -372,6 +418,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   const handleStartLanHost = async (preferredBind?: string) => {
     setLanError(null);
+    onClearNotice?.();
     const parsedPort = Number(lanPort);
     if (!Number.isInteger(parsedPort) || parsedPort < 1024 || parsedPort > 65535) {
       setLanError('El puerto debe estar entre 1024 y 65535.');
@@ -399,7 +446,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     });
     setLocalMpMsg(
       ok
-        ? `Servidor de partida activo en puerto ${parsedPort}. Conectado como anfitrión local (127.0.0.1:${parsedPort}).`
+        ? `Servidor de partida activo en puerto ${parsedPort} (LAN y VPN listos).`
         : `Servidor activo en puerto ${parsedPort}, pero falló la conexión del cliente local.`,
     );
     return ok;
@@ -407,6 +454,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   const handleStopLanHost = async () => {
     setLanBusy(true);
+    onClearNotice?.();
     const res = await stopLanHost();
     setLanBusy(false);
     if (res.state) setLanState(res.state);
@@ -422,6 +470,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   const handleStartTunnel = async () => {
     setTunnelBusy(true);
     setLanError(null);
+    onClearNotice?.();
     const parsedPort = Number(lanPort) || 3077;
     if (!lanState?.running) {
       const startedHost = await handleStartLanHost('0.0.0.0');
@@ -436,7 +485,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     if (res.ok && res.state.wssUrl) {
       audioEngine.playClaimReward();
       setLocalMpMsg(
-        `Túnel público activo: ${res.state.wssUrl}. Compártelo con tus amigos junto al código de sala.`,
+        `Túnel público listo y verificado: ${res.state.wssUrl}. Compártelo con tus amigos junto al código de sala.`,
       );
     } else {
       setLocalMpMsg(res.error || res.state.error || 'No se pudo iniciar cloudflared.');
@@ -452,32 +501,95 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   };
 
   const handleConnectCustomEndpoint = async (rawAddr: string, optionalCode?: string) => {
-    const clean = rawAddr.trim();
+    const parsedInput = parseQuickConnectInput(rawAddr);
+    const clean = parsedInput.targetAddr;
+    const targetCode = optionalCode?.trim().toUpperCase() || parsedInput.roomCode;
+    if (parsedInput.roomCode && !optionalCode?.trim()) {
+      setJoinCodeInput(parsedInput.roomCode);
+    }
     if (!clean) {
-      setLocalMpMsg('Introduce una dirección IP:Puerto o URL WebSocket/Túnel.');
+      setLocalMpMsg('Introduce una dirección IP:Puerto, URL WebSocket o invitación rápida.');
       return;
     }
+    onClearNotice?.();
     const wsUrl = normalizeWsTargetUrl(clean);
     audioEngine.playUiClick(true);
-    setLocalMpMsg(`Conectando a ${wsUrl}...`);
+    setLocalMpMsg(`Verificando conectividad con ${wsUrl}...`);
+
+    // Real TCP/HTTP reachability diagnostic first (avoids blind WebSocket hangs and detects firewall/DNS delays)
+    let probe = await probeRemoteHost(clean);
+    if (!probe.ok && (probe.reason === 'dns_not_ready' || probe.reason === 'tunnel_origin_offline')) {
+      setLocalMpMsg('El túnel está terminando de propagarse, reintentando en 2s...');
+      await new Promise((r) => setTimeout(r, 2000));
+      probe = await probeRemoteHost(clean);
+    }
+
+    if (probe.error && probe.reason && probe.reason !== 'network_error') {
+      setLocalMpMsg(probe.error);
+      return;
+    }
+
+    if (probe.ok && Array.isArray(probe.rooms)) {
+      setPublicRooms(probe.rooms);
+    }
+
+    setLocalMpMsg(`Conectando WebSocket a ${wsUrl}...`);
     const ok = await mpClient.connectAsync({
       targetUrl: wsUrl,
       guestName: onlineUser?.username || save.playerName,
     });
     if (!ok) {
       setLocalMpMsg(
-        `No se pudo conectar a ${wsUrl}. Verifica la IP/túnel, el código y que el firewall permita el puerto.`,
+        probe.error ||
+          `No se pudo conectar a ${wsUrl}. Verifica la IP/túnel, el código y que el Firewall de Windows del anfitrión permita el puerto 3077.`,
       );
       return;
     }
-    setLocalMpMsg(`Conectado a ${wsUrl}.`);
-    if (optionalCode) {
-      mpClient.joinRoom(optionalCode.trim().toUpperCase(), save.selectedCharacterId);
+    if (targetCode) {
+      setLocalMpMsg(`Conectado a ${wsUrl}. Entrando en sala ${targetCode}...`);
+      mpClient.joinRoom(targetCode, save.selectedCharacterId);
+    } else if (probe.ok && probe.rooms && probe.rooms.length === 1) {
+      const found = probe.rooms[0];
+      setJoinCodeInput(found.code);
+      setLocalMpMsg(
+        `¡Conectado a ${wsUrl}! Sala detectada: "${found.name}" (${found.code}). Pulsa Entrar o Unirse abajo.`,
+      );
+    } else if (probe.ok && probe.activeRoomCount === 0) {
+      setLocalMpMsg(
+        `¡Conectado a ${wsUrl}! El anfitrión todavía no ha creado una sala (pídele que pulse "Crear Sala").`,
+      );
+    } else {
+      setLocalMpMsg(`Conectado correctamente a ${wsUrl}.`);
     }
+    void loadDbAndRooms();
   };
 
   const handleCreateRoomAction = async (modeKind: NetworkConnectionMode) => {
     audioEngine.playUiClick(true);
+    onClearNotice?.();
+
+    const targetLanPort = Math.min(65535, Math.max(1024, Math.floor(Number(lanPort) || 3077)));
+    const expectedLocalWs = `ws://127.0.0.1:${targetLanPort}/ws`;
+    let isRemoteTarget = false;
+    try {
+      const parsed = new URL(mpTargetUrl || expectedLocalWs);
+      isRemoteTarget =
+        parsed.hostname !== '127.0.0.1' &&
+        parsed.hostname !== 'localhost' &&
+        parsed.host !== window.location.host;
+    } catch {
+      isRemoteTarget = false;
+    }
+
+    // Auto-start host server on 0.0.0.0:3077 so rooms are NEVER trapped on the private internal Electron port
+    if (!isRemoteTarget && (!lanState?.running || mpTargetUrl !== expectedLocalWs)) {
+      const started = await handleStartLanHost('0.0.0.0');
+      if (!started) {
+        setLocalMpMsg('No se pudo abrir el puerto anfitrión para crear la sala.');
+        return;
+      }
+    }
+
     const payload = {
       name: roomNameInput.trim() || undefined,
       isPublic: roomIsPublic,
@@ -507,6 +619,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     const clean = code.trim().toUpperCase();
     if (!clean) return;
     audioEngine.playUiClick(true);
+    onClearNotice?.();
     const ok = await mpClient.connectAsync({
       guestName: onlineUser?.username || save.playerName,
     });
@@ -969,14 +1082,15 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
           }`}
         >
           <span>{mpNotice?.text || localMpMsg}</span>
-          {localMpMsg && (
-            <button
-              onClick={() => setLocalMpMsg(null)}
-              className="text-slate-400 hover:text-white cursor-pointer"
-            >
-              Cerrar
-            </button>
-          )}
+          <button
+            onClick={() => {
+              setLocalMpMsg(null);
+              onClearNotice?.();
+            }}
+            className="text-slate-300 hover:text-white font-semibold shrink-0 cursor-pointer"
+          >
+            Cerrar
+          </button>
         </div>
       )}
 
@@ -1229,6 +1343,23 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                       >
                         Detectar IPs
                       </button>
+                      {isElectron && firewallStatus?.supported && (
+                        <button
+                          disabled={firewallStatus.busy}
+                          onClick={() => void handleAllowFirewallPort()}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold cursor-pointer ${
+                            firewallStatus.allowed
+                              ? 'bg-emerald-500/15 border border-emerald-400/40 text-emerald-200'
+                              : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                          }`}
+                        >
+                          {firewallStatus.busy
+                            ? 'Abriendo Firewall...'
+                            : firewallStatus.allowed
+                              ? `Firewall TCP ${lanPort} OK`
+                              : `Abrir Puerto ${lanPort} en Firewall`}
+                        </button>
+                      )}
                     </div>
 
                     {lanState?.running && (
@@ -1260,13 +1391,13 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                       Unirse a Anfitrión LAN (IP:Puerto)
                     </div>
                     <p className="text-xs text-slate-400">
-                      Introduce la IP local y puerto del jugador anfitrión (por ejemplo <span className="font-mono-num text-slate-200">192.168.1.45:3077</span>) y el código de sala.
+                      Pega la IP local (el puerto <span className="font-mono-num text-slate-200">:3077</span> es automático) o la invitación completa <span className="font-mono-num text-cyan-300">192.168.1.45:3077#CODIGO</span>.
                     </p>
                     <input
                       type="text"
                       value={directJoinAddr}
                       onChange={(e) => setDirectJoinAddr(e.target.value)}
-                      placeholder="IP:Puerto del anfitrión (ej. 192.168.1.45:3077)"
+                      placeholder="192.168.1.45 o 192.168.1.45:3077#CODIGO"
                       className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
                     />
                     <div className="flex gap-2">
@@ -1372,6 +1503,23 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                           Cerrar Servidor ({lanState.port})
                         </button>
                       )}
+                      {isElectron && firewallStatus?.supported && (
+                        <button
+                          disabled={firewallStatus.busy}
+                          onClick={() => void handleAllowFirewallPort()}
+                          className={`px-3 py-2 rounded-lg text-xs font-bold cursor-pointer ${
+                            firewallStatus.allowed
+                              ? 'bg-emerald-500/15 border border-emerald-400/40 text-emerald-200'
+                              : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                          }`}
+                        >
+                          {firewallStatus.busy
+                            ? 'Abriendo Firewall...'
+                            : firewallStatus.allowed
+                              ? `Firewall TCP ${lanState?.port || lanPort} OK`
+                              : `Abrir Puerto ${lanState?.port || lanPort} en Firewall`}
+                        </button>
+                      )}
                     </div>
                   </div>
 
@@ -1380,13 +1528,13 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                       Unirse a Amigo por VPN Virtual
                     </div>
                     <p className="text-xs text-slate-400">
-                      Pega la IP virtual que aparece junto al nombre de tu amigo en Radmin/ZeroTier/Tailscale (p. ej. <span className="font-mono-num text-slate-200">26.42.19.8:3077</span> o <span className="font-mono-num text-slate-200">100.80.12.4:3077</span>).
+                      Pega la IP de Radmin/ZeroTier/Tailscale de tu amigo (sin puerto usa <span className="font-mono-num text-slate-200">:3077</span>) o su invitación <span className="font-mono-num text-emerald-300">26.35.27.51:3077#CODIGO</span>.
                     </p>
                     <input
                       type="text"
                       value={vpnJoinAddr}
                       onChange={(e) => setVpnJoinAddr(e.target.value)}
-                      placeholder="IP_VPN:Puerto (ej. 26.42.19.8:3077)"
+                      placeholder="26.35.27.51 o 26.35.27.51:3077#CODIGO"
                       className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
                     />
                     <div className="flex gap-2">
@@ -1500,13 +1648,13 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                       <Globe className="w-4 h-4 text-cyan-400" /> Conectar a Túnel o Servidor Internet
                     </div>
                     <p className="text-xs text-slate-300">
-                      Pega aquí la URL <span className="font-mono-num text-cyan-300">wss://...</span> de cloudflared, playit.gg o dirección pública del anfitrión.
+                      Pega aquí la URL <span className="font-mono-num text-cyan-300">wss://...</span> de cloudflared, playit.gg o invitación completa (<span className="font-mono-num text-emerald-300">wss://...#CODIGO</span>).
                     </p>
                     <input
                       type="text"
                       value={internetWsInput}
                       onChange={(e) => setInternetWsInput(e.target.value)}
-                      placeholder="wss://subdominio.trycloudflare.com o host.playit.gg:puerto"
+                      placeholder="wss://subdominio.trycloudflare.com o wss://...#CODIGO"
                       className="w-full bg-[#070b17] border border-white/15 rounded-lg px-3 py-2 text-xs font-mono-num text-white outline-none focus:border-cyan-400"
                     />
                     <div className="flex gap-2">
@@ -1897,6 +2045,119 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
                   </button>
                 </div>
               </div>
+
+              {/* Host Share Box inside Lobby (1-Click Quick Invite + Windows Firewall + Cloudflare Tunnel) */}
+              {isHost && (
+                <div className="p-3.5 rounded-lg bg-[#070b17] border border-emerald-500/35 space-y-2.5 text-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="font-bold text-emerald-300 flex items-center gap-1.5">
+                      <Wifi className="w-4 h-4" />
+                      Cómo entra tu amigo a esta sala ({mpRoom.code}):
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {isElectron && firewallStatus?.supported && (
+                        <button
+                          disabled={firewallStatus.busy}
+                          onClick={() => void handleAllowFirewallPort()}
+                          className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1 cursor-pointer ${
+                            firewallStatus.allowed
+                              ? 'bg-emerald-500/15 border border-emerald-400/40 text-emerald-200'
+                              : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                          }`}
+                        >
+                          <Shield className="w-3 h-3" />
+                          {firewallStatus.busy
+                            ? 'Abriendo Firewall...'
+                            : firewallStatus.allowed
+                              ? `Firewall TCP ${lanState?.port || lanPort} OK`
+                              : `Abrir Puerto ${lanState?.port || lanPort} en Firewall`}
+                        </button>
+                      )}
+                      {isElectron && !tunnelState?.running && (
+                        <button
+                          disabled={tunnelBusy}
+                          onClick={() => void handleStartTunnel()}
+                          className="px-2.5 py-1 rounded bg-cyan-500/20 border border-cyan-400/50 hover:bg-cyan-500/30 text-cyan-200 text-[11px] font-bold cursor-pointer"
+                        >
+                          {tunnelBusy ? 'Iniciando túnel...' : 'Crear Enlace Internet (cloudflared)'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 font-mono-num text-[11px]">
+                    {vpnOnlyIps.slice(0, 2).map((v) => {
+                      const quick = `${v.address}:${lanState?.port || lanPort}#${mpRoom.code}`;
+                      return (
+                        <div
+                          key={v.address}
+                          className="p-2 rounded bg-[#0b1224] border border-emerald-400/35 flex items-center justify-between gap-2"
+                        >
+                          <div className="truncate">
+                            <span className="text-emerald-300 font-sans font-bold">VPN ({v.label || 'Radmin'}): </span>
+                            <span className="text-white">{quick}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(quick);
+                              setLocalMpMsg(`Invitación VPN rápida copiada: ${quick}`);
+                            }}
+                            className="px-2 py-1 rounded bg-emerald-400 text-slate-950 font-sans font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            Copiar Invitación
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    {lanOnlyIps.slice(0, 2).map((l) => {
+                      const quick = `${l.address}:${lanState?.port || lanPort}#${mpRoom.code}`;
+                      return (
+                        <div
+                          key={l.address}
+                          className="p-2 rounded bg-[#0b1224] border border-white/10 flex items-center justify-between gap-2"
+                        >
+                          <div className="truncate">
+                            <span className="text-cyan-300 font-sans font-bold">LAN: </span>
+                            <span className="text-white">{quick}</span>
+                          </div>
+                          <button
+                            onClick={() => {
+                              void navigator.clipboard?.writeText(quick);
+                              setLocalMpMsg(`Invitación LAN rápida copiada: ${quick}`);
+                            }}
+                            className="px-2 py-1 rounded bg-white/10 hover:bg-white/20 text-cyan-200 font-sans font-bold text-[10px] shrink-0 cursor-pointer"
+                          >
+                            Copiar
+                          </button>
+                        </div>
+                      );
+                    })}
+
+                    {tunnelState?.running && tunnelState.wssUrl && (
+                      <div className="md:col-span-2 p-2 rounded bg-cyan-950/30 border border-cyan-400/40 flex items-center justify-between gap-2">
+                        <div className="truncate">
+                          <span className="text-cyan-300 font-sans font-bold">Túnel Internet: </span>
+                          <span className="text-white">{`${tunnelState.wssUrl}#${mpRoom.code}`}</span>
+                        </div>
+                        <button
+                          onClick={() => {
+                            const quick = `${tunnelState.wssUrl}#${mpRoom.code}`;
+                            void navigator.clipboard?.writeText(quick);
+                            setLocalMpMsg(`Enlace rápido del túnel copiado: ${quick}`);
+                          }}
+                          className="px-2.5 py-1 rounded bg-cyan-400 text-slate-950 font-sans font-bold text-[10px] shrink-0 cursor-pointer"
+                        >
+                          Copiar Enlace + Código
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Tu amigo solo pega esa línea completa (<span className="font-mono-num text-slate-200">IP:Puerto#CODIGO</span>) en su casilla de conexión y entra directo sin pasos extra.
+                  </div>
+                </div>
+              )}
 
               {/* Host Configuration + Rules + Invite */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">

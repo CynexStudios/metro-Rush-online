@@ -7,8 +7,11 @@ import {
   Car,
   Check,
   Cpu,
+  Download,
+  FileBox,
   Globe,
   Info,
+  Layers,
   Lock,
   Map as MapIcon,
   Play,
@@ -19,6 +22,7 @@ import {
   Sun,
   Swords,
   Target,
+  Trash2,
   Upload,
   User,
   UserCheck,
@@ -38,16 +42,26 @@ import {
   LIVE_EVENTS,
 } from '../game/data';
 import {
+  checkUnlockRequirement,
   getPendingRewardCount,
   purchaseCharacter,
   unlockOrSelectDistrict,
 } from '../game/economy';
-import { getCustomGlbInfo, parseCustomGlbFile } from '../game/gltfAssets';
+import {
+  buildBossBlenderTemplateJson,
+  getCustomBossEntry,
+  getCustomGlbInfo,
+  parseCustomGlbFile,
+  removeCustomBossGlb,
+  setCustomBossEnabledState,
+  validateAndStoreCustomBossGlb,
+} from '../game/gltfAssets';
 import { ASSET_LICENSES } from '../game/hardware';
 import {
   AccountSyncConflict,
   BossId,
   ConflictResolutionStrategy,
+  CustomBossValidationResult,
   DistrictId,
   HardwareDiagnostics,
   HudSnapshot,
@@ -56,8 +70,11 @@ import {
   PCSettings,
   PlayerModelStyle,
   PlayerSaveData,
+  ReleaseUpdateInfo,
   TimeOfDay,
+  UpdateProgressState,
 } from '../game/types';
+import { GAME_VERSION } from '../game/version';
 import { getCityLabel, getTimeLabel, t } from '../i18n';
 import { OnlineUser, RoomInviteNotice } from '../services/onlineClient';
 import { BattlePassView } from './BattlePassView';
@@ -108,6 +125,7 @@ interface MainMenuModalProps {
   ) => Promise<void>;
   onDismissConflict: () => void;
   onDismissInvite: () => void;
+  onClearNotice?: () => void;
   previewBossId: BossId;
   onSelectBossPreview: (bossId: BossId) => void;
   onOnlineUserChange: (user: OnlineUser | null) => void;
@@ -116,6 +134,11 @@ interface MainMenuModalProps {
   onVideoChangeWithConfirm: (next: PCSettings, prev: PCSettings) => void;
   onRunBenchmark: () => Promise<number>;
   onReloadCustomGlb?: () => void;
+  updateInfo?: ReleaseUpdateInfo | null;
+  updateState?: UpdateProgressState;
+  onCheckForUpdates?: (repo?: string) => Promise<ReleaseUpdateInfo>;
+  onDownloadUpdate?: (info?: ReleaseUpdateInfo) => Promise<void>;
+  onInstallUpdate?: () => Promise<void>;
   onTabChange: (tab: MenuTab) => void;
   onClose: () => void;
   onDeployDistrict: (districtId: DistrictId) => void;
@@ -155,6 +178,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   onResolveConflict,
   onDismissConflict,
   onDismissInvite,
+  onClearNotice,
   previewBossId,
   onSelectBossPreview,
   onOnlineUserChange,
@@ -163,6 +187,11 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   onVideoChangeWithConfirm,
   onRunBenchmark,
   onReloadCustomGlb,
+  updateInfo,
+  updateState,
+  onCheckForUpdates,
+  onDownloadUpdate,
+  onInstallUpdate,
   onTabChange,
   onClose,
   onDeployDistrict,
@@ -173,6 +202,9 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   const [tab, setTab] = useState<MenuTab>(initialTab);
   const [eventsSub, setEventsSub] = useState<'bosses' | 'events'>('bosses');
   const [glbUploadMsg, setGlbUploadMsg] = useState<string | null>(null);
+  const [bossValidation, setBossValidation] =
+    useState<CustomBossValidationResult | null>(null);
+  const [charNotice, setCharNotice] = useState<string | null>(null);
 
   const lang = save.settings.language;
   const pending = getPendingRewardCount(save);
@@ -195,6 +227,10 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     if (res.ok) {
       audioEngine.playUiClick(true);
       onUpdateSave(res.nextSave);
+      setCharNotice(null);
+    } else {
+      audioEngine.playUiClick();
+      setCharNotice(res.reason ?? 'No se pudo equipar/desbloquear este corredor.');
     }
   };
 
@@ -330,13 +366,19 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   {t(lang, 'nav.characters')}
                 </h2>
                 <p className="text-xs text-slate-400">
-                  8 corredores con habilidades activas únicas y estadísticas diferenciadas.
+                  {CHARACTERS.length} corredores con habilidades activas únicas, requisitos de progreso y estadísticas diferenciadas.
                 </p>
               </div>
+              {charNotice && (
+                <div className="px-3 py-2 rounded-lg bg-amber-950/40 border border-amber-400/50 text-[11px] font-semibold text-amber-200">
+                  {charNotice}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {CHARACTERS.map((ch) => {
                   const unlocked = save.unlockedCharacters.includes(ch.id);
                   const selected = save.selectedCharacterId === ch.id;
+                  const reqCheck = checkUnlockRequirement(save, ch.unlockRequirement);
                   return (
                     <button
                       key={ch.id}
@@ -365,7 +407,9 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                           ? selected
                             ? t(lang, 'common.selected')
                             : t(lang, 'common.select')
-                          : `${ch.unlockCostCoins} M / ${ch.unlockCostGems} G`}
+                          : !reqCheck.met && ch.unlockRequirement
+                            ? `Req: ${Math.min(reqCheck.current, reqCheck.target)}/${reqCheck.target}`
+                            : `${ch.unlockCostCoins.toLocaleString('es-ES')} M / ${ch.unlockCostGems} G`}
                       </div>
                     </button>
                   );
@@ -542,10 +586,10 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             <div className="pointer-events-auto w-full lg:w-[430px] bg-[#070b17]/95 border border-white/15 rounded-xl p-4 flex flex-col gap-3 max-h-full overflow-y-auto">
               <div>
                 <h2 className="font-display text-xl font-bold text-white">
-                  {t(lang, 'nav.city')} (7)
+                  {t(lang, 'nav.city')} ({DISTRICTS.length})
                 </h2>
                 <p className="text-xs text-slate-400">
-                  Cada ciudad posee física, arquitectura, enemigos y ciclo horario propio en el fondo 3D en vivo.
+                  10 distritos globales (3 y 5 carriles) con física, arquitectura, enemigos y ciclo horario propio en vivo.
                 </p>
               </div>
 
@@ -554,6 +598,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   const unlocked = save.unlockedDistricts.includes(d.id);
                   const selected = save.selectedDistrictId === d.id;
                   const cLabel = getCityLabel(lang, d.id);
+                  const lanes = d.laneCount ?? 3;
                   return (
                     <button
                       key={d.id}
@@ -564,9 +609,18 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                           : 'bg-[#0c1324] border-white/10 text-slate-300 hover:border-white/25'
                       }`}
                     >
-                      <div className="flex items-center justify-between">
-                        <span className="font-display font-bold text-sm text-white">
-                          {cLabel.name}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="font-display font-bold text-sm text-white flex items-center gap-2">
+                          <span>{cLabel.name}</span>
+                          <span
+                            className={`px-1.5 py-0.5 rounded font-mono-num text-[10px] font-bold border ${
+                              lanes === 5
+                                ? 'bg-fuchsia-500/20 border-fuchsia-400/50 text-fuchsia-200'
+                                : 'bg-cyan-500/15 border-cyan-400/35 text-cyan-200'
+                            }`}
+                          >
+                            {lanes}C
+                          </span>
                         </span>
                         <span className="font-mono-num text-[11px] text-cyan-300">
                           {d.gravityMultiplier.toFixed(2)}G · x{d.speedBonus.toFixed(2)}
@@ -578,7 +632,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                           ? selected
                             ? t(lang, 'common.selected')
                             : 'Desbloqueada'
-                          : `Desbloquear: ${d.unlockCostCoins} M`}
+                          : `Desbloquear: ${d.unlockCostCoins.toLocaleString('es-ES')} M`}
                       </div>
                     </button>
                   );
@@ -588,8 +642,13 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
 
             <div className="pointer-events-auto lg:self-end w-full lg:w-[400px] bg-[#070b17]/95 border border-cyan-500/35 rounded-xl p-4 space-y-3">
               <div>
-                <div className="text-[11px] text-cyan-300 font-semibold">
-                  {getCityLabel(lang, activeDistrict.id).sub}
+                <div className="flex items-center justify-between gap-2">
+                  <div className="text-[11px] text-cyan-300 font-semibold">
+                    {getCityLabel(lang, activeDistrict.id).sub}
+                  </div>
+                  <span className="font-mono-num text-[11px] font-bold text-fuchsia-300">
+                    {activeDistrict.laneCount ?? 3} Carriles
+                  </span>
                 </div>
                 <h3 className="font-display text-2xl font-bold text-white">
                   {getCityLabel(lang, activeDistrict.id).name}
@@ -670,22 +729,22 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
                   <div>
                     <h2 className="font-display text-xl font-bold text-white">
-                      8 Jefes de Neon City
+                      {BOSSES.length} Jefes de Neon City
                     </h2>
                     <p className="text-[11px] text-slate-400">
-                      Progresión lineal 1–8 · Modelos 3D únicos y fases EMP.
+                      Progresión lineal 1–8 · 4 Fases Elden-Ring + Modelos Blender .GLB.
                     </p>
                   </div>
                   <div className="flex gap-1 bg-[#0b1224] p-1 rounded-lg border border-white/10">
                     <button
                       onClick={() => setEventsSub('bosses')}
-                      className="px-2.5 py-1 rounded text-xs font-bold bg-rose-500 text-white cursor-pointer"
+                      className="px-2.5 py-1 rounded text-xs font-bold bg-rose-500 text-white cursor-pointer whitespace-nowrap"
                     >
-                      Jefes (8)
+                      Jefes ({BOSSES.length})
                     </button>
                     <button
                       onClick={() => setEventsSub('events')}
-                      className="px-2.5 py-1 rounded text-xs font-bold text-slate-300 cursor-pointer"
+                      className="px-2.5 py-1 rounded text-xs font-bold text-slate-300 cursor-pointer whitespace-nowrap"
                     >
                       Eventos
                     </button>
@@ -697,11 +756,15 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     const selected = b.id === previewBossId;
                     const defeated = save.defeatedBosses.includes(b.id);
                     const unlocked = isBossUnlocked(b.id, save.defeatedBosses);
+                    const hasCustomGlb = Boolean(
+                      save.customBossMeta?.[b.id] || getCustomBossEntry(b.id),
+                    );
                     return (
                       <button
                         key={b.id}
                         onClick={() => {
                           audioEngine.playUiClick();
+                          setBossValidation(null);
                           onSelectBossPreview(b.id);
                         }}
                         className={`w-full p-3 rounded-xl border text-left cursor-pointer ${
@@ -712,13 +775,18 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                               : 'bg-[#090e1c] border-white/5 text-slate-400 opacity-75 hover:opacity-95'
                         }`}
                       >
-                        <div className="flex items-center justify-between">
+                        <div className="flex items-center justify-between gap-2">
                           <span className="font-display font-bold text-sm text-white flex items-center gap-1.5">
                             <span className="font-mono-num text-xs text-slate-400">
                               #{idx + 1}
                             </span>
                             {b.name}
                             {!unlocked && <Lock className="w-3.5 h-3.5 text-amber-400" />}
+                            {hasCustomGlb && (
+                              <span className="px-1.5 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/50 text-[9px] font-mono-num text-cyan-200">
+                                GLB
+                              </span>
+                            )}
                           </span>
                           {defeated ? (
                             <span className="text-[11px] text-emerald-300 font-bold">
@@ -730,7 +798,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                             </span>
                           ) : (
                             <span className="text-[11px] font-mono-num text-rose-300">
-                              {b.hpSegments} Fases EMP
+                              4 Fases · {b.hpSegments} EMP
                             </span>
                           )}
                         </div>
@@ -749,11 +817,21 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   save.defeatedBosses,
                 );
                 const unlockReq = getBossUnlockRequirement(activeBoss.id);
+                const customEntry = getCustomBossEntry(activeBoss.id);
+                const customMeta =
+                  customEntry?.meta ?? save.customBossMeta?.[activeBoss.id] ?? null;
+                const customModelsGlobal = save.useCustomBossModels ?? true;
+
                 return (
-                  <div className="pointer-events-auto lg:self-end w-full lg:w-[400px] bg-[#070b17]/95 border border-rose-500/45 rounded-xl p-4 space-y-3">
+                  <div className="pointer-events-auto lg:self-end w-full lg:w-[420px] max-h-full overflow-y-auto bg-[#070b17]/95 border border-rose-500/45 rounded-xl p-4 space-y-3">
                     <div>
-                      <div className="text-[11px] text-rose-300 font-bold">
-                        {activeBoss.title}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] text-rose-300 font-bold">
+                          {activeBoss.title}
+                        </span>
+                        <span className="font-mono-num text-[10px] font-bold text-amber-300 flex items-center gap-1">
+                          <Layers className="w-3 h-3" /> 4 FASES ESCALADAS
+                        </span>
                       </div>
                       <h3 className="font-display text-2xl font-bold text-white">
                         {activeBoss.name}
@@ -764,13 +842,177 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     </div>
 
                     <div className="text-[11px] text-slate-300 space-y-1 border-t border-white/10 pt-2">
-                      {activeBoss.phases.map((p) => (
-                        <div key={p}>· {p}</div>
-                      ))}
+                      {activeBoss.phasesConfig && activeBoss.phasesConfig.length > 0
+                        ? activeBoss.phasesConfig.map((pc) => (
+                            <div key={pc.phase} className="flex items-center justify-between gap-2">
+                              <span className="truncate">
+                                <strong className="text-rose-300 font-mono-num">
+                                  F{pc.phase}:
+                                </strong>{' '}
+                                {pc.name}
+                              </span>
+                              <span className="font-mono-num text-[10px] text-slate-400 shrink-0">
+                                CD {pc.attackCooldownSec.toFixed(1)}s · EMP {pc.empSpawnSec.toFixed(1)}s
+                              </span>
+                            </div>
+                          ))
+                        : activeBoss.phases.map((p) => <div key={p}>· {p}</div>)}
                     </div>
 
                     <div className="p-2.5 rounded-lg bg-[#10182b] border border-cyan-400/30 text-xs text-cyan-200">
                       {activeBoss.counterHint}
+                    </div>
+
+                    {/* Blender Custom Boss .GLB Studio */}
+                    <div className="p-3 rounded-xl bg-[#0b1224] border border-cyan-500/30 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="text-xs font-bold text-cyan-300 flex items-center gap-1.5">
+                          <FileBox className="w-3.5 h-3.5" />
+                          Studio Blender (.GLB / .GLTF)
+                        </div>
+                        <label className="flex items-center gap-1.5 text-[11px] text-slate-300 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={customModelsGlobal}
+                            onChange={(e) => {
+                              audioEngine.playUiClick();
+                              onUpdateSave({
+                                ...save,
+                                useCustomBossModels: e.target.checked,
+                              });
+                              onReloadCustomGlb?.();
+                            }}
+                            className="accent-cyan-400"
+                          />
+                          Activo global
+                        </label>
+                      </div>
+
+                      {customMeta ? (
+                        <div className="p-2 rounded-lg bg-[#070b17] border border-white/10 text-[11px] space-y-1">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="font-bold text-white truncate">
+                              {customMeta.fileName}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                await removeCustomBossGlb(activeBoss.id);
+                                const nextMap = { ...(save.customBossMeta ?? {}) };
+                                delete nextMap[activeBoss.id];
+                                onUpdateSave({ ...save, customBossMeta: nextMap });
+                                setBossValidation(null);
+                                onReloadCustomGlb?.();
+                              }}
+                              className="text-rose-300 hover:text-rose-200 flex items-center gap-1 cursor-pointer shrink-0"
+                              title="Eliminar modelo personalizado"
+                            >
+                              <Trash2 className="w-3 h-3" /> Quitar
+                            </button>
+                          </div>
+                          <div className="font-mono-num text-slate-400">
+                            {customMeta.triangles.toLocaleString('es-ES')} tris ·{' '}
+                            {customMeta.vertices.toLocaleString('es-ES')} verts ·{' '}
+                            {customMeta.clips.length} clips
+                          </div>
+                          <label className="flex items-center justify-between pt-1 border-t border-white/10 text-slate-300 cursor-pointer">
+                            <span>Usar este .GLB en combate</span>
+                            <input
+                              type="checkbox"
+                              checked={customMeta.enabled}
+                              onChange={(e) => {
+                                const updated = setCustomBossEnabledState(
+                                  activeBoss.id,
+                                  e.target.checked,
+                                );
+                                onUpdateSave({
+                                  ...save,
+                                  customBossMeta: {
+                                    ...(save.customBossMeta ?? {}),
+                                    [activeBoss.id]: updated ?? {
+                                      ...customMeta,
+                                      enabled: e.target.checked,
+                                    },
+                                  },
+                                });
+                                onReloadCustomGlb?.();
+                              }}
+                              className="accent-cyan-400"
+                            />
+                          </label>
+                        </div>
+                      ) : (
+                        <div className="text-[11px] text-slate-400">
+                          Modelo procedural 3D activo. Importa un .glb de Blender validado para personalizar a {activeBoss.name}.
+                        </div>
+                      )}
+
+                      <div className="flex gap-2">
+                        <label className="flex-1 py-1.5 px-2.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/45 text-cyan-200 text-[11px] font-bold flex items-center justify-center gap-1.5 cursor-pointer">
+                          <Upload className="w-3.5 h-3.5" /> Importar .GLB
+                          <input
+                            type="file"
+                            accept=".glb,.gltf"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              const res = await validateAndStoreCustomBossGlb(
+                                file,
+                                activeBoss,
+                              );
+                              setBossValidation(res);
+                              if (res.ok && res.meta) {
+                                audioEngine.playPurchaseConfirm();
+                                onUpdateSave({
+                                  ...save,
+                                  useCustomBossModels: true,
+                                  customBossMeta: {
+                                    ...(save.customBossMeta ?? {}),
+                                    [activeBoss.id]: res.meta,
+                                  },
+                                });
+                                onReloadCustomGlb?.();
+                              } else {
+                                audioEngine.playUiClick();
+                              }
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const json = buildBossBlenderTemplateJson(activeBoss);
+                            const blob = new Blob([json], { type: 'model/gltf+json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = `${activeBoss.id}-blender-template.gltf`;
+                            a.click();
+                            URL.revokeObjectURL(url);
+                          }}
+                          className="py-1.5 px-2.5 rounded-lg bg-[#070b17] hover:bg-white/10 border border-white/15 text-slate-200 text-[11px] font-semibold flex items-center gap-1 cursor-pointer whitespace-nowrap"
+                          title="Descargar plantilla base glTF 2.0 para Blender"
+                        >
+                          <Download className="w-3.5 h-3.5 text-cyan-400" /> Plantilla .gltf
+                        </button>
+                      </div>
+
+                      {bossValidation && (
+                        <div className="text-[11px] space-y-0.5">
+                          {bossValidation.errors.map((err, i) => (
+                            <div key={i} className="text-rose-300 font-semibold">
+                              · {err}
+                            </div>
+                          ))}
+                          {bossValidation.warnings.map((w, i) => (
+                            <div key={i} className="text-amber-300">
+                              · {w}
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     {!activeBossUnlocked && unlockReq && (
@@ -785,7 +1027,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                     <div className="flex items-center justify-between text-xs font-mono-num text-amber-300">
                       <span>Recompensa de Asalto:</span>
                       <span>
-                        +{activeBoss.rewardCoins} M · +{activeBoss.rewardGems} G
+                        +{activeBoss.rewardCoins.toLocaleString('es-ES')} M · +{activeBoss.rewardGems} G
                       </span>
                     </div>
 
@@ -913,6 +1155,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             onResolveConflict={onResolveConflict}
             onDismissConflict={onDismissConflict}
             onDismissInvite={onDismissInvite}
+            onClearNotice={onClearNotice}
             onOnlineUserChange={onOnlineUserChange}
             onSwitchLocalProfile={onSwitchLocalProfile}
             onReplaceSave={onUpdateSave}
@@ -940,7 +1183,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           />
         )}
 
-        {/* 11. SETTINGS (4 Clean Groups + JSON Backup) */}
+        {/* 11. SETTINGS (4 Clean Groups + JSON Backup + Official GitHub Updater) */}
         {tab === 'settings' && (
           <SettingsView
             settings={save.settings}
@@ -948,6 +1191,11 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             diagnostics={diagnostics}
             liveHud={liveHud}
             initialCategory={initialSettingsCategory}
+            updateInfo={updateInfo}
+            updateState={updateState}
+            onCheckForUpdates={onCheckForUpdates}
+            onDownloadUpdate={onDownloadUpdate}
+            onInstallUpdate={onInstallUpdate}
             onChangeSettings={(nextSettings) =>
               onUpdateSave({ ...save, settings: nextSettings })
             }
@@ -967,7 +1215,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                   METRO RUSH: NEON CITY
                 </h2>
                 <span className="font-mono-num text-xs font-semibold text-cyan-300">
-                  v2.4.0 Desktop Edition
+                  v{GAME_VERSION} · Neon Apocalypse Edition
                 </span>
               </div>
               <p className="text-xs text-slate-300">
@@ -976,7 +1224,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
                 <strong className="text-cyan-300">Líder de XynexDevs</strong>.
               </p>
               <p className="text-xs text-slate-400">
-                Motor 3D Three.js PBR con LOD e Instancing, 4 Vehículos 3D Futuristas, Persecutor IA Enforcer, Pase de Batalla de 20 Niveles, Audio Procedural Adaptativo, 7 Ciudades con ciclo horario completo, 8 Jefes 3D con progresión lineal, Cuentas Duales Persistentes y Multijugador LAN / VPN / Túnel / WebRTC.
+                Motor 3D Three.js PBR con LOD e Instancing, 5 Vehículos 3D (Naves Aéreas y Terrestres), Jefes 3D de 4 Fases con soporte Blender .GLB, Pase de Batalla de 40 Niveles, Parkour de 2 Pisos, Escudos con Onda Expansiva en Cadena, 10 Ciudades (3 y 5 carriles), Audio Procedural Adaptativo, Cuentas Duales SQLite y Multijugador LAN / VPN / Túnel / WebRTC.
               </p>
             </div>
 

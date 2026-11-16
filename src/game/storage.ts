@@ -2,6 +2,8 @@ import {
   ACHIEVEMENTS,
   COSMETICS,
   DEFAULT_LEADERBOARD,
+  getBossById,
+  getDistrictById,
   LIVE_EVENTS,
   MISSIONS,
   normalizeDistrictId,
@@ -10,6 +12,7 @@ import {
 } from './data';
 import { addBattlePassXp, getSkillCoinCost } from './economy';
 import {
+  ActiveRunContext,
   BossId,
   ControlProfile,
   DistrictId,
@@ -23,9 +26,11 @@ import {
   VehicleId,
 } from './types';
 
-export const SAVE_VERSION = 3;
-const SAVE_KEY = 'metro_rush_neon_city_save_v3';
-const BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v3';
+export const SAVE_VERSION = 4;
+const SAVE_KEY = 'metro_rush_neon_city_save_v4';
+const BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v4';
+const V3_SAVE_KEY = 'metro_rush_neon_city_save_v3';
+const V3_BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v3';
 const V2_SAVE_KEY = 'metro_rush_neon_city_save_v2';
 const LEGACY_SAVE_KEY = 'metro_rush_neon_city_save_v1';
 
@@ -174,7 +179,7 @@ export function getPresetSettings(
     case 'very_low':
       return {
         graphicsQuality: 'very_low',
-        resolutionScale: 0.7,
+        resolutionScale: 0.65,
         textureQuality: 'low',
         shadows: false,
         lightingQuality: 'standard',
@@ -194,7 +199,7 @@ export function getPresetSettings(
     case 'low':
       return {
         graphicsQuality: 'low',
-        resolutionScale: 0.85,
+        resolutionScale: 0.82,
         textureQuality: 'low',
         shadows: false,
         lightingQuality: 'standard',
@@ -206,7 +211,7 @@ export function getPresetSettings(
         vegetationQuality: 'low',
         visualEffects: 'low',
         modelQuality: 'medium',
-        objectDensity: 'medium',
+        objectDensity: 'low',
         materialQuality: 'standard',
         bloom: false,
         antialiasing: true,
@@ -317,12 +322,14 @@ export function createInitialSave(): PlayerSaveData {
       cyber_coupe: 0,
       quantum_glider: 0,
       titan_rammer: 0,
+      star_viper: 0,
     },
     vehiclePaints: {
       hover_bike: VEHICLES[0].defaultPaint,
       cyber_coupe: VEHICLES[1].defaultPaint,
       quantum_glider: VEHICLES[2].defaultPaint,
       titan_rammer: VEHICLES[3].defaultPaint,
+      star_viper: VEHICLES[4].defaultPaint,
     },
     skillLevels: {
       momentum_mastery: 0,
@@ -339,13 +346,14 @@ export function createInitialSave(): PlayerSaveData {
     weeklyResetAt: now + WEEK_MS,
     completedEvents: [],
     defeatedBosses: [],
+    customBossMeta: {},
     ownedPets: ['fox_cyber'],
     equippedPetId: 'fox_cyber',
     unlockedAchievements: [],
     storyChapter: 1,
     tutorialCompleted: false,
     battlePass: {
-      season: 1,
+      season: 3,
       level: 1,
       xp: 0,
       premiumUnlocked: false,
@@ -384,6 +392,14 @@ export function createInitialSave(): PlayerSaveData {
       mpMatchesPlayed: 0,
       mpWins: 0,
       mpBestPlacement: 0,
+      shieldBreaks: 0,
+      doubleJumps: 0,
+      parkourChains: 0,
+      bossPhasesCleared: 0,
+      fiveLaneDistance: 0,
+      obstaclesDodged: 0,
+      trainsPassed: 0,
+      noReviveWins: 0,
     },
     leaderboard: [...DEFAULT_LEADERBOARD],
     settings: {
@@ -440,8 +456,12 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
           }))
       : base.leaderboard;
 
+  const validVehicles = new Set<VehicleId>(VEHICLES.map((v) => v.id));
   const ownedVehicles = Array.from(
-    new Set(['hover_bike', ...(parsed.ownedVehicles ?? [])]),
+    new Set([
+      'hover_bike',
+      ...(parsed.ownedVehicles ?? []).filter((id) => validVehicles.has(id as VehicleId)),
+    ]),
   ) as VehicleId[];
 
   const selectedVehicleId: VehicleId = ownedVehicles.includes(
@@ -501,6 +521,7 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     ),
     unlockedDistricts: migratedDistricts,
     defeatedBosses: parsed.defeatedBosses ?? [],
+    customBossMeta: parsed.customBossMeta ?? {},
     ownedPets:
       Array.isArray(parsed.ownedPets) && parsed.ownedPets.length > 0
         ? Array.from(new Set(['fox_cyber', ...parsed.ownedPets]))
@@ -534,6 +555,7 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     battlePass: {
       ...base.battlePass,
       ...(parsed.battlePass ?? {}),
+      level: Math.max(1, Math.min(40, parsed.battlePass?.level ?? 1)),
       claimedFreeTiers: parsed.battlePass?.claimedFreeTiers ?? [],
       claimedPremiumTiers: parsed.battlePass?.claimedPremiumTiers ?? [],
     },
@@ -568,7 +590,14 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
 }
 
 export function loadSaveData(): PlayerSaveData {
-  const candidates = [SAVE_KEY, BACKUP_SAVE_KEY, V2_SAVE_KEY, LEGACY_SAVE_KEY];
+  const candidates = [
+    SAVE_KEY,
+    BACKUP_SAVE_KEY,
+    V3_SAVE_KEY,
+    V3_BACKUP_SAVE_KEY,
+    V2_SAVE_KEY,
+    LEGACY_SAVE_KEY,
+  ];
   for (const key of candidates) {
     try {
       const raw = localStorage.getItem(key);
@@ -652,6 +681,7 @@ export function resetLocalProgressionClean(save: PlayerSaveData): PlayerSaveData
     playerName: save.playerName,
     avatarId: save.avatarId,
     modelStyle: save.modelStyle ?? 'procedural',
+    customBossMeta: save.customBossMeta ?? {},
     settings: {
       ...save.settings,
       keybindings: { ...save.settings.keybindings },
@@ -678,6 +708,7 @@ export interface RunTelemetry {
   districtId: DistrictId;
   characterId: string;
   eventId: string | null;
+  activeRunContext?: ActiveRunContext;
   score: number;
   distance: number;
   durationSec: number;
@@ -690,6 +721,14 @@ export interface RunTelemetry {
   vehicles: number;
   dronesEvaded: number;
   enemiesEliminated: number;
+  obstaclesDodged?: number;
+  trainsPassed?: number;
+  shieldBreaks?: number;
+  doubleJumps?: number;
+  parkourChains?: number;
+  bossPhasesCleared?: number;
+  bossPhaseReached?: number;
+  bossEncounteredId?: BossId | null;
   bossDefeatedId: BossId | null;
   abilitiesUsed: number;
   slowMoUsed: number;
@@ -710,21 +749,31 @@ export function applyRunToSave(
 
   const next: PlayerSaveData = structuredClone(prev);
 
+  const obstaclesDodged = run.obstaclesDodged ?? 0;
+  const trainsPassed = run.trainsPassed ?? 0;
+  const shieldBreaks = run.shieldBreaks ?? 0;
+  const doubleJumps = run.doubleJumps ?? 0;
+  const parkourChains = run.parkourChains ?? 0;
+  const bossPhasesCleared = run.bossPhasesCleared ?? 0;
+  const bossPhaseReached = run.bossPhaseReached ?? 0;
+
   const xpEarned =
     Math.floor(run.distance * 0.28) +
     Math.floor(run.score * 0.015) +
     run.coins * 2 +
     run.dronesEvaded * 12 +
     run.enemiesEliminated * 15 +
-    (run.bossDefeatedId ? 450 : 0) +
-    (run.victory ? 300 : 60);
+    bossPhasesCleared * 80 +
+    (run.bossDefeatedId ? 520 : 0) +
+    (run.victory ? 320 : 65);
 
   const bpXpEarned =
     Math.floor(run.distance * 0.16) +
     run.coins +
     run.enemiesEliminated * 10 +
-    (run.bossDefeatedId ? 240 : 0) +
-    (run.victory ? 180 : 45);
+    bossPhasesCleared * 60 +
+    (run.bossDefeatedId ? 300 : 0) +
+    (run.victory ? 200 : 50);
 
   next.coins += run.coins;
   next.gems += run.gems;
@@ -767,6 +816,20 @@ export function applyRunToSave(
   next.stats.secretsFound += run.secrets;
   next.stats.revivesUsed += run.revivesUsed;
   next.stats.abilitiesUsed += run.abilitiesUsed;
+  next.stats.shieldBreaks = (next.stats.shieldBreaks ?? 0) + shieldBreaks;
+  next.stats.doubleJumps = (next.stats.doubleJumps ?? 0) + doubleJumps;
+  next.stats.parkourChains = (next.stats.parkourChains ?? 0) + parkourChains;
+  next.stats.bossPhasesCleared = (next.stats.bossPhasesCleared ?? 0) + bossPhasesCleared;
+  next.stats.obstaclesDodged = (next.stats.obstaclesDodged ?? 0) + obstaclesDodged;
+  next.stats.trainsPassed = (next.stats.trainsPassed ?? 0) + trainsPassed;
+  if (run.victory && run.revivesUsed === 0 && run.talismanAutoRevives === 0) {
+    next.stats.noReviveWins = (next.stats.noReviveWins ?? 0) + 1;
+  }
+
+  const distDef = getDistrictById(run.districtId);
+  if (distDef.laneCount === 5) {
+    next.stats.fiveLaneDistance = (next.stats.fiveLaneDistance ?? 0) + cleanDist;
+  }
 
   if (run.bossDefeatedId) {
     next.stats.bossesDefeated += 1;
@@ -842,6 +905,7 @@ export function applyRunToSave(
   for (const m of MISSIONS) {
     if (next.completedMissions.includes(m.id)) continue;
     if (m.districtReq && m.districtReq !== run.districtId) continue;
+    if (m.characterReq && m.characterReq !== run.characterId) continue;
 
     let delta = 0;
     switch (m.type) {
@@ -894,6 +958,26 @@ export function applyRunToSave(
       case 'revives':
         delta = run.revivesUsed;
         break;
+      case 'shieldBreak':
+        delta = shieldBreaks;
+        break;
+      case 'doubleJump':
+        delta = doubleJumps;
+        break;
+      case 'parkourChain':
+        delta = parkourChains;
+        break;
+      case 'fiveLaneDist':
+        if (distDef.laneCount === 5) delta = cleanDist;
+        break;
+      case 'bossPhase':
+        delta = bossPhasesCleared;
+        break;
+      case 'noReviveWin':
+        if (run.victory && run.revivesUsed === 0 && run.talismanAutoRevives === 0) {
+          delta = 1;
+        }
+        break;
     }
 
     if (delta > 0) {
@@ -924,10 +1008,12 @@ export function applyRunToSave(
   checkAch('ach_first_run', next.stats.totalRuns >= 1);
   checkAch('ach_speed_demon', next.stats.maxSpeedKmh >= 160);
   checkAch('ach_combo_master', next.stats.maxCombo >= 10);
-  checkAch('ach_collector', next.stats.totalCoinsCollected >= 2000);
+  checkAch('ach_collector', next.stats.totalCoinsCollected >= 2500);
   checkAch('ach_explorer', next.stats.secretsFound >= 5);
   checkAch('ach_skywalker', next.stats.totalGrapples >= 25);
-  checkAch('ach_drone_dodger', next.stats.dronesEvaded >= 30);
+  checkAch('ach_shield_nova', next.stats.shieldBreaks >= 10);
+  checkAch('ach_parkour_king', next.stats.parkourChains >= 15);
+  checkAch('ach_drone_dodger', next.stats.dronesEvaded >= 35);
   checkAch('ach_boss_slayer', next.defeatedBosses.length >= 3);
 
   let leveledUp = false;
@@ -935,7 +1021,7 @@ export function applyRunToSave(
     next.xp -= xpRequiredForLevel(next.level);
     next.level += 1;
     next.gems += 5;
-    next.coins += 200;
+    next.coins += 250;
     leveledUp = true;
   }
 
@@ -959,6 +1045,17 @@ export function applyRunToSave(
 
   persistSaveData(next);
 
+  const bossIdRef = run.bossDefeatedId ?? run.bossEncounteredId ?? null;
+  const bossName = bossIdRef ? getBossById(bossIdRef).name : null;
+
+  const activeRunContext: ActiveRunContext = run.activeRunContext ?? {
+    mode: run.mode,
+    districtId: run.districtId,
+    eventId: run.eventId,
+    bossId: run.bossEncounteredId ?? null,
+    storyChapter: run.storyChapterPlayed,
+  };
+
   return {
     nextSave: next,
     summary: {
@@ -967,6 +1064,7 @@ export function applyRunToSave(
       mode: run.mode,
       districtId: run.districtId,
       characterId: run.characterId,
+      activeRunContext,
       score: cleanScore,
       distance: cleanDist,
       durationSec: cleanDur,
@@ -983,6 +1081,14 @@ export function applyRunToSave(
       vehicles: run.vehicles,
       dronesEvaded: run.dronesEvaded,
       enemiesEliminated: run.enemiesEliminated,
+      obstaclesDodged,
+      trainsPassed,
+      shieldBreaks,
+      doubleJumps,
+      parkourChains,
+      bossPhasesCleared,
+      bossPhaseReached,
+      bossName,
       bossDefeatedId: run.bossDefeatedId,
       secrets: run.secrets,
       revivesUsed: run.revivesUsed,

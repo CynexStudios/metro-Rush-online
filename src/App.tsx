@@ -14,6 +14,7 @@ import {
   MetroRushEngine,
   ShowcaseMode,
 } from './game/engine';
+import { restorePersistedCustomBosses } from './game/gltfAssets';
 import { detectHardwareProfile } from './game/hardware';
 import {
   applyRunToSave,
@@ -23,6 +24,7 @@ import {
 } from './game/storage';
 import {
   AccountSyncConflict,
+  ActiveRunContext,
   BossId,
   ConflictResolutionStrategy,
   DistrictId,
@@ -34,14 +36,17 @@ import {
   MultiplayerRoomState,
   PCSettings,
   PlayerSaveData,
+  ReleaseUpdateInfo,
   RunSummary,
   TimeOfDay,
+  UpdateProgressState,
 } from './game/types';
 import { t } from './i18n';
 import {
   ActiveRunSession,
   bootstrapDesktopSession,
   buildAccountConflict,
+  checkReleaseUpdatesApi,
   checkServerOnline,
   createLocalProfileApi,
   fetchMeOnline,
@@ -68,6 +73,7 @@ const INITIAL_HUD: HudSnapshot = {
   mode: 'endless',
   districtId: 'downtown',
   districtName: DISTRICTS[0].name,
+  laneCount: 3,
   timePeriod: 'night',
   score: 0,
   distance: 0,
@@ -78,14 +84,25 @@ const INITIAL_HUD: HudSnapshot = {
   combo: 1,
   comboTimer: 0,
   momentum: 0,
+  boostCooldown: 0,
+  boostMaxCooldown: 5,
+  boostActive: false,
   slowMoEnergy: 100,
   isSlowMo: false,
+  vehicleAbilityLocked: false,
   abilityCharge: 100,
   abilityActive: false,
   hasShield: false,
+  shieldCooldown: 0,
+  shieldMaxCooldown: 16,
+  doubleJumpCharges: 2,
+  maxDoubleJumpCharges: 2,
+  doubleJumpCooldown: 0,
+  doubleJumpBlockedReason: null,
   hasMagnet: false,
   magnetTimer: 0,
   isRidingVehicle: false,
+  vehicleIsShip: false,
   vehicleTimer: 0,
   selectedVehicleId: 'hover_bike',
   talismansHeld: 0,
@@ -94,21 +111,32 @@ const INITIAL_HUD: HudSnapshot = {
   revivePrompt: null,
   pursuerDistance: null,
   pursuerThreat: 0,
+  randomBossActive: false,
+  storyChapter: null,
+  storyObjectiveText: null,
+  parkourFloor: 1,
+  parkourChain: 0,
   action: 'idle',
   contextPrompt: null,
   tutorialHint: null,
   subtitleText: null,
   activeEventBanner: null,
   activeDynamicEvent: null,
+  sectorTransitionLabel: null,
+  objectiveCelebrationText: null,
   bossId: null,
   bossName: null,
   bossHp: 0,
   bossMaxHp: 0,
   bossPhase: 1,
+  bossPhaseName: null,
+  bossPhaseHp: 0,
+  bossPhaseMaxHp: 0,
+  bossIntroActive: false,
+  bossIntroTitle: null,
+  bossIntroSubtitle: null,
+  bossTransitionActive: false,
   bossDistance: null,
-  randomBossActive: false,
-  storyChapter: null,
-  storyObjectiveText: null,
   timeRemaining: null,
   targetDistance: null,
   activeBanner: null,
@@ -118,6 +146,17 @@ const INITIAL_HUD: HudSnapshot = {
   secretsFoundRun: 0,
   dronesEvadedRun: 0,
   enemiesEliminatedRun: 0,
+  obstaclesDodgedRun: 0,
+  trainsPassedRun: 0,
+  shieldBreaksRun: 0,
+  doubleJumpsRun: 0,
+  activeRunContext: {
+    mode: 'endless',
+    districtId: 'downtown',
+    eventId: null,
+    bossId: null,
+    storyChapter: null,
+  },
   fps: 60,
   frameTimeMs: 16.6,
   drawCalls: 0,
@@ -138,6 +177,13 @@ export default function App() {
   const engineRef = useRef<MetroRushEngine | null>(null);
   const activeRunSessionRef = useRef<ActiveRunSession | null>(null);
   const lastRandomDistrictRef = useRef<DistrictId | null>(null);
+  const lastRunContextRef = useRef<ActiveRunContext>({
+    mode: 'endless',
+    districtId: 'downtown',
+    eventId: null,
+    bossId: null,
+    storyChapter: null,
+  });
   const transitionTimerRef = useRef<number | null>(null);
 
   const [save, setSave] = useState<PlayerSaveData>(() => loadSaveData());
@@ -163,6 +209,19 @@ export default function App() {
   );
   const activeLocalProfileIdRef = useRef<string | null>(activeLocalProfileId);
   const [previewBossId, setPreviewBossId] = useState<BossId>('titan_drone');
+
+  // Official GitHub Releases Auto-Updater State
+  const [updateInfo, setUpdateInfo] = useState<ReleaseUpdateInfo | null>(null);
+  const [updateState, setUpdateState] = useState<UpdateProgressState>({
+    status: 'idle',
+    progressPercent: 0,
+    downloadedBytes: 0,
+    totalBytes: 0,
+    downloadedPath: null,
+    message: '',
+    error: null,
+  });
+  const [dismissedUpdateBanner, setDismissedUpdateBanner] = useState(false);
 
   // Electron local server error/restart banner
   const [desktopServerBanner, setDesktopServerBanner] = useState<{
@@ -214,6 +273,39 @@ export default function App() {
         setDesktopServerBanner({ status: evt.status, message: evt.message });
       }
     });
+  }, []);
+
+  // Subscribe to Electron updater progress & restore custom Blender bosses on boot
+  useEffect(() => {
+    void restorePersistedCustomBosses();
+    if (window.metroDesktop?.getUpdateState) {
+      void window.metroDesktop.getUpdateState().then((st) => {
+        if (st) setUpdateState(st);
+      });
+    }
+    const unsubProgress = window.metroDesktop?.onUpdateProgress?.((st) => {
+      setUpdateState(st);
+    });
+    const timer = window.setTimeout(() => {
+      void checkReleaseUpdatesApi().then((info) => {
+        setUpdateInfo(info);
+        if (info.hasUpdate) {
+          setUpdateState((prev) =>
+            prev.status === 'idle' || prev.status === 'up_to_date'
+              ? {
+                  ...prev,
+                  status: 'available',
+                  message: `Nueva versión oficial v${info.latestVersion} disponible.`,
+                }
+              : prev,
+          );
+        }
+      });
+    }, 2200);
+    return () => {
+      window.clearTimeout(timer);
+      if (unsubProgress) unsubProgress();
+    };
   }, []);
 
   const updateSave = useCallback((next: PlayerSaveData) => {
@@ -628,6 +720,17 @@ export default function App() {
         if (sess) activeRunSessionRef.current = sess;
       });
 
+      lastRunContextRef.current = {
+        mode: targetMode,
+        districtId: targetDistrict,
+        eventId: eventId ?? null,
+        bossId: bossOverride ?? null,
+        storyChapter:
+          targetMode === 'story'
+            ? (storyChapterOverride ?? saveRef.current.storyChapter ?? 1)
+            : null,
+      };
+
       engineRef.current?.startRun(
         targetMode,
         targetDistrict,
@@ -638,6 +741,95 @@ export default function App() {
     },
     [],
   );
+
+  const handleRestartCurrentRun = useCallback(() => {
+    const ctx = lastRunContextRef.current;
+    handleStartGame(
+      ctx.districtId,
+      ctx.mode,
+      ctx.eventId,
+      ctx.bossId ?? undefined,
+      ctx.storyChapter ?? undefined,
+    );
+  }, [handleStartGame]);
+
+  const handleCheckForUpdates = useCallback(async (repo?: string) => {
+    setUpdateState((prev) => ({
+      ...prev,
+      status: 'checking',
+      message: 'Comprobando última versión oficial en GitHub Releases...',
+      error: null,
+    }));
+    const info = await checkReleaseUpdatesApi(repo);
+    setUpdateInfo(info);
+    if (info.hasUpdate) {
+      setDismissedUpdateBanner(false);
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'available',
+        message: `Nueva actualización v${info.latestVersion} lista para descargar.`,
+        error: null,
+      }));
+    } else if (info.error && info.source === 'offline') {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'error',
+        message: info.error || 'No se pudo comprobar actualizaciones.',
+        error: info.error || 'Offline',
+      }));
+    } else {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'up_to_date',
+        message: `Ya tienes la última versión oficial (v${info.currentVersion}).`,
+        error: null,
+      }));
+    }
+    return info;
+  }, []);
+
+  const handleDownloadUpdate = useCallback(async (infoOverride?: ReleaseUpdateInfo) => {
+    const targetInfo = infoOverride ?? updateInfo;
+    if (!targetInfo || !targetInfo.downloadUrl) return;
+    if (window.metroDesktop?.downloadUpdate) {
+      const res = await window.metroDesktop.downloadUpdate(targetInfo);
+      if (!res.ok && res.error) {
+        setUpdateState((prev) => ({
+          ...prev,
+          status: 'error',
+          error: res.error ?? 'Error al descargar actualización.',
+          message: res.error ?? 'Error al descargar actualización.',
+        }));
+      }
+    } else if (window.metroDesktop?.openExternalUrl) {
+      await window.metroDesktop.openExternalUrl(targetInfo.downloadUrl);
+    } else {
+      window.location.href = targetInfo.downloadUrl;
+    }
+  }, [updateInfo]);
+
+  const handleInstallUpdate = useCallback(async () => {
+    if (!window.metroDesktop?.installUpdate || !updateState.downloadedPath) return;
+    persistSaveData(saveRef.current);
+    if (activeLocalProfileIdRef.current) {
+      await saveLocalProfileApi(activeLocalProfileIdRef.current, saveRef.current).catch(() => {});
+    }
+    if (onlineUserRef.current) {
+      await syncSaveToSqlite(saveRef.current).catch(() => {});
+    }
+    const res = await window.metroDesktop.installUpdate(
+      updateState.downloadedPath,
+      updateInfo?.latestVersion,
+    );
+    if (!res.ok && res.error) {
+      setUpdateState((prev) => ({
+        ...prev,
+        status: 'error',
+        error: res.error || 'Error al lanzar el instalador.',
+        message: res.error || 'Error al lanzar el instalador.',
+      }));
+    }
+  }, [updateState.downloadedPath]);
 
   // Subscribe to real-time WebSocket multiplayer + WebRTC signaling events
   useEffect(() => {
@@ -652,6 +844,7 @@ export default function App() {
       },
       onRoomState: (room) => {
         setMpRoom(room);
+        if (room) setMpNotice(null);
       },
       onRoomStarted: (room) => {
         setMpNotice(null);
@@ -985,6 +1178,13 @@ export default function App() {
           onlineUser={onlineUser}
           mpRoomCode={mpRoom?.code ?? null}
           hasSyncConflict={Boolean(pendingConflict)}
+          updateInfo={!dismissedUpdateBanner ? updateInfo : null}
+          updateState={updateState}
+          onDismissUpdateBanner={() => setDismissedUpdateBanner(true)}
+          onOpenUpdatesSettings={() => {
+            setSettingsCategory('system_backup');
+            setMenuTab('settings');
+          }}
           onSelectMode={handleSelectMode}
           onSelectDistrict={handleSelectDistrict}
           onSelectTimeOfDay={handleSelectTimeOfDay}
@@ -1092,7 +1292,7 @@ export default function App() {
           muted={save.settings.muted}
           onToggleMute={handleToggleMute}
           onResume={() => engineRef.current?.setPaused(false)}
-          onRestart={() => handleStartGame()}
+          onRestart={handleRestartCurrentRun}
           onOpenSettings={() => {
             setSettingsCategory('graphics_video');
             setMenuTab('settings');
@@ -1109,7 +1309,7 @@ export default function App() {
             language={save.settings.language}
             summary={runSummary}
             onlineStatus={onlineStatus}
-            onReplay={() => handleStartGame()}
+            onReplay={handleRestartCurrentRun}
             onOpenGarage={() => openMenuFromResults('garage')}
             onOpenMissions={() => openMenuFromResults('missions')}
             onOpenStats={() => openMenuFromResults('stats')}
@@ -1143,6 +1343,7 @@ export default function App() {
             setPendingOnlineSave(null);
           }}
           onDismissInvite={() => setMpInvite(null)}
+          onClearNotice={() => setMpNotice(null)}
           previewBossId={previewBossId}
           onSelectBossPreview={(bossId) => setPreviewBossId(bossId)}
           onOnlineUserChange={(u) => setOnlineUser(u)}
@@ -1151,6 +1352,11 @@ export default function App() {
           onVideoChangeWithConfirm={handleVideoChangeWithConfirm}
           onRunBenchmark={handleRunBenchmark}
           onReloadCustomGlb={() => engineRef.current?.rebuildPlayerCharacter()}
+          updateInfo={updateInfo}
+          updateState={updateState}
+          onCheckForUpdates={handleCheckForUpdates}
+          onDownloadUpdate={handleDownloadUpdate}
+          onInstallUpdate={handleInstallUpdate}
           onTabChange={(next) => setMenuTab(next)}
           onClose={() => setMenuTab(null)}
           onDeployDistrict={(districtId) => {

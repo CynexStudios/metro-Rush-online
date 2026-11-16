@@ -17,7 +17,10 @@ export type DistrictId =
   | 'skyline'
   | 'beach'
   | 'underground'
-  | 'future';
+  | 'future'
+  | 'cyber_port'
+  | 'obsidian_citadel'
+  | 'crimson_metropolis';
 
 export type GameMode =
   | 'endless'
@@ -101,17 +104,28 @@ export type ParkourAction =
   | 'wallClimb'
   | 'zipline'
   | 'grapple'
+  | 'swingBar'
+  | 'balanceBeam'
   | 'vehicle'
   | 'dive'
   | 'vault'
   | 'celebrate'
-  | 'stumble';
+  | 'stumble'
+  | 'captureStruggle';
 
 export type VehicleId =
   | 'hover_bike'
   | 'cyber_coupe'
   | 'quantum_glider'
-  | 'titan_rammer';
+  | 'titan_rammer'
+  | 'star_viper';
+
+export interface UnlockRequirement {
+  type: 'missions' | 'bosses' | 'distance' | 'level' | 'achievement' | 'parkourChains';
+  target: number;
+  achievementId?: string;
+  label: string;
+}
 
 export interface VehicleStats {
   speed: number;
@@ -125,8 +139,10 @@ export interface VehicleDef {
   name: string;
   category: string;
   description: string;
+  isShip: boolean;
   unlockCostCoins: number;
   unlockCostGems: number;
+  unlockRequirement?: UnlockRequirement;
   defaultPaint: string;
   accentColor: string;
   baseStats: VehicleStats;
@@ -256,6 +272,7 @@ export interface CharacterDef {
   secondaryAbilityDesc?: string;
   unlockCostCoins: number;
   unlockCostGems: number;
+  unlockRequirement?: UnlockRequirement;
   stats: CharacterStats;
   colors: {
     skin: string;
@@ -276,6 +293,7 @@ export interface DistrictDef {
   name: string;
   subtitle: string;
   description: string;
+  laneCount: 3 | 5;
   unlockCostCoins: number;
   unlockLevel: number;
   difficulty: number;
@@ -307,23 +325,64 @@ export interface DistrictDef {
     | 'skybridge'
     | 'palms'
     | 'tunnel'
-    | 'reactor';
+    | 'reactor'
+    | 'harbor'
+    | 'citadel'
+    | 'monolith';
+}
+
+export interface BossPhaseDef {
+  phase: 1 | 2 | 3 | 4;
+  name: string;
+  subtitle: string;
+  description: string;
+  hpUnits: number;
+  attackCooldownSec: number;
+  empSpawnSec: number;
+  auraColor: string;
+  envTint: string;
+  scaleBoost: number;
+  patterns: ('lane_sweep' | 'dual_projectile' | 'shockwave' | 'orbital_cross' | 'homing_burst' | 'rail_overload')[];
 }
 
 export interface BossDef {
   id: BossId;
   name: string;
   title: string;
+  introTitle: string;
+  introQuote: string;
   cityId: DistrictId;
   description: string;
   hpSegments: number;
   phases: string[];
   phaseDetails?: string[];
+  phasesConfig: BossPhaseDef[];
   counterHint: string;
   rewardCoins: number;
   rewardGems: number;
   primaryColor: string;
   secondaryColor: string;
+}
+
+export interface CustomBossMeta {
+  bossId: BossId;
+  name: string;
+  fileName: string;
+  fileSizeBytes: number;
+  vertices: number;
+  triangles: number;
+  meshes: number;
+  clips: string[];
+  hasSkeleton: boolean;
+  enabled: boolean;
+  uploadedAt: string;
+}
+
+export interface CustomBossValidationResult {
+  ok: boolean;
+  errors: string[];
+  warnings: string[];
+  meta?: CustomBossMeta;
 }
 
 export type CosmeticSlot =
@@ -360,10 +419,14 @@ export interface SkillNode {
 export type MissionCategory =
   | 'daily'
   | 'weekly'
-  | 'general'
   | 'special'
-  | 'battlepass'
   | 'season'
+  | 'combat'
+  | 'exploration'
+  | 'survival'
+  | 'character'
+  | 'vehicle'
+  | 'boss'
   | 'story';
 
 export interface MissionDef {
@@ -383,7 +446,13 @@ export interface MissionDef {
     | 'survivalTime'
     | 'enemies'
     | 'secrets'
-    | 'revives';
+    | 'revives'
+    | 'shieldBreak'
+    | 'doubleJump'
+    | 'parkourChain'
+    | 'fiveLaneDist'
+    | 'bossPhase'
+    | 'noReviveWin';
   target: number;
   rewardCoins: number;
   rewardGems: number;
@@ -392,9 +461,12 @@ export interface MissionDef {
   rewardReviveTokens?: number;
   rewardTalismans?: number;
   rewardBpXp?: number;
+  unlockContentLabel?: string;
   difficulty?: 'Fácil' | 'Media' | 'Alta' | 'Extrema';
   category: MissionCategory;
   districtReq?: DistrictId;
+  characterReq?: string;
+  vehicleReq?: VehicleId;
   chapter?: number;
 }
 
@@ -747,6 +819,50 @@ export interface AccountSyncConflict {
   hasConflict: boolean;
 }
 
+export interface ActiveRunContext {
+  mode: GameMode;
+  districtId: DistrictId;
+  eventId: string | null;
+  bossId: BossId | null;
+  storyChapter: number | null;
+}
+
+export interface ReleaseUpdateInfo {
+  currentVersion: string;
+  latestVersion: string;
+  hasUpdate: boolean;
+  repo: string;
+  releaseUrl: string;
+  downloadUrl: string | null;
+  assetName: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  releaseDate: string | null;
+  releaseNotes: string;
+  minCompatibleVersion?: string;
+  source: 'manifest' | 'github_release' | 'offline';
+  error?: string | null;
+}
+
+export interface UpdateProgressState {
+  status:
+    | 'idle'
+    | 'checking'
+    | 'available'
+    | 'up_to_date'
+    | 'downloading'
+    | 'verifying'
+    | 'ready_to_install'
+    | 'installing'
+    | 'error';
+  progressPercent: number;
+  downloadedBytes: number;
+  totalBytes: number;
+  downloadedPath: string | null;
+  message: string;
+  error: string | null;
+}
+
 export interface PlayerSaveData {
   saveVersion: number;
   playerName: string;
@@ -779,6 +895,8 @@ export interface PlayerSaveData {
   weeklyResetAt: number;
   completedEvents: string[];
   defeatedBosses: BossId[];
+  customBossMeta?: Partial<Record<BossId, CustomBossMeta>>;
+  useCustomBossModels?: boolean;
   ownedPets?: string[];
   equippedPetId?: string | null;
   unlockedAchievements: string[];
@@ -817,6 +935,14 @@ export interface PlayerSaveData {
     mpMatchesPlayed: number;
     mpWins: number;
     mpBestPlacement: number;
+    shieldBreaks: number;
+    doubleJumps: number;
+    parkourChains: number;
+    bossPhasesCleared: number;
+    fiveLaneDistance: number;
+    obstaclesDodged: number;
+    trainsPassed: number;
+    noReviveWins: number;
   };
   leaderboard: LeaderboardEntry[];
   settings: PCSettings;
@@ -828,6 +954,7 @@ export interface RevivePromptState {
   attemptNumber: number;
   availableTokens: number;
   canAfford: boolean;
+  remainingSeconds: number;
 }
 
 export interface HudSnapshot {
@@ -835,6 +962,7 @@ export interface HudSnapshot {
   mode: GameMode;
   districtId: DistrictId;
   districtName: string;
+  laneCount: 3 | 5;
   timePeriod: Exclude<TimeOfDay, 'dynamic'>;
   score: number;
   distance: number;
@@ -845,14 +973,25 @@ export interface HudSnapshot {
   combo: number;
   comboTimer: number;
   momentum: number;
+  boostCooldown: number;
+  boostMaxCooldown: number;
+  boostActive: boolean;
   slowMoEnergy: number;
   isSlowMo: boolean;
+  vehicleAbilityLocked: boolean;
   abilityCharge: number;
   abilityActive: boolean;
   hasShield: boolean;
+  shieldCooldown: number;
+  shieldMaxCooldown: number;
+  doubleJumpCharges: number;
+  maxDoubleJumpCharges: number;
+  doubleJumpCooldown: number;
+  doubleJumpBlockedReason: string | null;
   hasMagnet: boolean;
   magnetTimer: number;
   isRidingVehicle: boolean;
+  vehicleIsShip: boolean;
   vehicleTimer: number;
   selectedVehicleId: VehicleId;
   talismansHeld: number;
@@ -864,17 +1003,28 @@ export interface HudSnapshot {
   randomBossActive: boolean;
   storyChapter: number | null;
   storyObjectiveText: string | null;
+  parkourFloor: 1 | 2;
+  parkourChain: number;
   action: ParkourAction;
   contextPrompt: string | null;
   tutorialHint: string | null;
   subtitleText: string | null;
   activeEventBanner: string | null;
   activeDynamicEvent: DynamicEventType | null;
+  sectorTransitionLabel: string | null;
+  objectiveCelebrationText: string | null;
   bossId: BossId | null;
   bossName: string | null;
   bossHp: number;
   bossMaxHp: number;
   bossPhase: number;
+  bossPhaseName: string | null;
+  bossPhaseHp: number;
+  bossPhaseMaxHp: number;
+  bossIntroActive: boolean;
+  bossIntroTitle: string | null;
+  bossIntroSubtitle: string | null;
+  bossTransitionActive: boolean;
   bossDistance: number | null;
   timeRemaining: number | null;
   targetDistance: number | null;
@@ -885,6 +1035,11 @@ export interface HudSnapshot {
   secretsFoundRun: number;
   dronesEvadedRun: number;
   enemiesEliminatedRun: number;
+  obstaclesDodgedRun: number;
+  trainsPassedRun: number;
+  shieldBreaksRun: number;
+  doubleJumpsRun: number;
+  activeRunContext: ActiveRunContext;
   fps: number;
   frameTimeMs: number;
   drawCalls: number;
@@ -906,6 +1061,7 @@ export interface RunSummary {
   mode: GameMode;
   districtId: DistrictId;
   characterId: string;
+  activeRunContext: ActiveRunContext;
   score: number;
   distance: number;
   durationSec: number;
@@ -922,6 +1078,14 @@ export interface RunSummary {
   vehicles: number;
   dronesEvaded: number;
   enemiesEliminated: number;
+  obstaclesDodged: number;
+  trainsPassed: number;
+  shieldBreaks: number;
+  doubleJumps: number;
+  parkourChains: number;
+  bossPhasesCleared: number;
+  bossPhaseReached: number;
+  bossName: string | null;
   bossDefeatedId: BossId | null;
   secrets: number;
   revivesUsed: number;

@@ -1,8 +1,9 @@
-import React from 'react';
-import { Car, Check, Lock, Palette, Shield, Ticket, Zap } from 'lucide-react';
+import React, { useState } from 'react';
+import { Car, Check, Lock, Palette, Plane, Shield, Ticket, Zap } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import { VEHICLES } from '../game/data';
 import {
+  checkUnlockRequirement,
   getEffectiveVehicleStats,
   getVehicleUpgradeCoinCost,
   getVehicleUpgradeTicketCost,
@@ -29,13 +30,20 @@ const PAINT_SWATCHES: { hex: string; name: string }[] = [
 ];
 
 export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) => {
-  const activeId: VehicleId = save.selectedVehicleId ?? 'hover_bike';
-  const activeVehicle = VEHICLES.find((v) => v.id === activeId) ?? VEHICLES[0];
+  const [inspectedId, setInspectedId] = useState<VehicleId>(
+    save.selectedVehicleId ?? 'hover_bike',
+  );
+  const [notice, setNotice] = useState<string | null>(null);
+
+  const activeVehicle = VEHICLES.find((v) => v.id === inspectedId) ?? VEHICLES[0];
+  const activeId: VehicleId = activeVehicle.id;
   const owned = save.ownedVehicles.includes(activeId);
+  const equipped = save.selectedVehicleId === activeId;
   const upgLevel = save.vehicleUpgrades[activeId] ?? 0;
   const maxed = upgLevel >= activeVehicle.maxUpgradeLevel;
   const stats = getEffectiveVehicleStats(activeId, upgLevel);
   const activePaint = save.vehiclePaints[activeId] || activeVehicle.defaultPaint;
+  const reqCheck = checkUnlockRequirement(save, activeVehicle.unlockRequirement);
 
   const coinCost = getVehicleUpgradeCoinCost(activeId, upgLevel);
   const ticketCost = getVehicleUpgradeTicketCost(upgLevel);
@@ -47,7 +55,7 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
         <div className="flex items-center justify-between border-b border-white/10 pb-2.5">
           <div>
             <div className="text-[11px] font-bold tracking-wider text-cyan-400">
-              Plataforma Giratoria 3D
+              Plataforma Giratoria 3D ({VEHICLES.length} Unidades)
             </div>
             <h2 className="font-display text-xl font-bold text-white flex items-center gap-2">
               <Car className="w-5 h-5 text-cyan-400" />
@@ -63,55 +71,65 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
         </div>
 
         <p className="text-xs text-slate-400">
-          Selecciona un vehículo futurista para inspeccionar su modelo 3D, personalizar su pintura y mejorar sus turbinas.
+          Inspecciona cualquier vehículo 3D. Las naves aéreas permiten doble salto; los vehículos terrestres bloquean el doble salto y habilidades a pie.
         </p>
 
         <div className="space-y-2.5">
           {VEHICLES.map((v) => {
             const vOwned = save.ownedVehicles.includes(v.id);
-            const vSelected = activeId === v.id;
+            const vEquipped = save.selectedVehicleId === v.id;
+            const vInspected = activeId === v.id;
             const vLvl = save.vehicleUpgrades[v.id] ?? 0;
 
             return (
               <button
                 key={v.id}
                 onClick={() => {
-                  const res = purchaseOrSelectVehicle(save, v.id);
-                  if (res.ok) {
-                    audioEngine.playPurchaseConfirm();
-                    onUpdateSave(res.nextSave);
-                  } else {
-                    audioEngine.playUiClick();
-                    // Allow inspecting unowned vehicle cleanly by keeping selection visual? Keep current behavior + preview
+                  setInspectedId(v.id);
+                  setNotice(null);
+                  if (vOwned) {
+                    const res = purchaseOrSelectVehicle(save, v.id);
+                    if (res.ok) {
+                      audioEngine.playUiClick(true);
+                      onUpdateSave(res.nextSave);
+                      return;
+                    }
                   }
+                  audioEngine.playUiClick();
                 }}
                 className={`w-full p-3.5 rounded-xl border text-left transition-colors cursor-pointer ${
-                  vSelected
+                  vEquipped
                     ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                    : 'bg-[#0b1224] border-white/10 text-slate-200 hover:border-white/30'
+                    : vInspected
+                      ? 'bg-[#101932] border-fuchsia-400/70 text-white'
+                      : 'bg-[#0b1224] border-white/10 text-slate-200 hover:border-white/30'
                 }`}
               >
                 <div className="flex items-center justify-between gap-2">
                   <div>
-                    <div className="text-[11px] text-cyan-300 font-semibold">
-                      {v.category}
+                    <div className="text-[11px] text-cyan-300 font-semibold flex items-center gap-1.5">
+                      <span>{v.category}</span>
+                      <span className="text-slate-500">·</span>
+                      <span className={v.isShip ? 'text-fuchsia-300' : 'text-slate-400'}>
+                        {v.isShip ? 'Nave Aérea' : 'Terrestre'}
+                      </span>
                     </div>
                     <div className="font-display font-bold text-base text-white">
                       {v.name}
                     </div>
                   </div>
-                  {vSelected ? (
-                    <span className="flex items-center gap-1 text-xs font-bold text-emerald-300">
+                  {vEquipped ? (
+                    <span className="flex items-center gap-1 text-xs font-bold text-emerald-300 whitespace-nowrap">
                       <Check className="w-4 h-4" /> Equipado
                     </span>
                   ) : vOwned ? (
-                    <span className="font-mono-num text-xs text-slate-300">
+                    <span className="font-mono-num text-xs text-slate-300 whitespace-nowrap">
                       Nv. {vLvl}/{v.maxUpgradeLevel}
                     </span>
                   ) : (
-                    <span className="flex items-center gap-1 text-xs font-mono-num font-bold text-amber-300">
+                    <span className="flex items-center gap-1 text-xs font-mono-num font-bold text-amber-300 whitespace-nowrap">
                       <Lock className="w-3.5 h-3.5" />
-                      {v.unlockCostCoins} M
+                      {v.unlockCostCoins.toLocaleString('es-ES')} M
                       {v.unlockCostGems > 0 ? ` + ${v.unlockCostGems} G` : ''}
                     </span>
                   )}
@@ -136,14 +154,37 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
           heightClass="h-48"
         />
 
+        {/* Flight / Ground rule pill (non-decorative technical clarity) */}
+        <div
+          className={`px-3 py-2 rounded-lg border text-[11px] font-semibold flex items-center justify-between ${
+            activeVehicle.isShip
+              ? 'bg-fuchsia-950/35 border-fuchsia-400/45 text-fuchsia-200'
+              : 'bg-[#0b1224] border-white/10 text-slate-300'
+          }`}
+        >
+          <span className="flex items-center gap-1.5">
+            {activeVehicle.isShip ? (
+              <Plane className="w-3.5 h-3.5 text-fuchsia-300" />
+            ) : (
+              <Car className="w-3.5 h-3.5 text-cyan-300" />
+            )}
+            {activeVehicle.isShip
+              ? 'NAVE AÉREA · Doble salto propulsado activo'
+              : 'VEHÍCULO TERRESTRE · Doble salto bloqueado'}
+          </span>
+          <span className="font-mono-num text-cyan-300">
+            Sprint/Slow-Mo OFF en vehículo
+          </span>
+        </div>
+
         {/* Performance Bars */}
         <div className="grid grid-cols-2 gap-3 text-xs">
           {(
             [
-              ['Velocidad', stats.speed, 12, 'bg-cyan-400'],
-              ['Maniobra', stats.handling, 12, 'bg-emerald-400'],
-              ['Blindaje', stats.shield, 12, 'bg-amber-400'],
-              ['Duración', stats.boostDuration, 16, 'bg-fuchsia-400'],
+              ['Velocidad', stats.speed, 13, 'bg-cyan-400'],
+              ['Maniobra', stats.handling, 13, 'bg-emerald-400'],
+              ['Blindaje', stats.shield, 13, 'bg-amber-400'],
+              ['Duración', stats.boostDuration, 18, 'bg-fuchsia-400'],
             ] as [string, number, number, string][]
           ).map(([lbl, val, max, barColor]) => (
             <div key={lbl} className="space-y-1">
@@ -162,6 +203,25 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
             </div>
           ))}
         </div>
+
+        {/* Unlock requirement banner if locked */}
+        {!owned && activeVehicle.unlockRequirement && (
+          <div
+            className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
+              reqCheck.met
+                ? 'bg-emerald-950/35 border-emerald-400/45 text-emerald-200'
+                : 'bg-amber-950/35 border-amber-400/45 text-amber-200'
+            }`}
+          >
+            <span className="flex items-center gap-1.5">
+              <Lock className="w-3.5 h-3.5 shrink-0" />
+              <span>{activeVehicle.unlockRequirement.label}</span>
+            </span>
+            <span className="font-mono-num font-bold shrink-0">
+              {Math.min(reqCheck.current, reqCheck.target)}/{reqCheck.target}
+            </span>
+          </div>
+        )}
 
         {/* Paint Selector */}
         {owned && (
@@ -194,11 +254,16 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
           </div>
         )}
 
-        {/* Upgrade Controls */}
+        {notice && (
+          <div className="text-xs font-semibold text-amber-300">{notice}</div>
+        )}
+
+        {/* Upgrade / Unlock Controls */}
         <div className="border-t border-white/10 pt-2.5 space-y-2">
           {!owned ? (
             <button
               disabled={
+                !reqCheck.met ||
                 save.coins < activeVehicle.unlockCostCoins ||
                 save.gems < activeVehicle.unlockCostGems
               }
@@ -207,50 +272,73 @@ export const GarageView: React.FC<GarageViewProps> = ({ save, onUpdateSave }) =>
                 if (res.ok) {
                   audioEngine.playPurchaseConfirm();
                   onUpdateSave(res.nextSave);
+                  setNotice(null);
+                } else {
+                  setNotice(res.reason ?? 'No se pudo desbloquear.');
                 }
               }}
-              className="w-full py-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-display font-bold text-xs cursor-pointer"
+              className="w-full py-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 font-display font-bold text-xs cursor-pointer disabled:cursor-not-allowed"
             >
-              Desbloquear Vehículo ({activeVehicle.unlockCostCoins} M
-              {activeVehicle.unlockCostGems > 0
-                ? ` + ${activeVehicle.unlockCostGems} G`
-                : ''}
-              )
+              {!reqCheck.met
+                ? `Bloqueado (${Math.min(reqCheck.current, reqCheck.target)}/${reqCheck.target})`
+                : `Desbloquear Vehículo (${activeVehicle.unlockCostCoins.toLocaleString('es-ES')} M${
+                    activeVehicle.unlockCostGems > 0
+                      ? ` + ${activeVehicle.unlockCostGems} G`
+                      : ''
+                  })`}
             </button>
-          ) : maxed ? (
-            <div className="py-2 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold text-center flex items-center justify-center gap-1.5">
-              <Shield className="w-4 h-4" /> Vehículo al Máximo
-            </div>
           ) : (
-            <div className="flex gap-2">
-              <button
-                disabled={save.coins < coinCost}
-                onClick={() => {
-                  const res = upgradeVehicle(save, activeId, 'coins');
-                  if (res.ok) {
-                    audioEngine.playPurchaseConfirm();
-                    onUpdateSave(res.nextSave);
-                  }
-                }}
-                className="flex-1 py-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Zap className="w-3.5 h-3.5" /> Mejorar · {coinCost} M
-              </button>
-              <button
-                disabled={save.tickets < ticketCost}
-                onClick={() => {
-                  const res = upgradeVehicle(save, activeId, 'tickets');
-                  if (res.ok) {
-                    audioEngine.playPurchaseConfirm();
-                    onUpdateSave(res.nextSave);
-                  }
-                }}
-                className="flex-1 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-              >
-                <Ticket className="w-3.5 h-3.5" /> {ticketCost}{' '}
-                {ticketCost === 1 ? 'Tique' : 'Tiques'}
-              </button>
-            </div>
+            <>
+              {!equipped && (
+                <button
+                  onClick={() => {
+                    const res = purchaseOrSelectVehicle(save, activeId);
+                    if (res.ok) {
+                      audioEngine.playUiClick(true);
+                      onUpdateSave(res.nextSave);
+                    }
+                  }}
+                  className="w-full py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-display font-bold text-xs cursor-pointer"
+                >
+                  Equipar {activeVehicle.name}
+                </button>
+              )}
+              {maxed ? (
+                <div className="py-2 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold text-center flex items-center justify-center gap-1.5">
+                  <Shield className="w-4 h-4" /> Vehículo al Máximo
+                </div>
+              ) : (
+                <div className="flex gap-2">
+                  <button
+                    disabled={save.coins < coinCost}
+                    onClick={() => {
+                      const res = upgradeVehicle(save, activeId, 'coins');
+                      if (res.ok) {
+                        audioEngine.playPurchaseConfirm();
+                        onUpdateSave(res.nextSave);
+                      }
+                    }}
+                    className="flex-1 py-2.5 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Zap className="w-3.5 h-3.5" /> Mejorar · {coinCost} M
+                  </button>
+                  <button
+                    disabled={save.tickets < ticketCost}
+                    onClick={() => {
+                      const res = upgradeVehicle(save, activeId, 'tickets');
+                      if (res.ok) {
+                        audioEngine.playPurchaseConfirm();
+                        onUpdateSave(res.nextSave);
+                      }
+                    }}
+                    className="flex-1 py-2.5 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num flex items-center justify-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+                  >
+                    <Ticket className="w-3.5 h-3.5" /> {ticketCost}{' '}
+                    {ticketCost === 1 ? 'Tique' : 'Tiques'}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>

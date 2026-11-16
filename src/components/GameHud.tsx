@@ -133,9 +133,29 @@ export const GameHud: React.FC<GameHudProps> = ({
                 {hud.districtName}
               </span>
               <span className="font-mono-num whitespace-nowrap">
-                Etapa {hud.difficultyStage}/4 · {getTimeLabel(lang, hud.timePeriod)} · {hud.gravityScale.toFixed(2)}G · {hud.fps} FPS
+                {hud.laneCount}C · Etapa {hud.difficultyStage}/4 · {getTimeLabel(lang, hud.timePeriod)} · {hud.gravityScale.toFixed(2)}G · {hud.fps} FPS
               </span>
             </div>
+
+            {(hud.laneCount === 5 || hud.parkourFloor === 2 || hud.parkourChain > 0) && (
+              <div className="mt-1.5 pt-1.5 border-t border-white/10 flex flex-wrap items-center gap-1.5 text-[10px] font-mono-num font-bold">
+                {hud.laneCount === 5 && (
+                  <span className="px-2 py-0.5 rounded bg-amber-500/20 border border-amber-400/50 text-amber-200">
+                    AUTOPISTA 5 CARRILES
+                  </span>
+                )}
+                {hud.parkourFloor === 2 && (
+                  <span className="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-400/50 text-emerald-200">
+                    PISO 2 · ALTURA
+                  </span>
+                )}
+                {hud.parkourChain > 0 && (
+                  <span className="px-2 py-0.5 rounded bg-cyan-500/20 border border-cyan-400/50 text-cyan-200">
+                    CADENA PARKOUR x{hud.parkourChain}
+                  </span>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Pursuer Threat Proximity Bar */}
@@ -231,6 +251,30 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           )}
 
+          {/* Elden-Ring Style 4-Phase Boss Intro Banner */}
+          {hud.bossIntroActive && hud.bossName && (
+            <div className="bg-[#14050c]/96 border-2 border-amber-400/80 rounded-xl px-7 py-3.5 min-w-[340px] space-y-1 shadow-2xl">
+              <div className="text-[11px] font-bold tracking-[0.22em] text-amber-300 uppercase">
+                {hud.bossIntroTitle || 'SEÑOR DEL SECTOR'}
+              </div>
+              <div className="font-display text-2xl font-bold tracking-wide text-white">
+                {hud.bossName}
+              </div>
+              {hud.bossIntroSubtitle && (
+                <div className="text-xs italic text-rose-200">
+                  “{hud.bossIntroSubtitle}”
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Phase Transition Callout */}
+          {hud.bossTransitionActive && hud.bossPhaseName && (
+            <div className="bg-[#240611]/96 border-2 border-amber-400 rounded-xl px-6 py-2 text-xs font-bold tracking-widest text-amber-200 uppercase">
+              CAMBIO DE FASE · {hud.bossPhaseName}
+            </div>
+          )}
+
           {/* Boss Telegraphed Attack Warning Banner */}
           {hud.bossWarningText && (
             <div className="bg-[#2a0714]/96 border-2 border-rose-500 rounded-xl px-5 py-2 flex items-center gap-2 text-xs font-bold text-amber-200">
@@ -239,30 +283,59 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           )}
 
-          {/* Active 3D Boss Health Bar */}
+          {/* Active 3D 4-Phase Boss Health Bar */}
           {hud.bossId && hud.bossName && (
-            <div className="bg-[#1b0918]/94 border border-rose-500/60 rounded-xl px-5 py-2.5 min-w-[300px] space-y-1.5">
+            <div className="bg-[#160813]/95 border border-rose-500/65 rounded-xl px-5 py-2.5 min-w-[330px] space-y-1.5">
               <div className="flex items-center justify-between gap-3 text-xs font-bold">
-                <span className="flex items-center gap-1.5 text-rose-300">
-                  <Swords className="w-3.5 h-3.5" />
-                  {hud.randomBossActive ? 'EMBOSCADA DE JEFE: ' : `${t(lang, 'hud.boss')}: `}
+                <span className="flex items-center gap-1.5 text-rose-300 truncate">
+                  <Swords className="w-3.5 h-3.5 shrink-0" />
+                  {hud.randomBossActive ? 'EMBOSCADA: ' : `${t(lang, 'hud.boss')}: `}
                   {hud.bossName}
                 </span>
-                <span className="font-mono-num text-amber-300">
-                  Fase {hud.bossPhase}
+                <span className="font-mono-num text-amber-300 whitespace-nowrap">
+                  Fase {hud.bossPhase}/4 · {hud.bossPhaseHp}/{Math.max(1, hud.bossPhaseMaxHp)} EMP
                 </span>
               </div>
+              {hud.bossPhaseName && (
+                <div className="text-[11px] font-semibold text-slate-200 tracking-wide">
+                  {hud.bossPhaseName}
+                </div>
+              )}
+              {/* 4-Phase Indicator */}
+              <div className="grid grid-cols-4 gap-1">
+                {[1, 2, 3, 4].map((pNum) => {
+                  const active = pNum === hud.bossPhase;
+                  const cleared = pNum < hud.bossPhase;
+                  return (
+                    <div
+                      key={pNum}
+                      className={`h-1 rounded ${
+                        cleared
+                          ? 'bg-emerald-400'
+                          : active
+                            ? 'bg-amber-400'
+                            : 'bg-slate-800'
+                      }`}
+                    />
+                  );
+                })}
+              </div>
+              {/* Current Phase EMP HP Segments */}
               <div
-                className="grid gap-1.5"
+                className="grid gap-1"
                 style={{
-                  gridTemplateColumns: `repeat(${Math.max(1, hud.bossMaxHp)}, minmax(0, 1fr))`,
+                  gridTemplateColumns: `repeat(${Math.max(1, hud.bossPhaseMaxHp || hud.bossMaxHp)}, minmax(0, 1fr))`,
                 }}
               >
-                {Array.from({ length: Math.max(1, hud.bossMaxHp) }).map((_, i) => (
+                {Array.from({
+                  length: Math.max(1, hud.bossPhaseMaxHp || hud.bossMaxHp),
+                }).map((_, i) => (
                   <div
                     key={i}
                     className={`h-2 rounded ${
-                      i < hud.bossHp ? 'bg-rose-500' : 'bg-slate-800'
+                      i < (hud.bossPhaseMaxHp ? hud.bossPhaseHp : hud.bossHp)
+                        ? 'bg-rose-500'
+                        : 'bg-slate-800'
                     }`}
                   />
                 ))}
@@ -270,6 +343,19 @@ export const GameHud: React.FC<GameHudProps> = ({
               <div className="text-[11px] text-cyan-300 font-medium">
                 {t(lang, 'hud.empPrompt')}
               </div>
+            </div>
+          )}
+
+          {/* Sector Transition & Objective Celebration Banners */}
+          {hud.sectorTransitionLabel && (
+            <div className="bg-[#091529]/95 border border-cyan-400/65 rounded-lg px-5 py-1.5 text-xs font-bold tracking-wider text-cyan-200 uppercase">
+              SECTOR: {hud.sectorTransitionLabel}
+            </div>
+          )}
+
+          {hud.objectiveCelebrationText && (
+            <div className="bg-[#1b1405]/96 border-2 border-amber-400 rounded-xl px-5 py-2 text-xs font-bold tracking-wide text-amber-200 uppercase">
+              ★ {hud.objectiveCelebrationText}
             </div>
           )}
 
@@ -448,13 +534,21 @@ export const GameHud: React.FC<GameHudProps> = ({
           </div>
         )}
 
-        {(hud.hasShield || hud.hasMagnet || hud.isRidingVehicle) && (
-          <div className="flex items-center gap-4 bg-[#080b16]/92 border border-white/15 rounded-lg px-4 py-1.5 text-xs font-medium">
-            {hud.hasShield && (
+        {(hud.hasShield ||
+          hud.shieldCooldown > 0 ||
+          hud.hasMagnet ||
+          hud.isRidingVehicle ||
+          hud.vehicleAbilityLocked) && (
+          <div className="flex flex-wrap items-center justify-center gap-4 bg-[#080b16]/94 border border-white/15 rounded-lg px-4 py-1.5 text-xs font-medium">
+            {hud.hasShield ? (
               <span className="flex items-center gap-1.5 text-cyan-300">
-                <Shield className="w-3.5 h-3.5" /> {t(lang, 'hud.shield')}
+                <Shield className="w-3.5 h-3.5" /> {t(lang, 'hud.shield')} Activo
               </span>
-            )}
+            ) : hud.shieldCooldown > 0 ? (
+              <span className="flex items-center gap-1.5 text-amber-300 font-mono-num">
+                <ShieldAlert className="w-3.5 h-3.5" /> Escudo CD {hud.shieldCooldown.toFixed(1)}s
+              </span>
+            ) : null}
             {hud.hasMagnet && (
               <span className="flex items-center gap-1.5 text-rose-300 font-mono-num">
                 <Magnet className="w-3.5 h-3.5" /> {t(lang, 'hud.magnet')}{' '}
@@ -465,44 +559,149 @@ export const GameHud: React.FC<GameHudProps> = ({
               <span className="flex items-center gap-1.5 text-amber-300 font-mono-num">
                 <Flame className="w-3.5 h-3.5" /> {activeVehicleName}{' '}
                 {hud.vehicleTimer.toFixed(1)}s
+                {hud.vehicleIsShip ? ' (NAVE · 2x SALTO)' : ' (TERRESTRE)'}
+              </span>
+            )}
+            {hud.vehicleAbilityLocked && (
+              <span className="text-[11px] font-bold text-rose-300">
+                IMPULSO / SLOW-MO BLOQUEADOS EN VEHÍCULO
               </span>
             )}
           </div>
         )}
 
         {/* Bottom Gauges */}
-        <div className={`${cardSubSurface} rounded-lg px-5 py-2.5 flex items-center gap-6`}>
+        <div className={`${cardSubSurface} rounded-lg px-5 py-2.5 flex flex-wrap items-center justify-center gap-5`}>
+          {/* Boost / Momentum */}
           <div className="w-32">
             <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
               <span className="flex items-center gap-1 font-semibold">
-                <Flame className="w-3 h-3 text-amber-400" /> {t(lang, 'hud.momentum')}
+                <Flame className="w-3 h-3 text-amber-400" />{' '}
+                {hud.vehicleAbilityLocked ? 'Impulso (Bloq.)' : t(lang, 'hud.momentum')}
               </span>
-              <span className="font-mono-num">{hud.momentum}%</span>
+              <span className="font-mono-num">
+                {hud.vehicleAbilityLocked
+                  ? 'BLOQ'
+                  : hud.boostActive
+                    ? 'ACTIVO'
+                    : hud.boostCooldown > 0
+                      ? `${hud.boostCooldown.toFixed(1)}s`
+                      : `${hud.momentum}%`}
+              </span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
               <div
-                className="h-full bg-amber-400 transition-all duration-100"
-                style={{ width: `${hud.momentum}%` }}
+                className={`h-full transition-all duration-100 ${
+                  hud.vehicleAbilityLocked
+                    ? 'bg-slate-600'
+                    : hud.boostActive
+                      ? 'bg-emerald-400'
+                      : 'bg-amber-400'
+                }`}
+                style={{ width: `${hud.vehicleAbilityLocked ? 0 : hud.momentum}%` }}
               />
             </div>
           </div>
 
+          {/* Slow-Mo */}
           <div className="w-32">
             <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
               <span className="flex items-center gap-1 font-semibold">
                 <Clock className="w-3 h-3 text-cyan-400" /> {t(lang, 'hud.slowmo')}
               </span>
-              <span className="font-mono-num">{hud.slowMoEnergy}%</span>
+              <span className="font-mono-num">
+                {hud.vehicleAbilityLocked ? 'BLOQ' : `${hud.slowMoEnergy}%`}
+              </span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
               <div
-                className="h-full bg-cyan-400 transition-all duration-100"
-                style={{ width: `${hud.slowMoEnergy}%` }}
+                className={`h-full transition-all duration-100 ${
+                  hud.vehicleAbilityLocked ? 'bg-slate-600' : 'bg-cyan-400'
+                }`}
+                style={{ width: `${hud.vehicleAbilityLocked ? 0 : hud.slowMoEnergy}%` }}
               />
             </div>
           </div>
 
+          {/* Double Jump Charges */}
           <div className="w-36">
+            <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
+              <span className="font-semibold">Doble Salto</span>
+              <span className="font-mono-num">
+                {hud.doubleJumpBlockedReason
+                  ? 'BLOQ'
+                  : hud.doubleJumpCooldown > 0
+                    ? `${hud.doubleJumpCooldown.toFixed(1)}s`
+                    : `${hud.doubleJumpCharges}/${hud.maxDoubleJumpCharges}`}
+              </span>
+            </div>
+            <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
+              <div
+                className={`h-full transition-all duration-100 ${
+                  hud.doubleJumpBlockedReason
+                    ? 'bg-rose-500/50'
+                    : hud.doubleJumpCooldown > 0
+                      ? 'bg-amber-400'
+                      : 'bg-emerald-400'
+                }`}
+                style={{
+                  width: `${
+                    hud.doubleJumpBlockedReason
+                      ? 100
+                      : Math.round(
+                          (hud.doubleJumpCharges /
+                            Math.max(1, hud.maxDoubleJumpCharges)) *
+                            100,
+                        )
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Shield Cooldown */}
+          <div className="w-32">
+            <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
+              <span className="flex items-center gap-1 font-semibold">
+                <Shield className="w-3 h-3 text-cyan-300" /> Escudo
+              </span>
+              <span className="font-mono-num">
+                {hud.hasShield
+                  ? 'ACTIVO'
+                  : hud.shieldCooldown > 0
+                    ? `${hud.shieldCooldown.toFixed(1)}s`
+                    : 'LISTO'}
+              </span>
+            </div>
+            <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
+              <div
+                className={`h-full transition-all duration-100 ${
+                  hud.hasShield ? 'bg-cyan-300' : 'bg-sky-500'
+                }`}
+                style={{
+                  width: `${
+                    hud.hasShield
+                      ? 100
+                      : Math.max(
+                          0,
+                          Math.min(
+                            100,
+                            Math.round(
+                              (1 -
+                                hud.shieldCooldown /
+                                  Math.max(1, hud.shieldMaxCooldown)) *
+                                100,
+                            ),
+                          ),
+                        )
+                  }%`,
+                }}
+              />
+            </div>
+          </div>
+
+          {/* Signature Ability */}
+          <div className="w-32">
             <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
               <span className="flex items-center gap-1 font-semibold">
                 <Zap className="w-3 h-3 text-fuchsia-400" /> {t(lang, 'hud.ability')}

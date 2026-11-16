@@ -1,0 +1,1385 @@
+# 🚀 METRO RUSH NEON CITY — ACTUALIZACIÓN MAESTRA 3.0.1
+## PROJECT EVOLUTION UPDATE: BOSS OVERHAUL, NEW CITIES, ADVANCED ANIMATIONS, GAMEPLAY REBALANCING & COMPLETE VISUAL REDESIGN
+
+### 1. INSTRUCCIONES GENERALES Y OBJETIVO DE LA ACTUALIZACIÓN
+
+Actúa como un equipo profesional de desarrollo de videojuegos AAA, integrado por programadores especializados en videojuegos, diseñadores de gameplay, artistas 3D, animadores, especialistas en inteligencia artificial, diseñadores de interfaces, ingenieros de sonido y expertos en optimización.
+
+Tu misión es desarrollar una de las actualizaciones más grandes de **Metro Rush Neon City**, correspondiente a la versión **3.0.1**.
+
+Esta actualización no debe ser un simple cambio estético. Necesitamos una evolución profunda de prácticamente todos los sistemas del videojuego.
+
+El objetivo es transformar la experiencia actual, mejorar considerablemente su calidad visual, ampliar el contenido, introducir nuevas mecánicas, aumentar la dificultad, renovar los eventos y convertir los enfrentamientos contra jefes en experiencias memorables.
+
+**REGLAS OBLIGATORIAS DE DESARROLLO:**
+
+1. Trabaja sobre el proyecto existente. No reconstruyas el videojuego desde cero.
+2. Conserva los sistemas, funcionalidades, personajes, vehículos, mapas, progresos y datos que ya funcionan.
+3. No elimines características existentes para simplificar el desarrollo.
+4. Analiza primero la arquitectura del proyecto, los archivos, las escenas, los scripts y las dependencias.
+5. Integra las nuevas características con los sistemas actuales.
+6. No utilices animaciones falsas, botones decorativos o funcionalidades que aparenten funcionar sin hacerlo realmente.
+7. Todo sistema nuevo debe estar conectado a la lógica real del videojuego.
+8. Utiliza recursos 3D, modelos, animaciones y efectos de sonido externos cuando sea necesario, verificando sus licencias y compatibilidad.
+9. Optimiza los recursos para mantener un rendimiento adecuado.
+10. No consideres terminada una característica hasta haberla implementado y probado.
+11. No sustituyas contenido existente por versiones simplificadas.
+12. Mantén la compatibilidad con los datos y las partidas anteriores siempre que sea técnicamente posible.
+
+No quiero una actualización superficial. Quiero una transformación real de Metro Rush Neon City.
+
+---
+
+# 2. SISTEMA DE JEFES: RECONSTRUCCIÓN COMPLETA
+
+Este será uno de los apartados más importantes de la actualización.
+
+Actualmente, los jefes son demasiado fáciles de derrotar, aparecen sin suficiente preparación y sus enfrentamientos carecen de espectacularidad. Necesitamos convertir cada encuentro en una batalla intensa, extensa, estratégica y visualmente impresionante.
+
+## 2.1. Animaciones cinematográficas de entrada
+
+Los jefes nunca deben aparecer simplemente en pantalla.
+
+Cada jefe debe tener una secuencia de presentación propia.
+
+Implementa:
+
+- Animaciones cinematográficas de aparición.
+- Entradas con movimientos corporales especiales.
+- Efectos de iluminación y partículas.
+- Explosiones, humo, electricidad, fuego o energía según el jefe.
+- Vibraciones de cámara controladas.
+- Cambios de iluminación ambiental.
+- Efectos de sonido sincronizados.
+- Animaciones de preparación antes de comenzar el combate.
+- Presentación del nombre del jefe y su categoría.
+
+La entrada debe sentirse como un acontecimiento importante.
+
+Toma como referencia el nivel de espectacularidad de las presentaciones de jefes de **Elden Ring**, especialmente sus transformaciones y entradas cinematográficas.
+
+No copies sus personajes, modelos, animaciones ni recursos. Utiliza esa referencia únicamente como inspiración para crear una identidad original.
+
+## 2.2. Combates divididos en cuatro fases obligatorias
+
+Cada jefe debe tener exactamente cuatro fases principales.
+
+<text>La derrota del jefe solo podrá producirse cuando termine la cuarta fase.</text>
+
+Cada fase debe tener:
+
+- Una barra de vida independiente.
+- Un comportamiento diferente.
+- Nuevas habilidades.
+- Mayor agresividad.
+- Nuevos patrones de ataque.
+- Mayor resistencia.
+- Nuevas animaciones.
+- Cambios visuales en el jefe.
+- Variaciones en el entorno de combate.
+
+La transición entre fases debe ser espectacular.
+
+### Fase 1: Despertar
+
+El jefe comienza utilizando sus ataques básicos y movimientos de reconocimiento.
+
+Debe permitir que el jugador comprenda sus patrones, pero sin resultar demasiado fácil.
+
+### Fase 2: Intensificación
+
+El jefe comienza a utilizar ataques más peligrosos, aumenta su velocidad y combina varias habilidades.
+
+Su comportamiento debe cambiar visiblemente.
+
+### Fase 3: Descontrol
+
+El jefe entra en un estado mucho más agresivo.
+
+Introduce ataques especiales, movimientos inesperados, efectos ambientales y nuevas combinaciones de habilidades.
+
+El jugador debe sentir que está enfrentándose a un enemigo considerablemente más peligroso.
+
+### Fase 4: Dominio absoluto
+
+Esta será la fase más difícil.
+
+El jefe debe utilizar sus habilidades más poderosas, combinar ataques anteriores y presentar nuevos movimientos exclusivos.
+
+Su resistencia debe aumentar considerablemente.
+
+La última fase debe sentirse como el verdadero desafío del enfrentamiento.
+
+**Importante:** cada fase debe durar mucho más que las actuales. No permitas que el jugador pueda eliminar una fase en unos pocos segundos.
+
+La duración debe depender del rendimiento, la dificultad y el equilibrio del combate, pero debe garantizar enfrentamientos considerablemente más largos.
+
+## 2.3. Transiciones épicas entre fases
+
+Cuando el jefe pierda toda la vida de una fase, no debe pasar inmediatamente a la siguiente.
+
+Debe producirse una secuencia de transición:
+
+1. El jefe detiene momentáneamente sus movimientos.
+2. Se reproduce una animación especial.
+3. El entorno cambia visualmente.
+4. Se generan efectos de energía, humo, electricidad u otros elementos.
+5. La cámara realiza un movimiento cinematográfico.
+6. El jefe cambia su postura, apariencia o comportamiento.
+7. Aparece la presentación de la siguiente fase.
+8. Se actualiza la barra de vida.
+9. Comienza la siguiente etapa del combate.
+
+Cada jefe debe tener transiciones diferentes y reconocibles.
+
+## 2.4. Sistema de dificultad de los jefes
+
+Reequilibra completamente su inteligencia artificial.
+
+Los jefes deben:
+
+- Anticipar los movimientos del jugador.
+- Cambiar sus patrones de ataque.
+- Utilizar ataques combinados.
+- Castigar los movimientos repetitivos.
+- Alternar ataques cercanos y a distancia.
+- Aprovechar el espacio disponible.
+- Adaptar su agresividad a la fase actual.
+- Evitar quedarse inmóviles durante demasiado tiempo.
+- Tener tiempos de recuperación equilibrados para permitir contraataques.
+
+Cada jefe debe ser más difícil que el anterior.
+
+La dificultad debe aumentar de manera progresiva, no simplemente aumentando su vida.
+
+Diferencia a cada jefe mediante habilidades, velocidades, resistencia, alcance, inteligencia artificial y estrategias propias.
+
+## 2.5. Distancia y posicionamiento del jefe
+
+Actualmente, algunos jefes aparecen demasiado cerca del jugador.
+
+Corrige este comportamiento.
+
+- Aumenta la distancia inicial entre el jefe y el jugador.
+- Mantén una separación adecuada durante el combate.
+- Evita que el modelo del jefe tape completamente la cámara.
+- Implementa ataques a distancia cuando corresponda.
+- Ajusta las dimensiones de la arena de combate.
+- Evita colisiones injustas con la cámara o el personaje.
+
+El combate debe ser intenso, pero siempre legible.
+
+## 2.6. Calles completamente despejadas durante los enfrentamientos
+
+Cuando comience un evento de jefe o un asalto:
+
+- Detén la generación normal de obstáculos.
+- Elimina los trenes y obstáculos incompatibles con el combate.
+- Desactiva temporalmente los eventos normales.
+- Limpia los elementos que puedan interferir con la batalla.
+- Conserva únicamente los elementos necesarios para el escenario del jefe.
+- Crea un espacio de combate suficientemente amplio.
+
+Las calles deben quedar despejadas para que el enfrentamiento se concentre en el jefe.
+
+No quiero que el jugador tenga que esquivar trenes normales mientras intenta luchar contra un jefe.
+
+El escenario puede conservar elementos ambientales y decorativos, pero debe funcionar como una auténtica arena de combate.
+
+## 2.7. Habilidades especiales y ataques de los jefes
+
+Cada jefe debe disponer de un repertorio de habilidades realmente peligroso.
+
+Implementa diferentes categorías:
+
+- Ataques directos.
+- Ataques de área.
+- Proyectiles.
+- Ondas expansivas.
+- Ataques eléctricos.
+- Ataques de energía.
+- Embestidas.
+- Habilidades de persecución.
+- Ataques especiales de fase.
+- Combinaciones de varios ataques.
+
+Cada habilidad necesita:
+
+- Animación de preparación.
+- Efectos visuales.
+- Sonido propio.
+- Animación de ejecución.
+- Área de impacto definida.
+- Tiempo de recuperación.
+- Indicadores visuales para que el jugador pueda reaccionar.
+
+Los ataques deben ser difíciles de esquivar, pero no injustos.
+
+## 2.8. Ataques que reducen la vida de la fase
+
+Introduce una mecánica adicional para que el jefe pueda afectar directamente al progreso del jugador.
+
+Los jefes podrán lanzar proyectiles, energía, trampas u otros elementos especiales que, al alcanzar al jugador, reduzcan la vida de la fase actual.
+
+Cada fase tendrá su propia barra de vida y el daño recibido deberá descontarse de esa barra según el sistema de combate.
+
+El daño y la resistencia deben variar según la fase:
+
+- Fase 1: daño y resistencia moderados.
+- Fase 2: mayor resistencia y ataques más peligrosos.
+- Fase 3: resistencia elevada y habilidades más agresivas.
+- Fase 4: resistencia máxima y ataques de gran dificultad.
+
+El sistema debe estar equilibrado para evitar que un solo ataque elimine injustamente toda la vida del jugador.
+
+## 2.9. Música y ambientación sonora de los jefes
+
+Renueva completamente el apartado musical de los enfrentamientos.
+
+Quiero música cinematográfica, oscura, intensa y de terror futurista.
+
+La música debe funcionar de esta manera:
+
+- Antes de la aparición: ambientación de suspenso.
+- Durante la entrada: introducción musical cinematográfica.
+- Al comenzar la batalla: música épica de combate.
+- Durante las fases: variaciones musicales progresivas.
+- En las fases finales: música mucho más intensa.
+- Al derrotar al jefe: secuencia musical de victoria.
+- Al perder: música de derrota apropiada.
+
+La música debe comenzar sincronizada con las animaciones.
+
+No debe aparecer de repente ni reproducirse sin transición.
+
+Utiliza transiciones de audio, cambios progresivos de volumen y sincronización con los eventos.
+
+Cada jefe importante debe tener una identidad sonora propia.
+
+---
+
+# 3. PERSONALIZACIÓN Y CREACIÓN DE JEFES CON BLENDER
+
+Introduce un sistema opcional para que los jugadores puedan crear sus propios modelos de jefes.
+
+El sistema debe funcionar de manera similar al sistema de personalización de personajes existente.
+
+## 3.1. Importación de modelos personalizados
+
+El jugador podrá:
+
+1. Seleccionar un jefe existente.
+2. Exportar o descargar una plantilla compatible.
+3. Abrirla en Blender.
+4. Modificar el modelo.
+5. Crear su propia apariencia.
+6. Exportar el modelo en un formato compatible.
+7. Importarlo nuevamente al videojuego.
+8. Utilizar el modelo personalizado en lugar del modelo original.
+
+Permite utilizar formatos adecuados para el motor del proyecto, como GLB/GLTF, cuando sean compatibles.
+
+## 3.2. Compatibilidad y validación
+
+El sistema debe comprobar:
+
+- Escala del modelo.
+- Orientación.
+- Estructura del esqueleto.
+- Materiales y texturas.
+- Animaciones compatibles.
+- Dimensiones.
+- Rendimiento.
+- Integridad del archivo.
+
+Cuando un modelo no cumpla los requisitos, muestra un mensaje explicando el problema.
+
+El modelo original siempre debe permanecer disponible.
+
+La personalización debe ser completamente opcional.
+
+No permitas que un modelo personalizado pueda ejecutar código arbitrario ni acceder a archivos internos del juego.
+
+---
+
+# 4. RENOVACIÓN COMPLETA DEL SISTEMA DE DERROTA
+
+La pantalla de derrota actual debe ser reemplazada por una experiencia completamente nueva.
+
+Quiero una interfaz cinematográfica, más gráfica, con animaciones, estadísticas y una presentación visual mucho más profesional.
+
+## 4.1. Nuevo sistema de derrota con dron
+
+Cuando el jugador pierda, debe aparecer una secuencia especial.
+
+El personaje utilizado durante la partida aparecerá atrapado por un dron enemigo.
+
+La escena debe incluir:
+
+- El personaje intentando liberarse.
+- Un dron sujetándolo o transportándolo.
+- Animaciones corporales.
+- Movimiento del dron.
+- Iluminación cinematográfica.
+- Efectos de partículas.
+- Sonidos mecánicos.
+- Una cámara enfocada en el personaje.
+- Fondo ambiental relacionado con el universo del juego.
+
+La animación debe ser suficientemente elaborada para que el jugador sienta que realmente ha perdido.
+
+No quiero que el personaje aparezca simplemente inmóvil en una pantalla.
+
+## 4.2. Estadísticas animadas
+
+Al lado del personaje debe aparecer el resumen de la partida.
+
+Las estadísticas no deben aparecer todas al mismo tiempo.
+
+Implementa una secuencia de presentación:
+
+1. Aparece el primer indicador.
+2. El número comienza a contar rápidamente.
+3. Se muestra el resultado final.
+4. Se reproduce una pequeña animación.
+5. Aparece la siguiente estadística.
+6. El proceso continúa hasta completar el resumen.
+
+Incluye, según corresponda:
+
+- Distancia recorrida.
+- Monedas obtenidas.
+- Puntuación.
+- Obstáculos esquivados.
+- Trenes superados.
+- Enemigos derrotados.
+- Tiempo de supervivencia.
+- Misiones completadas.
+- Jefe derrotado o fase alcanzada.
+- Récord personal.
+- Recompensas obtenidas.
+
+Las estadísticas deben corresponder a los datos reales de la partida.
+
+## 4.3. Diseño visual de la pantalla
+
+Renueva toda la interfaz:
+
+- Paneles gráficos modernos.
+- Animaciones de entrada.
+- Tipografía futurista.
+- Indicadores visuales.
+- Efectos de iluminación moderados.
+- Jerarquía visual clara.
+- Botones animados.
+- Diseño adaptable a las diferentes resoluciones.
+
+Incluye botones funcionales para:
+
+- Volver al menú.
+- Reiniciar.
+- Revivir cuando corresponda.
+- Consultar resultados.
+
+---
+
+# 5. SISTEMA DE TICKETS DE REVIVIR
+
+Reestructura el funcionamiento de los tickets de resurrección.
+
+Actualmente, el sistema debe convertirse en una mecánica más clara y controlada.
+
+## 5.1. Nuevo funcionamiento
+
+Cuando el jugador muera:
+
+1. Se detiene la partida.
+2. Aparece una pantalla especial de oportunidad de resurrección.
+3. Comienza una cuenta regresiva de 10 segundos.
+4. Se muestran dos opciones: utilizar un ticket o rechazarlo.
+5. El jugador puede tomar una decisión.
+
+### Si el jugador selecciona UTILIZAR TICKET:
+
+- Comprueba que tenga tickets disponibles.
+- Consume exactamente un ticket.
+- Reproduce una animación de resurrección.
+- Devuelve al personaje a la partida.
+- Recupera el control del jugador.
+- Continúa el modo de juego desde el estado anterior.
+
+### Si selecciona NO UTILIZAR:
+
+- Se cierra la oportunidad de resurrección.
+- Se muestra la nueva pantalla de derrota.
+
+### Si termina el tiempo:
+
+- Se considera que el jugador rechazó la oportunidad.
+- Se muestra la pantalla de derrota.
+
+Si no tiene tickets disponibles, la interfaz debe mostrarlo claramente y no permitir una resurrección que no pueda pagar.
+
+## 5.2. Conservación del modo de juego
+
+Este punto es obligatorio.
+
+Actualmente existe un problema cuando el jugador muere durante un asalto de jefe y posteriormente reinicia: el juego puede regresar a una partida normal.
+
+Corrige completamente este comportamiento.
+
+El sistema debe conservar el contexto de la partida:
+
+- Modo de juego.
+- Evento activo.
+- Jefe actual.
+- Fase actual.
+- Ciudad.
+- Configuración de dificultad.
+- Personaje.
+- Vehículo.
+- Progreso del evento.
+- Estado de la partida.
+
+Si el jugador estaba participando en un asalto de jefe, al utilizar un ticket o reiniciar según las reglas del modo, debe continuar en ese mismo asalto.
+
+Nunca debe convertirse automáticamente en una partida normal.
+
+Implementa un sistema de gestión de estados de partida que evite esta clase de errores.
+
+---
+
+# 6. RENOVACIÓN DEL PASE DE BATALLA Y LAS MISIONES
+
+Este apartado necesita una reconstrucción profunda.
+
+Actualmente, las misiones son demasiado sencillas, el pase se completa demasiado rápido y las recompensas pierden valor.
+
+Necesitamos una progresión más larga, atractiva y satisfactoria.
+
+## 6.1. Nuevo pase de batalla
+
+Rediseña visual y funcionalmente el pase de batalla.
+
+Quiero una presentación mucho más elaborada, con una interfaz gráfica que muestre claramente el progreso del jugador.
+
+Implementa:
+
+- Línea de progresión.
+- Niveles del pase.
+- Recompensas por nivel.
+- Animaciones al desbloquear recompensas.
+- Presentación de objetos 3D.
+- Personajes exclusivos.
+- Vehículos especiales.
+- Monedas.
+- Tickets.
+- Elementos cosméticos.
+- Recompensas especiales.
+- Efectos visuales de desbloqueo.
+
+El pase debe tener una identidad visual propia.
+
+Puede incorporar un espacio 3D para mostrar las recompensas, personajes o vehículos de forma giratoria e interactiva.
+
+No quiero una pantalla plana con una lista de premios.
+
+## 6.2. Duración del pase
+
+Aumenta considerablemente la cantidad de progreso necesario para completar el pase.
+
+El jugador no debe poder terminarlo en unas pocas partidas.
+
+Implementa:
+
+- Más niveles.
+- Mayor cantidad de experiencia necesaria.
+- Recompensas distribuidas progresivamente.
+- Desafíos de mayor duración.
+- Misiones especiales.
+- Objetivos semanales.
+- Objetivos de temporada.
+- Recompensas de alto valor en los niveles finales.
+
+Equilibra la progresión para que sea extensa, pero no frustrante.
+
+## 6.3. Pase premium
+
+El pase premium debe tener un precio considerablemente mayor.
+
+Reglas obligatorias:
+
+- Solo puede comprarse con moneda G.
+- No debe aceptar monedas normales.
+- No debe ser gratuito.
+- No debe tener un precio demasiado bajo.
+- Debe ofrecer recompensas premium que justifiquen su coste.
+- El precio debe mostrarse claramente.
+- Debe existir una confirmación antes de comprarlo.
+
+Revisa la economía actual del juego para establecer un precio equilibrado y suficientemente elevado.
+
+## 6.4. Renovación del apartado de misiones
+
+Reconstruye la pantalla de misiones.
+
+Quiero una interfaz moderna con:
+
+- Tarjetas de misiones.
+- Categorías.
+- Barras de progreso.
+- Recompensas.
+- Temporizadores.
+- Indicadores de dificultad.
+- Animaciones.
+- Efectos de desbloqueo.
+- Detalles de cada objetivo.
+
+Organiza las misiones en diferentes categorías:
+
+1. Misiones diarias.
+2. Misiones semanales.
+3. Misiones especiales.
+4. Misiones de temporada.
+5. Misiones de combate.
+6. Misiones de exploración.
+7. Misiones de supervivencia.
+8. Misiones de personajes.
+9. Misiones de vehículos.
+10. Misiones de jefes.
+
+Agrega una gran cantidad de misiones nuevas.
+
+Las misiones deben requerir esfuerzo y planificación.
+
+Evita que se completen accidentalmente en una sola partida.
+
+Incluye objetivos progresivos y diferentes niveles de dificultad.
+
+## 6.5. Misiones y recompensas especiales
+
+Introduce misiones que desbloqueen contenido.
+
+Algunos ejemplos:
+
+- Derrotar determinado jefe cuatro veces.
+- Completar una cantidad de eventos.
+- Alcanzar determinada distancia.
+- Sobrevivir durante un tiempo específico.
+- Completar una ciudad.
+- Utilizar un personaje determinado.
+- Conseguir una cantidad de monedas.
+- Superar una fase específica de un jefe.
+- Completar una serie de desafíos sin utilizar tickets.
+
+Cada misión debe tener condiciones verificables y recompensas reales.
+
+---
+
+# 7. ECONOMÍA, PERSONAJES Y VEHÍCULOS
+
+Reequilibra completamente el sistema de compras.
+
+Actualmente, los personajes y vehículos son demasiado baratos.
+
+## 7.1. Aumento de precios
+
+Aumenta los precios de los personajes y vehículos.
+
+No quiero que el jugador pueda comprar prácticamente todo después de unas pocas partidas.
+
+Cada objeto debe tener un valor acorde con su utilidad, rareza y características.
+
+Considera:
+
+- Precio en monedas normales.
+- Precio en moneda G cuando corresponda.
+- Rareza.
+- Ventajas.
+- Habilidades.
+- Misiones necesarias.
+- Nivel de desbloqueo.
+
+## 7.2. Desbloqueo mediante misiones
+
+Comprar un personaje no debe depender únicamente de tener dinero suficiente.
+
+Cada personaje debe tener requisitos adicionales.
+
+Por ejemplo:
+
+- Alcanzar cierta distancia.
+- Completar misiones específicas.
+- Participar en determinados eventos.
+- Derrotar jefes.
+- Conseguir determinados objetos.
+
+El jugador deberá cumplir los requisitos y posteriormente pagar el precio correspondiente.
+
+Aplica una lógica semejante a los vehículos cuando corresponda.
+
+## 7.3. Diferenciación real entre personajes
+
+Actualmente, algunas habilidades son poco visibles y no se sienten suficientemente diferentes.
+
+Rediseña las habilidades de todos los personajes.
+
+Cada personaje debe tener una identidad jugable.
+
+Implementa habilidades con:
+
+- Animaciones propias.
+- Efectos visuales.
+- Sonidos.
+- Indicadores de activación.
+- Duración definida.
+- Tiempo de reutilización.
+- Efectos reales sobre la jugabilidad.
+
+No quiero que cambiar de personaje sea simplemente cambiar el modelo 3D.
+
+Quiero que el jugador perciba una diferencia real en la experiencia.
+
+Cuando se seleccione otro personaje:
+
+- Debe cambiar correctamente el modelo.
+- Deben cargarse sus materiales.
+- Debe utilizar sus animaciones.
+- Debe activarse su habilidad.
+- Deben actualizarse sus estadísticas.
+- Debe mostrarse su identidad visual.
+
+## 7.4. Animaciones de objetivos
+
+Cuando un personaje complete un objetivo, debe reproducir una animación especial.
+
+Puede celebrar, realizar un movimiento característico o mostrar una reacción propia.
+
+El comportamiento debe depender del personaje y del tipo de objetivo.
+
+---
+
+# 8. IMPULSO Y CÁMARA LENTA
+
+Reequilibra completamente estas dos mecánicas.
+
+Actualmente, su duración es excesiva y pueden facilitar demasiado las partidas.
+
+## Impulso
+
+- Reduce considerablemente su duración.
+- Establece un tiempo limitado.
+- Evita que pueda utilizarse continuamente.
+- Añade un periodo de reutilización.
+- Mejora sus efectos visuales.
+- Añade animaciones de activación y finalización.
+
+## Cámara lenta
+
+- Reduce su duración.
+- Ajusta la intensidad del efecto.
+- Haz que el tiempo avance ligeramente más lento, pero sin detener prácticamente toda la partida.
+- Añade una activación y finalización animadas.
+- Controla el consumo de energía o reutilización según el sistema actual.
+
+## Restricción durante vehículos
+
+Ninguna de estas habilidades podrá activarse mientras el jugador esté montado en un vehículo.
+
+El sistema debe bloquear su activación y mostrar una indicación visual cuando corresponda.
+
+---
+
+# 9. NUEVAS CIUDADES: AMPLIACIÓN A 10 MAPAS
+
+Actualmente necesitamos ampliar la variedad de escenarios.
+
+La actualización debe incorporar tres ciudades nuevas para alcanzar un total de diez ciudades.
+
+No quiero que las ciudades nuevas sean simples cambios de colores o texturas.
+
+Cada una debe tener una identidad visual, arquitectura, iluminación, distribución y ambientación propias.
+
+## 9.1. Tres nuevas ciudades
+
+Diseña tres ciudades completamente diferentes entre sí.
+
+Cada una debe tener:
+
+- Arquitectura exclusiva.
+- Edificios diferentes.
+- Señalización propia.
+- Iluminación particular.
+- Elementos urbanos.
+- Decoración ambiental.
+- Tráfico visual cuando no interfiera con el gameplay.
+- Efectos ambientales.
+- Diferentes paletas de colores.
+- Música ambiental apropiada.
+
+## 9.2. Cinco vías o carriles
+
+Las tres nuevas ciudades deben incorporar cinco carriles o vías de juego.
+
+Adapta correctamente:
+
+- Movimiento lateral.
+- Cambio de carril.
+- Colisiones.
+- Generación de obstáculos.
+- Vehículos.
+- Trenes.
+- Cámara.
+- Distancias entre carriles.
+- Detección de peligros.
+
+No basta con dibujar cinco carriles: el sistema de movimiento y generación debe funcionar correctamente con ellos.
+
+Las ciudades anteriores deben conservar su configuración original cuando corresponda.
+
+## 9.3. Ciudades visualmente vivas
+
+Quiero que los escenarios transmitan la sensación de estar dentro de una ciudad real.
+
+Agrega:
+
+- Aceras.
+- Edificios de diferentes alturas.
+- Cruces entre edificios.
+- Puentes urbanos.
+- Túneles.
+- Señales de tránsito.
+- Anuncios publicitarios ficticios.
+- Farolas.
+- Ventanas iluminadas.
+- Estaciones.
+- Pasarelas.
+- Elementos decorativos.
+- Detalles de infraestructura urbana.
+
+La ciudad debe continuar visualmente más allá de las vías.
+
+No quiero que el jugador sienta que está corriendo dentro de un escenario vacío rodeado de edificios repetidos.
+
+---
+
+# 10. MAPAS DINÁMICOS Y CAMBIOS DE ESCENARIO
+
+Mejora profundamente los movimientos rápidos y transformaciones del mapa.
+
+Actualmente existen momentos en los que el escenario puede bajar, subir, doblarse o transformarse repentinamente.
+
+Quiero que estas secuencias se conviertan en eventos visuales más elaborados.
+
+Introduce:
+
+- Descensos repentinos.
+- Elevaciones.
+- Curvas pronunciadas.
+- Cambios de inclinación.
+- Transformaciones de vías.
+- Secciones subterráneas.
+- Túneles de alta velocidad.
+- Pasarelas.
+- Tramos elevados.
+- Cambios de altura.
+- Transiciones entre sectores de la ciudad.
+
+## 10.1. Secciones subterráneas
+
+Agrega nuevas zonas subterráneas.
+
+Deben contar con:
+
+- Iluminación propia.
+- Señalización.
+- Túneles.
+- Estaciones abandonadas o futuristas.
+- Efectos de partículas.
+- Sonido ambiental.
+- Obstáculos exclusivos.
+- Elementos arquitectónicos propios.
+
+Las transiciones deben sentirse naturales.
+
+No quiero que el escenario simplemente cambie de una escena a otra sin preparación.
+
+---
+
+# 11. RENOVACIÓN DEL LOBBY Y DEL ENTORNO DE INICIO
+
+El lobby actual necesita una mejora importante, especialmente en su presentación 3D.
+
+Actualmente, el jugador parece encontrarse directamente en la carretera.
+
+Quiero crear un espacio físico que tenga sentido dentro del universo del juego.
+
+Diseña un depósito, almacén, hangar, garaje tecnológico o centro de operaciones.
+
+Este lugar será el punto de reunión del jugador antes de comenzar las partidas.
+
+## Características del nuevo lobby
+
+- Escenario 3D completo.
+- Personaje visible.
+- Vehículos disponibles.
+- Zona de selección de personajes.
+- Zona de vehículos.
+- Elementos decorativos.
+- Iluminación ambiental.
+- Animaciones de personajes.
+- Cámaras cinematográficas.
+- Elementos interactivos.
+- Interfaz integrada con el escenario.
+
+El jugador debe sentir que está preparando su próxima misión.
+
+El lobby debe estar conectado con los diferentes modos de juego, eventos, misiones y ciudades.
+
+---
+
+# 12. SISTEMA GRÁFICO: MEJORAS Y CONFIGURACIÓN REAL
+
+Renueva el apartado gráfico para que sus opciones tengan efectos reales.
+
+Actualmente, las luces brillan demasiado.
+
+Corrige los problemas de iluminación y evita que los escenarios estén excesivamente iluminados.
+
+## 12.1. Iluminación
+
+Implementa una iluminación más equilibrada.
+
+Revisa:
+
+- Intensidad de luces.
+- Bloom.
+- Exposición.
+- Reflejos.
+- Sombras.
+- Emisión de materiales.
+- Iluminación ambiental.
+- Contraste.
+- Saturación.
+
+Los elementos luminosos deben destacar sin quemar la imagen.
+
+## 12.2. Opciones gráficas funcionales
+
+Las opciones deben modificar realmente la calidad visual.
+
+Incluye diferentes configuraciones:
+
+- Muy baja.
+- Baja.
+- Media.
+- Alta.
+- Muy alta.
+
+Cuando el jugador seleccione una opción, deben cambiar los parámetros correspondientes.
+
+Considera:
+
+- Calidad de sombras.
+- Distancia de dibujado.
+- Calidad de texturas.
+- Efectos de partículas.
+- Reflejos.
+- Iluminación.
+- Antialiasing.
+- Efectos posteriores.
+- Densidad de elementos ambientales.
+
+No permitas que el menú muestre opciones que no tengan ningún efecto.
+
+Guarda las preferencias del jugador y aplícalas correctamente al iniciar el juego.
+
+Prioriza un rendimiento estable y permite que equipos menos potentes puedan jugar con configuraciones reducidas.
+
+---
+
+# 13. MODOS DE JUEGO: DIFERENCIACIÓN Y RECONSTRUCCIÓN
+
+Actualmente, los diferentes modos se parecen demasiado.
+
+Necesitamos que cada modalidad tenga una identidad jugable propia.
+
+No quiero que todos los modos consistan simplemente en correr por las mismas vías con pequeñas modificaciones.
+
+Analiza todos los modos existentes y rediseña sus características.
+
+Cada uno debe tener:
+
+- Objetivos propios.
+- Reglas diferentes.
+- Progresión.
+- Recompensas.
+- Dificultad.
+- Elementos exclusivos.
+- Eventos particulares.
+- Ambientación apropiada.
+- Interfaz adaptada.
+
+Los modos deben sentirse como experiencias distintas dentro del mismo videojuego.
+
+Conserva los modos actuales y amplía sus posibilidades sin eliminar sus características.
+
+## 13.1. Modo historia
+
+Renueva considerablemente el modo historia.
+
+Actualmente se percibe demasiado parecido al resto de las modalidades.
+
+Introduce una mayor sensación de progresión narrativa.
+
+Mejora:
+
+- Presentación de capítulos.
+- Introducciones.
+- Objetivos narrativos.
+- Secuencias cinematográficas.
+- Eventos especiales.
+- Apariciones de personajes.
+- Interacciones.
+- Transiciones entre capítulos.
+- Encuentros con enemigos.
+- Presentación de jefes.
+- Recompensas narrativas.
+
+El jugador debe sentir que está avanzando dentro de una historia y no simplemente jugando una partida normal con otro nombre.
+
+---
+
+# 14. DIFICULTAD PROGRESIVA Y GENERACIÓN DE OBSTÁCULOS
+
+Actualmente, los obstáculos aparecen demasiado cerca al comienzo de las partidas.
+
+Esto provoca que el jugador pueda perder rápidamente sin haber tenido tiempo de adaptarse.
+
+Reestructura el sistema de generación.
+
+## 14.1. Inicio de partida
+
+Al comenzar una partida:
+
+- Utiliza una velocidad inicial más moderada.
+- Reduce la cantidad de obstáculos.
+- Aumenta la distancia de anticipación.
+- Evita combinaciones imposibles.
+- Introduce obstáculos de forma progresiva.
+- Permite que el jugador se adapte a la velocidad.
+
+El comienzo debe ser accesible, pero no aburrido.
+
+## 14.2. Dificultad progresiva
+
+A medida que el jugador avance:
+
+- Incrementa la velocidad.
+- Aumenta la complejidad de los obstáculos.
+- Introduce nuevas combinaciones.
+- Reduce gradualmente los espacios de reacción.
+- Incorpora obstáculos especiales.
+- Aumenta los desafíos.
+
+La dificultad debe depender de la distancia y del progreso real.
+
+No hagas que todos los obstáculos aparezcan aleatoriamente sin considerar las capacidades del jugador.
+
+## 14.3. Equilibrio de obstáculos
+
+Implementa reglas que impidan generar situaciones imposibles.
+
+Comprueba que siempre exista una ruta viable para continuar.
+
+La dificultad debe surgir de los reflejos y la habilidad del jugador, no de errores de generación.
+
+---
+
+# 15. FRECUENCIA DE APARICIÓN DE JEFES Y ENEMIGOS
+
+Los jefes aparecen demasiado pronto durante las partidas normales.
+
+Corrige el sistema de aparición.
+
+Los encuentros deben depender de condiciones de progreso y no producirse demasiado rápidamente.
+
+Implementa:
+
+- Distancias mínimas antes de permitir un encuentro.
+- Intervalos entre apariciones.
+- Condiciones de activación.
+- Variación entre partidas.
+- Periodos de descanso.
+- Eventos especiales.
+
+Los jefes deben sentirse como acontecimientos importantes.
+
+No deben aparecer continuamente ni interrumpir el desarrollo normal de las partidas.
+
+## 15.1. Drones enemigos
+
+Algunos drones se mueven demasiado rápido, especialmente cuando el jugador se encuentra en sectores donde la velocidad del juego es reducida.
+
+Reequilibra su movimiento.
+
+Su velocidad debe depender de:
+
+- Velocidad global del juego.
+- Tipo de dron.
+- Distancia al jugador.
+- Modo de juego.
+- Dificultad actual.
+
+Evita movimientos bruscos, aceleraciones injustificadas y desplazamientos que resulten imposibles de esquivar.
+
+---
+
+# 16. REEQUILIBRIO DE HABILIDADES Y ESCUDOS
+
+El escudo aparece con demasiada frecuencia.
+
+Reduce su frecuencia cuando se trate de objetos o habilidades generadas por el sistema general del juego.
+
+Si pertenece a la habilidad especial de un personaje, conserva su funcionamiento según las reglas de ese personaje.
+
+Revisa:
+
+- Frecuencia de aparición.
+- Probabilidad.
+- Duración.
+- Tiempo de reutilización.
+- Protección otorgada.
+- Efectos visuales.
+- Sonidos.
+- Equilibrio general.
+
+También debes revisar las habilidades de todos los personajes.
+
+No quiero que todos tengan habilidades similares.
+
+Cada personaje debe ofrecer una experiencia diferente.
+
+---
+
+# 17. SISTEMA DE ACTUALIZACIONES AUTOMÁTICAS DEL JUEGO
+
+Este es uno de los nuevos sistemas más importantes.
+
+Quiero que Metro Rush Neon City pueda actualizarse automáticamente sin obligar al jugador a entrar en GitHub para descargar manualmente cada nueva versión.
+
+## 17.1. Sistema de comprobación de actualizaciones
+
+Implementa un sistema de actualizaciones conectado a las publicaciones oficiales del proyecto.
+
+El funcionamiento debe ser el siguiente:
+
+1. El jugador inicia el juego.
+2. El sistema consulta si existe una versión más reciente.
+3. Compara la versión instalada con la versión publicada.
+4. Si no hay actualizaciones, el juego continúa normalmente.
+5. Si hay una actualización, aparece una notificación.
+6. El jugador puede actualizar ahora o posponerla.
+7. Si acepta, comienza la descarga.
+8. Se muestra el progreso.
+9. Se verifica la integridad de los archivos.
+10. Se instala la actualización.
+11. Se conserva el progreso del jugador.
+12. El juego reinicia o aplica los cambios cuando corresponda.
+
+## 17.2. Integración con GitHub Releases
+
+Utiliza GitHub Releases como fuente de distribución.
+
+Implementa una estructura organizada que permita publicar nuevas versiones sin modificar manualmente el sistema de actualización del cliente.
+
+Utiliza:
+
+- Número de versión.
+- Archivo de manifiesto.
+- Dirección de descarga.
+- Tamaño de actualización.
+- Hash de verificación.
+- Fecha de publicación.
+- Notas de actualización.
+- Compatibilidad con versiones anteriores.
+
+El sistema debe poder detectar automáticamente una nueva versión cuando se publique.
+
+## 17.3. Instalación segura
+
+No permitas que el actualizador sobrescriba archivos mientras el juego los está utilizando.
+
+Utiliza un proceso seguro:
+
+- Descarga en una carpeta temporal.
+- Verificación de integridad.
+- Copia de seguridad.
+- Instalación controlada.
+- Restauración en caso de error.
+- Limpieza de archivos temporales.
+
+Si una actualización falla, el juego debe poder recuperar la versión anterior.
+
+## 17.4. Conservación de datos
+
+Las actualizaciones nunca deben eliminar accidentalmente:
+
+- Cuentas.
+- Progreso.
+- Personajes desbloqueados.
+- Vehículos.
+- Monedas.
+- Misiones.
+- Estadísticas.
+- Configuraciones.
+- Partidas guardadas.
+
+Separa los datos del jugador de los archivos ejecutables y recursos que se actualizan.
+
+## 17.5. Seguridad y distribución
+
+No incluyas tokens privados de GitHub dentro del código del videojuego.
+
+Si el repositorio es privado, utiliza un mecanismo de distribución autenticado y seguro, con credenciales temporales o un servicio intermediario apropiado.
+
+Verifica los archivos descargados antes de instalarlos.
+
+No permitas que una actualización no verificada ejecute archivos arbitrarios.
+
+**Importante:** analiza primero cómo está distribuido y ejecutado el juego actualmente. Implementa el actualizador de acuerdo con su tecnología y plataforma real. No simules actualizaciones si todavía no existe una infraestructura funcional.
+
+---
+
+# 18. RENOVACIÓN VISUAL GENERAL
+
+No concentres todas las mejoras únicamente en los jefes.
+
+Revisa el acabado visual de todo el videojuego.
+
+Quiero una experiencia mucho más moderna, consistente y profesional.
+
+Mejora:
+
+- Menú principal.
+- Lobby.
+- Selección de personajes.
+- Selección de vehículos.
+- Tienda.
+- Pase de batalla.
+- Misiones.
+- Eventos.
+- Asaltos de jefes.
+- Pantalla de derrota.
+- Pantalla de victoria.
+- Configuración.
+- Selección de ciudades.
+- Modo historia.
+- Estadísticas.
+- Recompensas.
+
+Utiliza animaciones, transiciones, profundidad visual, paneles, iluminación y elementos 3D cuando aporten valor.
+
+No quiero interfaces sobrecargadas ni efectos que dificulten la lectura.
+
+Cada apartado debe tener su propia identidad visual, pero todos deben mantener una misma línea artística.
+
+---
+
+# 19. CALIDAD DE ANIMACIÓN Y RECURSOS EXTERNOS
+
+Quiero que se aprovechen recursos externos para llevar el juego a un nivel visual superior.
+
+Busca e integra modelos 3D, animaciones, efectos de sonido, texturas y recursos adecuados.
+
+Puedes utilizar recursos de bibliotecas como:
+
+- Sketchfab.
+- Mixamo.
+- Kenney.
+- Poly Haven.
+- OpenGameArt.
+- Otras bibliotecas de recursos compatibles.
+
+Verifica las licencias antes de incorporar cualquier recurso.
+
+Da prioridad a:
+
+- Modelos optimizados.
+- Animaciones fluidas.
+- Esqueletos compatibles.
+- Texturas de buena calidad.
+- Efectos de partículas.
+- Sonidos de calidad.
+- Recursos que mantengan un rendimiento adecuado.
+
+No descargues recursos únicamente para llenar el juego.
+
+Cada recurso debe tener una función concreta.
+
+Adapta las animaciones a los esqueletos y modelos existentes. No sustituyas modelos funcionales por otros incompatibles.
+
+---
+
+# 20. OPTIMIZACIÓN, ESTABILIDAD Y COMPATIBILIDAD
+
+Una actualización tan grande no debe provocar que el juego funcione peor.
+
+Realiza una revisión técnica completa.
+
+Comprueba:
+
+- Consumo de memoria.
+- Uso de CPU.
+- Rendimiento gráfico.
+- Carga de modelos.
+- Carga de texturas.
+- Reproducción de audio.
+- Generación de escenarios.
+- Colisiones.
+- Inteligencia artificial.
+- Transiciones entre escenas.
+- Guardado de partidas.
+- Sistema de eventos.
+- Actualizador automático.
+
+Evita:
+
+- Fugas de memoria.
+- Objetos duplicados.
+- Animaciones bloqueadas.
+- Errores de colisión.
+- Caídas de FPS.
+- Congelamientos.
+- Cargas excesivas.
+- Errores de sincronización.
+- Pérdida de progreso.
+
+Implementa carga y descarga de recursos cuando sea necesario.
+
+---
+
+# 21. PRUEBAS OBLIGATORIAS ANTES DE FINALIZAR
+
+No declares terminada la versión 3.0.1 sin probar todos los sistemas modificados.
+
+Realiza pruebas específicas:
+
+### Pruebas de jefes
+- Entrada cinematográfica.
+- Música sincronizada.
+- Cuatro fases completas.
+- Barras de vida independientes.
+- Transiciones.
+- Ataques especiales.
+- Dificultad progresiva.
+- Derrota únicamente después de la fase cuatro.
+- Limpieza de calles.
+- Distancia adecuada.
+
+### Pruebas de derrota
+- Cuenta regresiva de diez segundos.
+- Uso de tickets.
+- Rechazo de resurrección.
+- Expiración del tiempo.
+- Animación del dron.
+- Estadísticas animadas.
+- Reinicio del modo correcto.
+
+### Pruebas de progresión
+- Misiones diarias.
+- Misiones semanales.
+- Misiones especiales.
+- Pase normal.
+- Pase premium.
+- Moneda G.
+- Desbloqueo de personajes.
+- Desbloqueo de vehículos.
+- Recompensas.
+
+### Pruebas de ciudades
+- Diez ciudades disponibles.
+- Tres ciudades nuevas.
+- Cinco carriles funcionales en las nuevas ciudades.
+- Colisiones.
+- Generación de obstáculos.
+- Transiciones.
+- Túneles y zonas subterráneas.
+
+### Pruebas generales
+- Lobby.
+- Selección de personajes.
+- Habilidades.
+- Vehículos.
+- Gráficos.
+- Audio.
+- Modo historia.
+- Otros modos de juego.
+- Guardado de progreso.
+- Actualizaciones automáticas.
+
+### Pruebas del actualizador
+- Detectar una nueva versión.
+- Descargar correctamente.
+- Verificar integridad.
+- Instalar.
+- Recuperarse de errores.
+- Conservar datos.
+- Reiniciar correctamente.
+
+Si encuentras errores, corrígelos antes de finalizar.
+
+---
+
+# 22. ENTREGA FINAL DE LA VERSIÓN 3.0.1
+
+Al terminar el desarrollo, presenta un informe técnico que incluya:
+
+1. Características implementadas.
+2. Sistemas modificados.
+3. Nuevos recursos incorporados.
+4. Nuevas ciudades.
+5. Mejoras de jefes.
+6. Mejoras de personajes y vehículos.
+7. Mejoras de interfaz.
+8. Cambios de dificultad.
+9. Mejoras de rendimiento.
+10. Funcionamiento del actualizador.
+11. Errores encontrados y corregidos.
+12. Características que no pudieron implementarse y sus motivos.
+
+No afirmes que una característica está terminada si solamente has creado su interfaz o una demostración visual.
+
+Si alguna característica no puede desarrollarse por limitaciones técnicas, explica el motivo y presenta una alternativa compatible con la arquitectura existente.
+
+Conserva una copia de seguridad del proyecto original antes de realizar cambios importantes.
+
+La versión final debe identificarse como:
+
+**METRO RUSH NEON CITY — VERSION 3.0.1**
+
+Nombre de actualización:
+
+**NEON APOCALYPSE — THE ULTIMATE EVOLUTION**
+
+---
+
+# 23. INSTRUCCIÓN FINAL: PRIORIDAD ABSOLUTA A LA CALIDAD
+
+Quiero que desarrolles esta actualización con mentalidad de estudio profesional.
+
+No quiero que simplemente agregues botones, paneles o animaciones sin profundidad.
+
+Quiero que cada cambio tenga un propósito y que se note durante el juego.
+
+Los jefes deben provocar tensión y emoción. Las ciudades deben sentirse vivas. Los personajes deben tener personalidades jugables diferentes. Las misiones deben representar desafíos reales. El pase debe recompensar la dedicación. Los modos deben sentirse diferentes. La pantalla de derrota debe ser una experiencia visual. Y el sistema de actualización debe funcionar sin que el jugador tenga que descargar manualmente cada nueva versión.
+
+Prioriza la calidad sobre la rapidez.
+
+Implementa los cambios por módulos, manteniendo la estabilidad del proyecto durante todo el desarrollo.
+
+**No destruyas lo que ya funciona para construir lo nuevo. Evoluciona Metro Rush Neon City sin perder su identidad.**
+
+El resultado debe sentirse como una auténtica nueva generación del videojuego.
+
+**METRO RUSH NEON CITY 3.0.1 — THE CITY IS NO LONGER SAFE.**

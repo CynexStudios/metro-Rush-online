@@ -1,8 +1,8 @@
 {
   "name": "metro-rush-neon-city",
   "private": true,
-  "version": "2.4.0",
-  "description": "METRO RUSH: NEON CITY — Videojuego 3D de parkour urbano, vehículos futuristas y multijugador LAN/Internet para PC.",
+  "version": "3.0.1",
+  "description": "METRO RUSH: NEON CITY — Actualización Maestra 3.0.1: Videojuego 3D de parkour urbano, vehículos futuristas, jefes de 4 fases y multijugador LAN/Internet para PC.",
   "author": "Jaderson Liriano (XynexDevs)",
   "main": "dist-electron/main.cjs",
   "type": "module",
@@ -11,6 +11,7 @@
     "dev:electron": "node scripts/dev-electron.mjs",
     "build": "vite build && node scripts/build-electron.mjs",
     "dist:win": "npm run build && electron-builder --win",
+    "generate:manifest": "node scripts/generate-release-manifest.mjs",
     "start": "node server.ts",
     "preview": "vite preview",
     "clean": "rm -rf dist dist-electron release",

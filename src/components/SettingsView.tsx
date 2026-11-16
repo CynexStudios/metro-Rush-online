@@ -2,13 +2,17 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
+  CheckCircle2,
   Cpu,
   Download,
+  ExternalLink,
   Gamepad2,
   Globe,
   Monitor,
   Music,
+  RefreshCw,
   RotateCcw,
+  ShieldCheck,
   Sliders,
   Upload,
   Volume2,
@@ -33,9 +37,12 @@ import {
   KeyBindings,
   PCSettings,
   PlayerSaveData,
+  ReleaseUpdateInfo,
   TimeOfDay,
+  UpdateProgressState,
   UpscalerType,
 } from '../game/types';
+import { GAME_VERSION } from '../game/version';
 import { getTimeLabel, SUPPORTED_LANGUAGES, t } from '../i18n';
 
 export type SettingsCategory =
@@ -79,6 +86,11 @@ interface SettingsViewProps {
   save?: PlayerSaveData;
   diagnostics: HardwareDiagnostics;
   liveHud: HudSnapshot;
+  updateInfo?: ReleaseUpdateInfo | null;
+  updateState?: UpdateProgressState;
+  onCheckForUpdates?: (repo?: string) => Promise<ReleaseUpdateInfo>;
+  onDownloadUpdate?: (info?: ReleaseUpdateInfo) => Promise<void>;
+  onInstallUpdate?: () => Promise<void>;
   onChangeSettings: (next: PCSettings) => void;
   onReplaceSave?: (next: PlayerSaveData) => void;
   onVideoChangeWithConfirm: (next: PCSettings, prev: PCSettings) => void;
@@ -116,6 +128,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   save,
   diagnostics,
   liveHud,
+  updateInfo,
+  updateState,
+  onCheckForUpdates,
+  onDownloadUpdate,
+  onInstallUpdate,
   onChangeSettings,
   onReplaceSave,
   onVideoChangeWithConfirm,
@@ -326,7 +343,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
 
         <div className="hidden lg:block mt-auto pt-4 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
           <div className="font-mono-num text-cyan-300 font-bold">
-            METRO RUSH v3.0 Next-Gen
+            METRO RUSH v{GAME_VERSION} · Neon Apocalypse
           </div>
           <div>Guardado automático v3 + copia de seguridad</div>
         </div>
@@ -987,6 +1004,15 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   checked={settings.showPerfOverlay}
                   onChange={(v) => setPatch({ showPerfOverlay: v })}
                 />
+                {save && onReplaceSave && (
+                  <ToggleRow
+                    label="Modelos Blender (.GLB) para Jefes"
+                    checked={save.useCustomBossModels ?? true}
+                    onChange={(v) =>
+                      onReplaceSave({ ...save, useCustomBossModels: v })
+                    }
+                  />
+                )}
               </div>
 
               {onStartTutorial && (
@@ -1299,6 +1325,151 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               </div>
             </div>
 
+            {/* Official GitHub Releases Auto-Updater */}
+            <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/35 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-bold text-cyan-300 uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck className="w-4 h-4" />
+                    Actualizador Oficial (GitHub Releases)
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-0.5">
+                    Repositorio público: CynexStudios/metro-Rush-online · Conserva tus perfiles y base SQLite en %APPDATA%.
+                  </div>
+                </div>
+                <span className="font-mono-num text-xs font-bold text-white">
+                  Instalada v{GAME_VERSION}
+                </span>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2.5">
+                {onCheckForUpdates && (
+                  <button
+                    disabled={updateState?.status === 'checking' || updateState?.status === 'downloading'}
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      void onCheckForUpdates();
+                    }}
+                    className="px-3.5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:opacity-50 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <RefreshCw
+                      className={`w-3.5 h-3.5 ${
+                        updateState?.status === 'checking' ? 'animate-spin' : ''
+                      }`}
+                    />
+                    {updateState?.status === 'checking'
+                      ? 'Comprobando...'
+                      : 'Buscar Actualizaciones'}
+                  </button>
+                )}
+
+                {updateInfo?.hasUpdate &&
+                  updateInfo.downloadUrl &&
+                  onDownloadUpdate &&
+                  updateState?.status !== 'ready_to_install' && (
+                    <button
+                      disabled={
+                        updateState?.status === 'downloading' ||
+                        updateState?.status === 'verifying'
+                      }
+                      onClick={() => {
+                        audioEngine.playUiClick(true);
+                        void onDownloadUpdate(updateInfo);
+                      }}
+                      className="px-3.5 py-2 rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 disabled:opacity-50 text-white text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download className="w-3.5 h-3.5" /> Descargar v{updateInfo.latestVersion}
+                    </button>
+                  )}
+
+                {updateState?.status === 'ready_to_install' && onInstallUpdate && (
+                  <button
+                    onClick={() => {
+                      audioEngine.playPurchaseConfirm();
+                      void onInstallUpdate();
+                    }}
+                    className="px-3.5 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 text-xs font-bold flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-3.5 h-3.5" /> Instalar y Reiniciar (Conserva SQLite)
+                  </button>
+                )}
+
+                <a
+                  href={
+                    updateInfo?.releaseUrl ||
+                    'https://github.com/CynexStudios/metro-Rush-online/releases'
+                  }
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={(e) => {
+                    const target =
+                      updateInfo?.releaseUrl ||
+                      'https://github.com/CynexStudios/metro-Rush-online/releases';
+                    if (window.metroDesktop?.openExternalUrl) {
+                      e.preventDefault();
+                      void window.metroDesktop.openExternalUrl(target);
+                    }
+                  }}
+                  className="px-3 py-2 rounded-lg bg-[#070b17] hover:bg-white/10 border border-white/15 text-slate-200 text-xs font-semibold flex items-center gap-1.5 cursor-pointer"
+                >
+                  <ExternalLink className="w-3.5 h-3.5 text-cyan-400" /> Abrir GitHub Releases
+                </a>
+              </div>
+
+              {(updateState?.status === 'downloading' ||
+                updateState?.status === 'verifying' ||
+                updateState?.status === 'ready_to_install') && (
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-[11px] font-mono-num text-slate-300">
+                    <span>{updateState.message}</span>
+                    <span>
+                      {updateState.progressPercent.toFixed(0)}% (
+                      {(updateState.downloadedBytes / 1048576).toFixed(1)} /{' '}
+                      {(updateState.totalBytes / 1048576).toFixed(1)} MB)
+                    </span>
+                  </div>
+                  <div className="h-2 bg-slate-800 rounded overflow-hidden">
+                    <div
+                      className="h-full bg-cyan-400 transition-all"
+                      style={{ width: `${Math.min(100, updateState.progressPercent)}%` }}
+                    />
+                  </div>
+                </div>
+              )}
+
+              {updateInfo && (
+                <div className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-[11px] text-slate-300 space-y-1">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="font-bold text-white">
+                      {updateInfo.hasUpdate
+                        ? `Nueva versión disponible: v${updateInfo.latestVersion}`
+                        : `Estás al día (última versión conocida: v${updateInfo.latestVersion})`}
+                    </span>
+                    {updateInfo.sha256 && (
+                      <span className="font-mono-num text-[10px] text-emerald-300">
+                        SHA-256: {updateInfo.sha256.slice(0, 12)}...
+                      </span>
+                    )}
+                  </div>
+                  {updateInfo.releaseNotes && (
+                    <div className="text-slate-400 line-clamp-2">
+                      {updateInfo.releaseNotes}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {updateState?.message && updateState.status !== 'downloading' && (
+                <div
+                  className={`text-xs font-semibold ${
+                    updateState.status === 'error' ? 'text-rose-300' : 'text-cyan-200'
+                  }`}
+                >
+                  {updateState.message}
+                </div>
+              )}
+            </div>
+
             {/* Save Backup & Reset Settings */}
             <div className="p-4 rounded-xl bg-[#0b1224] border border-white/15 space-y-3">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1311,7 +1482,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </div>
                 </div>
                 <span className="font-mono-num text-[11px] text-cyan-300 font-bold">
-                  v3.0
+                  v{GAME_VERSION}
                 </span>
               </div>
 

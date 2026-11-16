@@ -17,11 +17,15 @@ interface MissionsViewProps {
 const CATEGORY_TABS: { id: MissionCategory | 'achievements'; label: string }[] = [
   { id: 'daily', label: 'Diarias' },
   { id: 'weekly', label: 'Semanales' },
-  { id: 'general', label: 'Generales' },
-  { id: 'special', label: 'Especiales' },
-  { id: 'battlepass', label: 'Pase de Batalla' },
-  { id: 'season', label: 'Temporada' },
   { id: 'story', label: 'Historia' },
+  { id: 'combat', label: 'Combate' },
+  { id: 'exploration', label: 'Exploración' },
+  { id: 'survival', label: 'Supervivencia' },
+  { id: 'character', label: 'Corredores' },
+  { id: 'vehicle', label: 'Vehículos' },
+  { id: 'boss', label: 'Jefes' },
+  { id: 'special', label: 'Especiales' },
+  { id: 'season', label: 'Temporada' },
   { id: 'achievements', label: 'Logros' },
 ];
 
@@ -88,7 +92,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({
                   onUpdateSave(res.nextSave);
                 }
               }}
-              className="px-4 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-bold text-xs flex items-center gap-1.5 cursor-pointer"
+              className="px-4 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-bold text-xs flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
             >
               <Gift className="w-4 h-4" /> Reclamar Todo ({pendingMissions})
             </button>
@@ -118,7 +122,7 @@ export const MissionsView: React.FC<MissionsViewProps> = ({
                 audioEngine.playUiClick();
                 setActiveTab(tItem.id);
               }}
-              className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer ${
+              className={`px-3 py-1.5 rounded-lg text-xs font-bold border flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
                 active
                   ? 'bg-cyan-400 text-slate-950 border-cyan-400'
                   : 'bg-[#0b1224] text-slate-300 border-white/10 hover:text-white'

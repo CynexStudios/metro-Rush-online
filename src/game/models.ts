@@ -1,16 +1,18 @@
 import * as THREE from 'three';
-import { COSMETICS, getVehicleById } from './data';
+import { COSMETICS, getBossById, getVehicleById } from './data';
 import {
   ExtraGlbId,
   getCachedExtraGlb,
   getCachedGlbForStyle,
   GlbAnimationState,
+  instantiateCustomBossGlb,
   instantiateGlbRunner,
   instantiateStaticOrAnimatedGlb,
   updateGlbRunnerAnimation,
 } from './gltfAssets';
 import { ProceduralTexturePack } from './materials';
 import {
+  BossDef,
   BossId,
   CharacterDef,
   DistrictDef,
@@ -217,6 +219,62 @@ export function createVehicleGroup(
       const tip = new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.08, 0.72), glowMat);
       tip.position.set(sx, 0.78, 0.72);
       g.add(fin, tip);
+    }
+    return g;
+  }
+
+  if (vehicleId === 'star_viper') {
+    const bodyShape = new THREE.Shape();
+    bodyShape.moveTo(0, 1.85);
+    bodyShape.lineTo(0.46, 0.45);
+    bodyShape.lineTo(1.56, -0.78);
+    bodyShape.lineTo(1.42, -1.25);
+    bodyShape.lineTo(0.38, -1.08);
+    bodyShape.lineTo(0, -1.35);
+    bodyShape.lineTo(-0.38, -1.08);
+    bodyShape.lineTo(-1.42, -1.25);
+    bodyShape.lineTo(-1.56, -0.78);
+    bodyShape.lineTo(-0.46, 0.45);
+    bodyShape.closePath();
+
+    const viperGeo = new THREE.ExtrudeGeometry(bodyShape, {
+      depth: 0.16,
+      bevelEnabled: true,
+      bevelThickness: 0.045,
+      bevelSize: 0.04,
+      bevelSegments: 2,
+    });
+    viperGeo.rotateX(Math.PI / 2);
+    const frame = new THREE.Mesh(viperGeo, hullMat);
+    frame.position.set(0, 0.48, 0);
+    frame.castShadow = true;
+    g.add(frame);
+
+    const noseCone = new THREE.Mesh(new THREE.ConeGeometry(0.28, 2.55, 8), darkMat);
+    noseCone.rotation.x = -Math.PI / 2;
+    noseCone.position.set(0, 0.56, -0.22);
+    const cockpit = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.24, 0.96), visorMat);
+    cockpit.position.set(0, 0.72, -0.24);
+    g.add(noseCone, cockpit);
+
+    for (const sx of [-0.52, 0.52]) {
+      const canard = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.06, 0.28), glowMat);
+      canard.position.set(sx, 0.55, -0.88);
+      canard.rotation.y = sx > 0 ? -0.35 : 0.35;
+
+      const thruster = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.21, 0.52, 12), trimMat);
+      thruster.rotation.x = Math.PI / 2;
+      thruster.position.set(sx * 0.72, 0.52, 1.18);
+
+      const coreFlame = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.55, 10), glowMat);
+      coreFlame.rotation.x = Math.PI / 2;
+      coreFlame.position.set(sx * 0.72, 0.52, 1.56);
+
+      const wingFin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.48, 0.78), trimMat);
+      wingFin.position.set(sx * 2.65, 0.68, 0.84);
+      wingFin.rotation.z = sx > 0 ? -0.32 : 0.32;
+
+      g.add(canard, thruster, coreFlame, wingFin);
     }
     return g;
   }
@@ -970,12 +1028,22 @@ export function animateCharacterRig(
         ? 0.55
         : action === 'wallRunRight'
           ? -0.55
-          : laneTilt * (action === 'vehicle' ? -0.35 : -0.2);
+          : action === 'balanceBeam'
+            ? Math.sin(time * 5.2) * 0.14
+            : laneTilt * (action === 'vehicle' ? -0.35 : -0.2);
 
     if (action === 'vehicle') targetPivotY = 0.34 + Math.sin(time * 8) * 0.03;
     else if (action === 'slide') targetPivotY = -0.32;
     else if (action === 'doubleJump') targetPivotRotX = -flipProgress * Math.PI * 2;
-    else if (action === 'dive') targetPivotRotX = 0.85;
+    else if (action === 'swingBar') {
+      targetPivotY = 0.25;
+      targetPivotRotX = Math.sin(time * 9) * 0.38;
+    } else if (action === 'captureStruggle') {
+      targetPivotY = Math.sin(time * 8) * 0.09;
+      targetPivotRotX = Math.sin(time * 7) * 0.18;
+    } else if (action === 'celebrate') {
+      targetPivotY = Math.abs(Math.sin(time * 6.5)) * 0.2;
+    } else if (action === 'dive') targetPivotRotX = 0.85;
     else if (action === 'vault') targetPivotRotX = 0.45;
 
     rig.bodyPivot.position.y = damp(rig.bodyPivot.position.y, targetPivotY);
@@ -1097,6 +1165,52 @@ export function animateCharacterRig(
     targetRHipX = 0.15;
     targetLShinX = 0.7;
     targetRShinX = 0.4;
+  } else if (action === 'swingBar') {
+    const swing = Math.sin(time * 9.5);
+    targetPivotRotX = swing * 0.45;
+    targetTorsoRotX = 0.22 + swing * 0.16;
+    targetLShoulderX = -3.0;
+    targetRShoulderX = -3.0;
+    targetLForearmX = -0.15;
+    targetRForearmX = -0.15;
+    targetLHipX = 0.55 + swing * 0.45;
+    targetRHipX = 0.55 + swing * 0.45;
+    targetLShinX = 0.95;
+    targetRShinX = 0.95;
+  } else if (action === 'balanceBeam') {
+    const freq = 10.5;
+    const phase = time * freq;
+    const sway = Math.sin(time * 4.8);
+    targetPivotY = Math.abs(Math.sin(phase)) * 0.08;
+    targetPivotRotZ = sway * 0.14;
+    targetTorsoRotX = 0.16;
+    targetLShoulderX = -0.25 + sway * 0.25;
+    targetRShoulderX = -0.25 - sway * 0.25;
+    targetLShoulderZ = 1.15;
+    targetRShoulderZ = -1.15;
+    targetLForearmX = -0.18;
+    targetRForearmX = -0.18;
+    targetLHipX = Math.sin(phase) * 0.65;
+    targetRHipX = -Math.sin(phase) * 0.65;
+    targetLShinX = 0.55;
+    targetRShinX = 0.55;
+  } else if (action === 'captureStruggle') {
+    const kick = Math.sin(time * 13);
+    const flail = Math.cos(time * 10);
+    targetPivotY = Math.sin(time * 6) * 0.08;
+    targetPivotRotZ = Math.sin(time * 5.2) * 0.15;
+    targetTorsoRotX = 0.15 + Math.sin(time * 8) * 0.12;
+    targetHeadRotY = Math.sin(time * 4.5) * 0.4;
+    targetLShoulderX = -2.45 + flail * 0.35;
+    targetRShoulderX = -2.45 - flail * 0.35;
+    targetLShoulderZ = 0.52;
+    targetRShoulderZ = -0.52;
+    targetLForearmX = -0.45;
+    targetRForearmX = -0.45;
+    targetLHipX = kick * 0.72;
+    targetRHipX = -kick * 0.72;
+    targetLShinX = Math.max(0, -kick) * 1.1;
+    targetRShinX = Math.max(0, kick) * 1.1;
   } else if (action === 'dive') {
     targetTorsoRotX = 1.25;
     targetLShoulderX = 0.6;
@@ -1843,7 +1957,17 @@ export function buildEnemyModel(enemyClass: EnemyClass): THREE.Group {
 /**
  * 8 Distinct Composite 3D Boss Models (with animated sub-part userData refs)
  */
-export function buildBossModel(bossId: BossId): THREE.Group {
+export function buildBossModel(bossId: BossId, useCustom = true): THREE.Group {
+  if (useCustom) {
+    const bossDef = getBossById(bossId);
+    const customInst = instantiateCustomBossGlb(bossId, bossDef);
+    if (customInst) {
+      customInst.group.userData.isCustomGlb = true;
+      customInst.group.userData.customMixer = customInst.mixer;
+      return customInst.group;
+    }
+  }
+
   const g = new THREE.Group();
   const armorMat = new THREE.MeshPhysicalMaterial({
     color: 0x0f172a,
@@ -2025,6 +2149,9 @@ export function buildBossModel(bossId: BossId): THREE.Group {
   g.userData.rings = rings;
   g.userData.wings = wings;
   g.userData.segments = segments;
+  g.userData.priMat = priMat;
+  g.userData.secMat = secMat;
+  g.userData.armorMat = armorMat;
   return g;
 }
 
@@ -2359,6 +2486,39 @@ export function buildDistrictLandmark(
       g.add(cage, core, ring);
       break;
     }
+    case 'harbor': {
+      const stanchion = new THREE.Mesh(new THREE.BoxGeometry(1.0, 15, 1.0), mats.darkMetalMat);
+      stanchion.position.y = 7.5;
+      const boom = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.72, 0.72), mats.hazardMat);
+      boom.position.set(side * -2.6, 14.5, 0);
+      const crate = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, 4.4), mats.secTrimMat);
+      crate.position.set(side * -4.2, 10.2, 0);
+      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.65, 10), mats.neonTrimMat);
+      beacon.position.set(side * -5.4, 15.1, 0);
+      g.add(stanchion, boom, crate, beacon);
+      break;
+    }
+    case 'citadel': {
+      const spireBase = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.65, 12, 6), mats.darkMetalMat);
+      spireBase.position.y = 6;
+      const crystal = new THREE.Mesh(new THREE.ConeGeometry(0.9, 5.2, 6), mats.neonTrimMat);
+      crystal.position.y = 14.6;
+      const halo = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.1, 8, 20), mats.secTrimMat);
+      halo.rotation.x = Math.PI / 2;
+      halo.position.y = 11.2;
+      g.add(spireBase, crystal, halo);
+      break;
+    }
+    case 'monolith': {
+      const obelisk = new THREE.Mesh(new THREE.BoxGeometry(1.5, 16, 1.5), mats.darkMetalMat);
+      obelisk.position.y = 8;
+      const slit = new THREE.Mesh(new THREE.BoxGeometry(0.34, 13.5, 1.64), mats.neonTrimMat);
+      slit.position.y = 8;
+      const crown = new THREE.Mesh(new THREE.OctahedronGeometry(1.15, 0), mats.secTrimMat);
+      crown.position.y = 17.6;
+      g.add(obelisk, slit, crown);
+      break;
+    }
     default: {
       const pillar = new THREE.Mesh(new THREE.BoxGeometry(1.1, 10, 1.1), mats.darkMetalMat);
       pillar.position.y = 5;
@@ -2668,6 +2828,7 @@ export function buildHelicopterModel(
 export function buildUndergroundTunnelSegment(
   length: number,
   mats: ProceduralTexturePack,
+  vaultRadius = 11.5,
 ): THREE.Group {
   const g = new THREE.Group();
   const concreteMat = new THREE.MeshStandardMaterial({
@@ -2677,12 +2838,12 @@ export function buildUndergroundTunnelSegment(
     side: THREE.BackSide,
   });
 
-  // Semi-cylindrical tunnel vault shell spanning the street + sidewalks
+  // Semi-cylindrical tunnel vault shell spanning the street + sidewalks (scales with 3 or 5 lanes)
   const vaultGeo = new THREE.CylinderGeometry(
-    11.5,
-    11.5,
+    vaultRadius,
+    vaultRadius,
     length,
-    16,
+    18,
     1,
     true,
     -Math.PI * 0.5,
@@ -2695,13 +2856,13 @@ export function buildUndergroundTunnelSegment(
   g.add(vault);
 
   // Structural steel ribs + overhead industrial lights
-  const ribGeo = new THREE.TorusGeometry(11.1, 0.38, 6, 16, Math.PI);
-  const lightGeo = new THREE.BoxGeometry(1.8, 0.14, 2.2);
+  const ribGeo = new THREE.TorusGeometry(vaultRadius - 0.35, 0.38, 6, 18, Math.PI);
+  const lightGeo = new THREE.BoxGeometry(Math.max(1.8, vaultRadius * 0.18), 0.14, 2.2);
   for (let z = -7; z > -length; z -= 14) {
     const rib = new THREE.Mesh(ribGeo, mats.darkMetalMat);
     rib.position.set(0, 0.2, z);
     const lamp = new THREE.Mesh(lightGeo, mats.neonTrimMat);
-    lamp.position.set(0, 10.6, z);
+    lamp.position.set(0, vaultRadius - 0.85, z);
     g.add(rib, lamp);
   }
 
@@ -2709,9 +2870,9 @@ export function buildUndergroundTunnelSegment(
   const pipeGeo = new THREE.CylinderGeometry(0.24, 0.24, length, 8);
   pipeGeo.rotateX(Math.PI / 2);
   const pipeL = new THREE.Mesh(pipeGeo, mats.hazardMat);
-  pipeL.position.set(-10.4, 3.1, -length * 0.5);
+  pipeL.position.set(-(vaultRadius - 1.05), 3.1, -length * 0.5);
   const pipeR = new THREE.Mesh(pipeGeo, mats.secTrimMat);
-  pipeR.position.set(10.4, 3.6, -length * 0.5);
+  pipeR.position.set(vaultRadius - 1.05, 3.6, -length * 0.5);
   g.add(pipeL, pipeR);
 
   return g;
@@ -2777,14 +2938,14 @@ export function buildBossLaserBeam(colorHex = '#f43f5e'): THREE.Group {
   return g;
 }
 
-export function buildBossShockwave(colorHex = '#f97316'): THREE.Group {
+export function buildBossShockwave(colorHex = '#f97316', width = 10.6): THREE.Group {
   const g = new THREE.Group();
   const mat = new THREE.MeshStandardMaterial({
     color: colorHex,
     emissive: colorHex,
-    emissiveIntensity: 1.1,
+    emissiveIntensity: 0.95,
   });
-  const bar = new THREE.Mesh(new THREE.BoxGeometry(10.6, 0.42, 0.55), mat);
+  const bar = new THREE.Mesh(new THREE.BoxGeometry(width, 0.42, 0.55), mat);
   bar.position.y = 0.38;
   g.add(bar);
   return g;
@@ -2916,3 +3077,445 @@ export function buildSpecialItemShowcase(
     },
   };
 }
+
+/**
+ * 3.0.1 Tech Hangar / Operations Hub Lobby Scene (§11)
+ */
+export function buildHangarLobbyGroup(
+  accentHex = '#22d3ee',
+  primaryHex = '#6366f1',
+  ownedVehicles: VehicleId[] = ['hover_bike'],
+  vehiclePaints: Partial<Record<VehicleId, string>> = {},
+): THREE.Group {
+  const g = new THREE.Group();
+
+  const floorMat = new THREE.MeshStandardMaterial({
+    color: 0x0b1220,
+    metalness: 0.72,
+    roughness: 0.28,
+  });
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: 0x162033,
+    metalness: 0.85,
+    roughness: 0.34,
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x070b14,
+    metalness: 0.8,
+    roughness: 0.48,
+  });
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: accentHex,
+    emissive: accentHex,
+    emissiveIntensity: 0.78,
+    roughness: 0.2,
+  });
+  const secMat = new THREE.MeshStandardMaterial({
+    color: primaryHex,
+    emissive: primaryHex,
+    emissiveIntensity: 0.65,
+    roughness: 0.22,
+  });
+
+  // Hangar Main Deck Floor + Side Channels
+  const floor = new THREE.Mesh(new THREE.BoxGeometry(28, 0.4, 34), floorMat);
+  floor.position.set(0, -0.2, -3);
+  floor.receiveShadow = true;
+  g.add(floor);
+
+  for (const sx of [-4.8, 4.8]) {
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.04, 28), accentMat);
+    strip.position.set(sx, 0.02, -3);
+    g.add(strip);
+  }
+
+  // Central Illuminated Turntable Pad around Player
+  const plinth = new THREE.Mesh(new THREE.CylinderGeometry(2.5, 2.85, 0.16, 32), steelMat);
+  plinth.position.set(0, 0.06, 0);
+  plinth.receiveShadow = true;
+  const plinthRing = new THREE.Mesh(new THREE.TorusGeometry(2.56, 0.055, 8, 42), accentMat);
+  plinthRing.rotation.x = Math.PI / 2;
+  plinthRing.position.set(0, 0.15, 0);
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(3.35, 0.04, 8, 42), secMat);
+  outerRing.rotation.x = Math.PI / 2;
+  outerRing.position.set(0, 0.04, 0);
+  g.add(plinth, plinthRing, outerRing);
+
+  // Structural Gantry Arches & Overhead Spotlights
+  for (const gz of [-14, -7, 0.5]) {
+    const archL = new THREE.Mesh(new THREE.BoxGeometry(0.75, 10.5, 0.9), steelMat);
+    archL.position.set(-10.8, 5.25, gz);
+    const archR = archL.clone();
+    archR.position.x = 10.8;
+    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(22.4, 0.85, 1.0), steelMat);
+    crossBeam.position.set(0, 10.5, gz);
+    const ceilingStrip = new THREE.Mesh(new THREE.BoxGeometry(15.5, 0.14, 0.35), accentMat);
+    ceilingStrip.position.set(0, 10.02, gz);
+    g.add(archL, archR, crossBeam, ceilingStrip);
+  }
+
+  // Back Blast Bay Wall + Giant Holographic Sector Screen
+  const backWall = new THREE.Mesh(new THREE.BoxGeometry(26, 11, 0.8), darkMat);
+  backWall.position.set(0, 5.5, -18.5);
+  const holoFrame = new THREE.Mesh(new THREE.BoxGeometry(11.6, 4.8, 0.25), steelMat);
+  holoFrame.position.set(0, 4.8, -17.9);
+  const holoScreen = new THREE.Mesh(
+    new THREE.PlaneGeometry(10.8, 4.1),
+    new THREE.MeshBasicMaterial({
+      color: accentHex,
+      transparent: true,
+      opacity: 0.2,
+      side: THREE.DoubleSide,
+    }),
+  );
+  holoScreen.position.set(0, 4.8, -17.74);
+  const holoFrameTrim = new THREE.Mesh(new THREE.BoxGeometry(11.8, 0.12, 0.3), accentMat);
+  holoFrameTrim.position.set(0, 7.22, -17.88);
+  g.add(backWall, holoFrame, holoScreen, holoFrameTrim);
+
+  // Operations Command Terminals (Left & Right Foreground)
+  for (const sx of [-4.1, 4.1]) {
+    const desk = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.96, 0.82), steelMat);
+    desk.position.set(sx, 0.48, -3.4);
+    desk.rotation.y = sx < 0 ? 0.42 : -0.42;
+    const screen = new THREE.Mesh(
+      new THREE.BoxGeometry(1.38, 0.68, 0.08),
+      sx < 0 ? accentMat : secMat,
+    );
+    screen.position.set(sx, 1.32, -3.55);
+    screen.rotation.y = sx < 0 ? 0.42 : -0.42;
+    screen.rotation.x = -0.22;
+    g.add(desk, screen);
+  }
+
+  // Maintenance Bays showcasing owned player vehicles
+  const showcaseVehicles = ownedVehicles.slice(0, 2);
+  showcaseVehicles.forEach((vehId, idx) => {
+    const sideX = idx === 0 ? -7.2 : 7.2;
+    const bayPad = new THREE.Mesh(new THREE.CylinderGeometry(1.75, 1.9, 0.1, 24), steelMat);
+    bayPad.position.set(sideX, 0.05, -7.8);
+    const bayRing = new THREE.Mesh(new THREE.TorusGeometry(1.82, 0.04, 8, 24), secMat);
+    bayRing.rotation.x = Math.PI / 2;
+    bayRing.position.set(sideX, 0.11, -7.8);
+    const vDef = getVehicleById(vehId);
+    const visor = new THREE.MeshStandardMaterial({
+      color: vDef.accentColor,
+      emissive: vDef.accentColor,
+      emissiveIntensity: 0.68,
+    });
+    const vehMesh = createVehicleGroup(
+      vehId,
+      vehiclePaints[vehId] || vDef.defaultPaint,
+      vDef.accentColor,
+      visor,
+    );
+    vehMesh.position.set(sideX, 0.15, -7.8);
+    vehMesh.rotation.y = idx === 0 ? 0.48 : -0.48;
+    vehMesh.scale.setScalar(0.92);
+    g.add(bayPad, bayRing, vehMesh);
+  });
+
+  // Subtle volumetric spotlight cone above center turntable
+  const beam = new THREE.Mesh(
+    new THREE.ConeGeometry(3.8, 9.6, 20, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: accentHex,
+      transparent: true,
+      opacity: 0.075,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  beam.position.set(0, 4.9, 0);
+  g.add(beam);
+
+  return g;
+}
+
+/**
+ * 3.0.1 Live 3D Capture Drone holding the struggling character on Defeat (§4)
+ */
+export function buildCaptureDroneModel(accentHex = '#ef4444'): THREE.Group {
+  const g = new THREE.Group();
+  const hullMat = new THREE.MeshPhysicalMaterial({
+    color: 0x0f172a,
+    metalness: 0.88,
+    roughness: 0.24,
+    clearcoat: 0.85,
+  });
+  const steelMat = new THREE.MeshStandardMaterial({
+    color: 0x334155,
+    metalness: 0.82,
+    roughness: 0.32,
+  });
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: accentHex,
+    emissive: accentHex,
+    emissiveIntensity: 1.05,
+  });
+  const cyanMat = new THREE.MeshStandardMaterial({
+    color: '#22d3ee',
+    emissive: '#06b6d4',
+    emissiveIntensity: 0.8,
+  });
+
+  // Main Armored Drone Hull
+  const body = new THREE.Mesh(new THREE.BoxGeometry(2.25, 0.72, 1.65), hullMat);
+  body.castShadow = true;
+  const upperBridge = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.85, 0.42, 8), steelMat);
+  upperBridge.position.set(0, 0.52, 0);
+  const scannerVisor = new THREE.Mesh(new THREE.BoxGeometry(1.38, 0.24, 0.2), eyeMat);
+  scannerVisor.position.set(0, -0.02, 0.84);
+  g.add(body, upperBridge, scannerVisor);
+
+  // Twin Side Ducted Rotor Pods
+  const rotors: THREE.Object3D[] = [];
+  for (const sx of [-1.52, 1.52]) {
+    const arm = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.22, 0.34), steelMat);
+    arm.position.set(sx * 0.78, 0.08, 0);
+    const shroud = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.08, 8, 20), hullMat);
+    shroud.rotation.x = Math.PI / 2;
+    shroud.position.set(sx, 0.12, 0);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.04, 0.12), cyanMat);
+    blade.position.set(sx, 0.12, 0);
+    rotors.push(blade);
+    g.add(arm, shroud, blade);
+  }
+
+  // Articulated Capture Claws gripping down around y = -1.1
+  for (const sx of [-0.52, 0.52]) {
+    const upperJaw = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.78, 0.22), steelMat);
+    upperJaw.position.set(sx * 1.15, -0.58, 0);
+    upperJaw.rotation.z = sx > 0 ? 0.34 : -0.34;
+    const lowerClaw = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.62, 0.2), steelMat);
+    lowerClaw.position.set(sx * 0.72, -1.08, 0);
+    lowerClaw.rotation.z = sx > 0 ? -0.45 : 0.45;
+    const tip = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.18, 0.22), eyeMat);
+    tip.position.set(sx * 0.45, -1.24, 0);
+    g.add(upperJaw, lowerClaw, tip);
+  }
+
+  // Downward Capture Spotlight Beam Cone
+  const spotlightCone = new THREE.Mesh(
+    new THREE.ConeGeometry(2.4, 5.2, 18, 1, true),
+    new THREE.MeshBasicMaterial({
+      color: accentHex,
+      transparent: true,
+      opacity: 0.14,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  spotlightCone.position.set(0, -2.6, 0);
+  g.add(spotlightCone);
+
+  g.userData.rotors = rotors;
+  return g;
+}
+
+/**
+ * 3.0.1 2-Floor Parkour Circuit Structures (§20)
+ */
+export function buildParkourModule(
+  kind:
+    | 'floor2_deck'
+    | 'climb_ramp'
+    | 'swing_bar'
+    | 'jump_pad'
+    | 'balance_beam'
+    | 'high_conduit',
+  width: number,
+  length: number,
+  mats: ProceduralTexturePack,
+): THREE.Group {
+  const g = new THREE.Group();
+
+  if (kind === 'floor2_deck') {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(width, 0.34, length), mats.darkMetalMat);
+    deck.position.set(0, -0.17, 0);
+    deck.receiveShadow = true;
+    deck.castShadow = true;
+    g.add(deck);
+
+    for (const sx of [-width * 0.47, width * 0.47]) {
+      const strip = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.08, length), mats.neonTrimMat);
+      strip.position.set(sx, 0.03, 0);
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.56, length), mats.darkMetalMat);
+      rail.position.set(sx, 0.3, 0);
+      g.add(strip, rail);
+    }
+    // Vertical steel support pillars anchoring down to Ground Floor 1
+    for (const sz of [-length * 0.38, length * 0.38]) {
+      for (const sx of [-width * 0.44, width * 0.44]) {
+        const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 4.0, 0.24), mats.darkMetalMat);
+        pillar.position.set(sx, -2.0, sz);
+        g.add(pillar);
+      }
+    }
+  } else if (kind === 'climb_ramp') {
+    const slopeLen = Math.hypot(length, 4.0);
+    const angle = Math.atan2(4.0, length);
+    const rampDeck = new THREE.Mesh(new THREE.BoxGeometry(width, 0.28, slopeLen), mats.darkMetalMat);
+    rampDeck.position.set(0, 2.0, 0);
+    rampDeck.rotation.x = angle;
+    const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, slopeLen), mats.neonTrimMat);
+    sideL.position.set(-width * 0.46, 2.15, 0);
+    sideL.rotation.x = angle;
+    const sideR = sideL.clone();
+    sideR.position.x = width * 0.46;
+    g.add(rampDeck, sideL, sideR);
+  } else if (kind === 'swing_bar') {
+    for (const sx of [-width * 0.48, width * 0.48]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.2, 0.24), mats.darkMetalMat);
+      post.position.set(sx, 1.5, 0);
+      g.add(post);
+    }
+    const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, width, 12), mats.secTrimMat);
+    bar.rotation.z = Math.PI / 2;
+    bar.position.set(0, 2.75, 0);
+    g.add(bar);
+  } else if (kind === 'jump_pad') {
+    const frame = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.28, 0.24, 16), mats.darkMetalMat);
+    frame.position.y = 0.12;
+    const coil = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.09, 8, 22), mats.neonTrimMat);
+    coil.rotation.x = Math.PI / 2;
+    coil.position.y = 0.28;
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.72, 0.08, 16), mats.secTrimMat);
+    core.position.y = 0.26;
+    g.add(frame, coil, core);
+  } else if (kind === 'balance_beam') {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.26, length), mats.hazardMat);
+    beam.position.set(0, -0.13, 0);
+    const guide = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.05, length), mats.neonTrimMat);
+    guide.position.set(0, 0.02, 0);
+    g.add(beam, guide);
+  } else {
+    // 'high_conduit': slide-under overhead pipe on Floor 2
+    for (const sx of [-width * 0.45, width * 0.45]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.2, 2.7, 0.24), mats.darkMetalMat);
+      leg.position.set(sx, 1.35, 0);
+      g.add(leg);
+    }
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(width, 0.56, 0.46), mats.hazardMat);
+    bar.position.set(0, 1.92, 0);
+    const trim = new THREE.Mesh(new THREE.BoxGeometry(width, 0.12, 0.52), mats.secTrimMat);
+    trim.position.set(0, 1.65, 0);
+    g.add(bar, trim);
+  }
+
+  return g;
+}
+
+/**
+ * 3.0.1 Holographic City Sector Transition Gate (§19)
+ */
+export function buildSectorTransitionGate(
+  roadWidth: number,
+  primaryHex: string,
+  secondaryHex: string,
+): THREE.Group {
+  const g = new THREE.Group();
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x0b1224,
+    metalness: 0.88,
+    roughness: 0.25,
+  });
+  const priMat = new THREE.MeshStandardMaterial({
+    color: primaryHex,
+    emissive: primaryHex,
+    emissiveIntensity: 0.9,
+  });
+  const secMat = new THREE.MeshStandardMaterial({
+    color: secondaryHex,
+    emissive: secondaryHex,
+    emissiveIntensity: 0.85,
+  });
+
+  const halfSpan = roadWidth * 0.5 + 0.5;
+  for (const sx of [-halfSpan, halfSpan]) {
+    const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.85, 8.6, 1.25), darkMat);
+    pylon.position.set(sx, 4.3, 0);
+    const strip = new THREE.Mesh(new THREE.BoxGeometry(0.18, 8.0, 1.32), priMat);
+    strip.position.set(sx * 0.95, 4.3, 0);
+    g.add(pylon, strip);
+  }
+  const arch = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 1.8, 1.1, 1.35), darkMat);
+  arch.position.set(0, 8.4, 0);
+  const archStrip = new THREE.Mesh(new THREE.BoxGeometry(roadWidth + 1.4, 0.26, 1.42), secMat);
+  archStrip.position.set(0, 7.95, 0);
+  const curtain = new THREE.Mesh(
+    new THREE.PlaneGeometry(roadWidth, 7.4),
+    new THREE.MeshBasicMaterial({
+      color: primaryHex,
+      transparent: true,
+      opacity: 0.16,
+      side: THREE.DoubleSide,
+      depthWrite: false,
+    }),
+  );
+  curtain.position.set(0, 3.8, 0);
+  g.add(arch, archStrip, curtain);
+  return g;
+}
+
+/**
+ * 3.0.1 Shield Shatter Crystal Explosion + Expanding Shockwave (§17)
+ */
+export function buildShieldShatterEffect(colorHex = '#38bdf8'): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshPhysicalMaterial({
+    color: colorHex,
+    emissive: colorHex,
+    emissiveIntensity: 0.95,
+    metalness: 0.4,
+    roughness: 0.12,
+    transparent: true,
+    opacity: 0.88,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.11, 8, 28), mat);
+  ring.rotation.x = Math.PI / 2;
+  ring.name = 'shockRing';
+  g.add(ring);
+
+  const shards: { mesh: THREE.Mesh; vx: number; vy: number; vz: number }[] = [];
+  const shardGeo = new THREE.OctahedronGeometry(0.24, 0);
+  for (let i = 0; i < 16; i++) {
+    const a = (i / 16) * Math.PI * 2;
+    const shard = new THREE.Mesh(shardGeo, mat);
+    shard.position.set(Math.cos(a) * 0.4, 0.85 + (i % 3) * 0.22, Math.sin(a) * 0.4);
+    g.add(shard);
+    shards.push({
+      mesh: shard,
+      vx: Math.cos(a) * (8 + (i % 4) * 2.5),
+      vy: 2.5 + (i % 5) * 1.4,
+      vz: Math.sin(a) * (8 + (i % 3) * 2.5),
+    });
+  }
+  g.userData.shards = shards;
+  g.userData.ring = ring;
+  return g;
+}
+
+/**
+ * 3.0.1 Shifts Boss Phase Colors / Aura / Scale Across 4 Phases (§2)
+ */
+export function applyBossPhaseVisuals(
+  bossMesh: THREE.Group,
+  bossDef: BossDef,
+  phaseIndex: number,
+): void {
+  const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(3, phaseIndex))];
+  if (!phaseCfg) return;
+  const priMat = bossMesh.userData.priMat as THREE.MeshStandardMaterial | undefined;
+  const secMat = bossMesh.userData.secMat as THREE.MeshStandardMaterial | undefined;
+  if (priMat) {
+    priMat.color.set(phaseCfg.auraColor);
+    priMat.emissive.set(phaseCfg.auraColor);
+    priMat.emissiveIntensity = 0.85 + phaseIndex * 0.12;
+  }
+  if (secMat && phaseIndex >= 2) {
+    secMat.emissiveIntensity = 1.0 + (phaseIndex - 1) * 0.15;
+  }
+  bossMesh.scale.setScalar(phaseCfg.scaleBoost ?? 1 + phaseIndex * 0.06);
+}
+

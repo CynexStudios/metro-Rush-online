@@ -61,6 +61,7 @@ class ProceduralAudioEngine {
   private inTunnel = false;
   private districtId: DistrictId = 'downtown';
   private bossPhase = 1;
+  private bossCue: 'none' | 'suspense' | 'intro' | 'combat' | 'transition' | 'victory' | 'defeat' = 'none';
   private musicMode: MusicMode = 'lobby';
   private lobbyMusicEnabled = true;
 
@@ -182,8 +183,39 @@ class ProceduralAudioEngine {
     }
   }
 
+  public setBossMusicCue(
+    cue: 'none' | 'suspense' | 'intro' | 'combat' | 'transition' | 'victory' | 'defeat',
+  ): void {
+    this.bossCue = cue;
+    if (cue === 'suspense') {
+      this.musicMode = 'tension';
+      this.intensity = 0.52;
+      this.dangerLevel = 0.45;
+    } else if (cue === 'intro') {
+      this.musicMode = 'boss';
+      this.intensity = 0.65;
+      this.dangerLevel = 0.7;
+    } else if (cue === 'combat') {
+      this.musicMode = 'boss';
+      this.intensity = Math.min(1, 0.74 + this.bossPhase * 0.06);
+      this.dangerLevel = 0.85;
+    } else if (cue === 'transition') {
+      this.musicMode = 'boss';
+      this.intensity = 0.94;
+      this.dangerLevel = 1.0;
+    } else if (cue === 'victory') {
+      this.musicMode = 'victory';
+      this.bossCue = 'none';
+    } else if (cue === 'defeat') {
+      this.musicMode = 'defeat';
+    }
+  }
+
   public setMusicMode(mode: MusicMode): void {
     this.musicMode = mode;
+    if (mode !== 'boss' && mode !== 'tension') {
+      this.bossCue = 'none';
+    }
     if (mode === 'lobby' || mode === 'intro') {
       this.bpm = mode === 'intro' ? 118 : 112;
       this.intensity = mode === 'intro' ? 0.34 : 0.28;
@@ -271,10 +303,10 @@ class ProceduralAudioEngine {
     if (this.ambientFilter) {
       let freq = 420;
       if (districtId === 'underground') freq = 210;
-      else if (districtId === 'beach') freq = 310;
-      else if (districtId === 'industrial') freq = 280;
+      else if (districtId === 'beach' || districtId === 'cyber_port') freq = 320;
+      else if (districtId === 'industrial' || districtId === 'obsidian_citadel') freq = 260;
       else if (districtId === 'skyline') freq = 620;
-      else if (districtId === 'future') freq = 520;
+      else if (districtId === 'future' || districtId === 'crimson_metropolis') freq = 520;
       if (weather === 'rain' || weather === 'storm') freq += 460;
       if (timePeriod === 'night' || timePeriod === 'midnight') freq *= 0.88;
       this.ambientFilter.frequency.setTargetAtTime(freq, now, 0.25);
@@ -382,6 +414,7 @@ class ProceduralAudioEngine {
       this.playBassNote(time, freq, isLobby ? 0.16 : 0.11, isLobby ? 0.14 : 0.2 + this.intensity * 0.11);
     }
 
+    const isBossMode = this.musicMode === 'boss' || this.bossCue === 'suspense';
     if ((isLobby && step % 4 === 0) || (!isLobby && this.intensity > 0.38 && step % 2 === 0)) {
       const scaleMap: Record<DistrictId, number[]> = {
         downtown: [0, 7, 12, 15, 19, 15, 12, 7],
@@ -391,16 +424,47 @@ class ProceduralAudioEngine {
         beach: [0, 4, 7, 9, 12, 16, 12, 7],
         underground: [0, 1, 5, 7, 10, 7, 5, 1],
         future: [0, 6, 7, 11, 12, 18, 12, 7],
+        cyber_port: [0, 3, 7, 11, 14, 15, 11, 7],
+        obsidian_citadel: [0, 1, 6, 7, 13, 14, 7, 1],
+        crimson_metropolis: [0, 1, 4, 6, 7, 12, 13, 6],
       };
-      const arpIntervals = isLobby ? [0, 7, 12, 19] : (scaleMap[this.districtId] ?? scaleMap.downtown);
+      // Dark futuristic-horror phrygian/tritone motif when boss is active
+      const bossHorrorIntervals =
+        this.bossPhase >= 4
+          ? [0, 1, 6, 7, 13, 12, 6, 1]
+          : this.bossPhase >= 3
+            ? [0, 1, 5, 6, 12, 7, 6, 1]
+            : [0, 1, 7, 8, 12, 8, 6, 1];
+      const arpIntervals = isLobby
+        ? [0, 7, 12, 19]
+        : isBossMode
+          ? bossHorrorIntervals
+          : (scaleMap[this.districtId] ?? scaleMap.downtown);
       const idx = Math.floor(step / (isLobby ? 4 : 2)) % arpIntervals.length;
-      const bossBoost = this.musicMode === 'boss' ? (this.bossPhase - 1) * 2 : 0;
-      const arpFreq = this.rootHz * 2 * Math.pow(2, (arpIntervals[idx] + bossBoost) / 12);
-      this.playArpNote(time, arpFreq, isLobby ? 0.24 : 0.09, isLobby ? 0.055 : 0.07 * this.intensity);
+      const bossBoost = this.musicMode === 'boss' ? (this.bossPhase - 1) * 1.5 : 0;
+      const arpFreq =
+        this.rootHz *
+        (isBossMode ? 1.5 : 2) *
+        Math.pow(2, (arpIntervals[idx] + bossBoost) / 12);
+      this.playArpNote(
+        time,
+        arpFreq,
+        isLobby ? 0.24 : isBossMode ? 0.14 : 0.09,
+        isLobby ? 0.055 : 0.075 * this.intensity,
+      );
     }
 
-    if ((this.dangerLevel > 0.45 || this.musicMode === 'boss') && (step === 0 || step === 8 || (this.bossPhase >= 3 && step === 4))) {
-      this.playArpNote(time, this.rootHz * (this.bossPhase >= 3 ? 3.5 : 3.1), 0.12, 0.065 * Math.max(0.4, this.dangerLevel));
+    if ((this.dangerLevel > 0.45 || isBossMode) && (step === 0 || step === 8 || (this.bossPhase >= 3 && step === 4))) {
+      this.playArpNote(
+        time,
+        this.rootHz * (this.bossPhase >= 3 ? 3.55 : 3.05),
+        0.16,
+        0.07 * Math.max(0.42, this.dangerLevel),
+      );
+    }
+    if (isBossMode && (step === 0 || (this.bossPhase >= 2 && step === 8))) {
+      // Sub-harmonic gothic synth drone accent
+      this.playBassNote(time, this.rootHz * 0.5, 0.28, 0.18 + this.bossPhase * 0.03);
     }
   }
 
@@ -1045,6 +1109,126 @@ class ProceduralAudioEngine {
       gain.connect(this.uiGain!);
       osc.start(now + i * 0.065);
       osc.stop(now + i * 0.065 + 0.26);
+    });
+  }
+
+  public playShieldShatter(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    // Crystal fracture shimmer + sub-boom shockwave
+    [1680, 2240, 2960, 1240].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.025);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.55, now + i * 0.025 + 0.16);
+      gain.gain.setValueAtTime(0.22, now + i * 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.025 + 0.18);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now + i * 0.025);
+      osc.stop(now + i * 0.025 + 0.2);
+    });
+    const boom = ctx.createOscillator();
+    const boomGain = ctx.createGain();
+    boom.type = 'sine';
+    boom.frequency.setValueAtTime(145, now);
+    boom.frequency.exponentialRampToValueAtTime(34, now + 0.34);
+    boomGain.gain.setValueAtTime(0.42, now);
+    boomGain.gain.exponentialRampToValueAtTime(0.001, now + 0.36);
+    boom.connect(boomGain);
+    boomGain.connect(this.sfxGain);
+    boom.start(now);
+    boom.stop(now + 0.38);
+  }
+
+  public playLanding(heavy = false): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(heavy ? 120 : 140, now);
+    osc.frequency.exponentialRampToValueAtTime(38, now + (heavy ? 0.12 : 0.07));
+    gain.gain.setValueAtTime(heavy ? 0.22 : 0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (heavy ? 0.13 : 0.08));
+    osc.connect(gain);
+    gain.connect(this.sfxGain);
+    osc.start(now);
+    osc.stop(now + 0.14);
+  }
+
+  public playBossPhaseTransition(phase: number): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.chaseGain) return;
+    const now = ctx.currentTime;
+    const base = 70 + phase * 14;
+    [base, base * 1.49, base * 1.98].forEach((f, idx) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, now + idx * 0.08);
+      osc.frequency.linearRampToValueAtTime(f * 0.72, now + idx * 0.08 + 0.65);
+      gain.gain.setValueAtTime(0.24, now + idx * 0.08);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.08 + 0.68);
+      osc.connect(gain);
+      gain.connect(this.chaseGain!);
+      osc.start(now + idx * 0.08);
+      osc.stop(now + idx * 0.08 + 0.72);
+    });
+  }
+
+  public playCaptureDroneGrab(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.droneGain) return;
+    const now = ctx.currentTime;
+    [220, 145, 92].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, now + i * 0.07);
+      gain.gain.setValueAtTime(0.2, now + i * 0.07);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.07 + 0.28);
+      osc.connect(gain);
+      gain.connect(this.droneGain!);
+      osc.start(now + i * 0.07);
+      osc.stop(now + i * 0.07 + 0.3);
+    });
+  }
+
+  public playStatTick(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(840 + Math.random() * 140, now);
+    gain.gain.setValueAtTime(0.07, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035);
+    osc.connect(gain);
+    gain.connect(this.uiGain);
+    osc.start(now);
+    osc.stop(now + 0.04);
+  }
+
+  public playStatTotal(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+    [523.25, 783.99, 1046.5].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.05);
+      gain.gain.setValueAtTime(0.16, now + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.22);
+      osc.connect(gain);
+      gain.connect(this.uiGain!);
+      osc.start(now + i * 0.05);
+      osc.stop(now + i * 0.05 + 0.24);
     });
   }
 }

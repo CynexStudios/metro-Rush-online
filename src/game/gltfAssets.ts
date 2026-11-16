@@ -1,7 +1,15 @@
 import * as THREE from 'three';
 import { GLTF, GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
-import { CharacterDef, ParkourAction, PlayerModelStyle } from './types';
+import {
+  BossDef,
+  BossId,
+  CharacterDef,
+  CustomBossMeta,
+  CustomBossValidationResult,
+  ParkourAction,
+  PlayerModelStyle,
+} from './types';
 
 export interface GlbAnimationState {
   mixer: THREE.AnimationMixer;
@@ -15,6 +23,11 @@ const cachedGlb = new Map<string, GLTF>();
 const pendingLoads = new Map<string, Promise<GLTF>>();
 let customGlbData: GLTF | null = null;
 let customGlbName: string | null = null;
+
+// Per-Boss Custom Blender Models (strictly validated, procedural fallback always preserved)
+const customBossGlbMap = new Map<BossId, { gltf: GLTF; meta: CustomBossMeta }>();
+const BOSS_IDB_NAME = 'metro_rush_custom_boss_db_v1';
+const BOSS_IDB_STORE = 'boss_models';
 
 export function getCustomGlbInfo(): { loaded: boolean; name: string | null } {
   return { loaded: customGlbData !== null, name: customGlbName };
@@ -78,6 +91,7 @@ export async function preloadAllExtraGlbModels(): Promise<void> {
     preloadExtraGlbModel('helmet'),
     preloadExtraGlbModel('ion_drive'),
     preloadExtraGlbModel('milk_truck'),
+    restorePersistedCustomBosses(),
   ]);
 }
 
@@ -111,6 +125,366 @@ export function getCachedGlbForStyle(style: PlayerModelStyle): GLTF | null {
   return null;
 }
 
+/**
+ * Generates a Blender-ready base GLTF reference file + strict specification JSON
+ * for creating custom 3D bosses compatible with Metro Rush 3.0.1.
+ */
+export function buildBossBlenderTemplateJson(boss: BossDef): string {
+  // Valid minimal glTF 2.0 scene defining exact orientation (+Z facing player / -Z forward),
+  // scale (approx 5m bounding box), named nodes (BossRoot, Core, Ring_Outer, Wing_L, Wing_R), and documentation extras.
+  const template = {
+    asset: {
+      version: '2.0',
+      generator: 'Metro Rush 3.0.1 Blender Boss Template',
+      extras: {
+        bossId: boss.id,
+        bossName: boss.name,
+        targetHeightMeters: 5.0,
+        targetMaxWidthMeters: 7.5,
+        recommendedMaxTriangles: 120000,
+        recommendedMaxMeshes: 180,
+        forwardAxis: '+Z hacia jugador (escena de arena frontal)',
+        pivotOrigin: 'Centro del cuerpo en (0, 0, 0)',
+        requiredNodeNames: ['BossRoot', 'Core'],
+        optionalNodeNames: ['Ring_Outer', 'Wing_L', 'Wing_R'],
+        recommendedAnimationClips: [
+          'Idle',
+          'Intro',
+          'Attack',
+          'PhaseTransition',
+          'Defeat',
+        ],
+        blenderExportChecklist: [
+          '1. Importar este archivo .gltf en Blender (File -> Import -> glTF 2.0).',
+          '2. Mantener la escala en metros (altura objetivo ~5.0m, ancho max ~7.5m).',
+          '3. Aplicar transformaciones (Ctrl+A -> All Transforms) antes de exportar.',
+          '4. Usar materiales Principled BSDF PBR estándar (Base Color, Metallic, Roughness, Emission).',
+          '5. Exportar como glTF Binary (.glb) con +Y Arriba activado.',
+        ],
+      },
+    },
+    scene: 0,
+    scenes: [{ name: `${boss.id}_Template`, nodes: [0] }],
+    nodes: [
+      { name: 'BossRoot', children: [1, 2, 3, 4] },
+      { name: 'Core', translation: [0, 0, 0], scale: [1.4, 1.4, 1.4] },
+      { name: 'Ring_Outer', translation: [0, 0, 0], scale: [2.5, 2.5, 2.5] },
+      { name: 'Wing_L', translation: [-2.4, 0.2, 0] },
+      { name: 'Wing_R', translation: [2.4, 0.2, 0] },
+    ],
+  };
+  return JSON.stringify(template, null, 2);
+}
+
+function openBossIdb(): Promise<IDBDatabase | null> {
+  if (typeof indexedDB === 'undefined') return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      const req = indexedDB.open(BOSS_IDB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(BOSS_IDB_STORE)) {
+          db.createObjectStore(BOSS_IDB_STORE, { keyPath: 'bossId' });
+        }
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => resolve(null);
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function saveCustomBossBufferToIdb(
+  bossId: BossId,
+  buffer: ArrayBuffer,
+  meta: CustomBossMeta,
+): Promise<void> {
+  const db = await openBossIdb();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(BOSS_IDB_STORE, 'readwrite');
+      tx.objectStore(BOSS_IDB_STORE).put({ bossId, buffer, meta });
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+async function deleteCustomBossFromIdb(bossId: BossId): Promise<void> {
+  const db = await openBossIdb();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(BOSS_IDB_STORE, 'readwrite');
+      tx.objectStore(BOSS_IDB_STORE).delete(bossId);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+export async function restorePersistedCustomBosses(): Promise<void> {
+  const db = await openBossIdb();
+  if (!db) return;
+  const rows = await new Promise<Array<{ bossId: BossId; buffer: ArrayBuffer; meta: CustomBossMeta }>>(
+    (resolve) => {
+      try {
+        const tx = db.transaction(BOSS_IDB_STORE, 'readonly');
+        const req = tx.objectStore(BOSS_IDB_STORE).getAll();
+        req.onsuccess = () => resolve((req.result as Array<{ bossId: BossId; buffer: ArrayBuffer; meta: CustomBossMeta }>) ?? []);
+        req.onerror = () => resolve([]);
+      } catch {
+        resolve([]);
+      }
+    },
+  );
+  for (const row of rows) {
+    if (!row?.buffer || !row?.bossId) continue;
+    try {
+      const gltf = await new Promise<GLTF>((res, rej) =>
+        gltfLoader.parse(row.buffer, '', res, rej),
+      );
+      customBossGlbMap.set(row.bossId, { gltf, meta: row.meta });
+    } catch {
+      // Ignore damaged entry
+    }
+  }
+}
+
+export function validateGlbOrGltfBinary(
+  buffer: ArrayBuffer,
+  fileName: string,
+): { ok: boolean; error?: string; isBinaryGlb: boolean } {
+  const lower = fileName.toLowerCase();
+  if (!lower.endsWith('.glb') && !lower.endsWith('.gltf')) {
+    return {
+      ok: false,
+      isBinaryGlb: false,
+      error: 'Formato inválido: solo se admiten archivos .glb o .gltf exportados desde Blender.',
+    };
+  }
+  if (buffer.byteLength < 20) {
+    return { ok: false, isBinaryGlb: false, error: 'El archivo está vacío o incompleto.' };
+  }
+  if (buffer.byteLength > 25 * 1024 * 1024) {
+    return {
+      ok: false,
+      isBinaryGlb: false,
+      error: 'El archivo excede el límite máximo permitido de 25 MB.',
+    };
+  }
+  const view = new DataView(buffer);
+  const magic = view.getUint32(0, true);
+  // 0x46546c67 == "glTF"
+  if (lower.endsWith('.glb')) {
+    if (magic !== 0x46546c67) {
+      return {
+        ok: false,
+        isBinaryGlb: true,
+        error: 'Cabecera GLB corrupta: el archivo no contiene firma binaria glTF 2.0 válida.',
+      };
+    }
+    const gltfVersion = view.getUint32(4, true);
+    if (gltfVersion !== 2) {
+      return {
+        ok: false,
+        isBinaryGlb: true,
+        error: `Versión glTF no compatible (${gltfVersion}). Exporta como glTF 2.0.`,
+      };
+    }
+    return { ok: true, isBinaryGlb: true };
+  }
+
+  // JSON .gltf validation (strict non-executing parse)
+  try {
+    const text = new TextDecoder().decode(buffer);
+    const json = JSON.parse(text) as { asset?: { version?: string }; meshes?: unknown[] };
+    if (!json || typeof json !== 'object' || !json.asset?.version) {
+      return {
+        ok: false,
+        isBinaryGlb: false,
+        error: 'Estructura .gltf inválida: falta el bloque asset.version.',
+      };
+    }
+    return { ok: true, isBinaryGlb: false };
+  } catch {
+    return {
+      ok: false,
+      isBinaryGlb: false,
+      error: 'El archivo .gltf no contiene JSON válido.',
+    };
+  }
+}
+
+export async function validateAndStoreCustomBossGlb(
+  file: File,
+  boss: BossDef,
+): Promise<CustomBossValidationResult> {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  const buffer = await file.arrayBuffer();
+  const headerCheck = validateGlbOrGltfBinary(buffer, file.name);
+  if (!headerCheck.ok) {
+    return { ok: false, errors: [headerCheck.error ?? 'Archivo inválido.'], warnings };
+  }
+
+  let gltf: GLTF;
+  try {
+    gltf = await new Promise<GLTF>((resolve, reject) => {
+      gltfLoader.parse(buffer, '', resolve, reject);
+    });
+  } catch (err) {
+    return {
+      ok: false,
+      errors: [
+        `No se pudo analizar la geometría del modelo (${err instanceof Error ? err.message : 'formato dañado'}). Si usas .gltf, asegúrate de incrustar texturas o exportar en .glb binario.`,
+      ],
+      warnings,
+    };
+  }
+
+  let meshCount = 0;
+  let totalVertices = 0;
+  let totalTriangles = 0;
+  let hasSkeleton = false;
+  let pbrMaterials = 0;
+
+  gltf.scene.updateMatrixWorld(true);
+  gltf.scene.traverse((obj) => {
+    if ((obj as THREE.Bone).isBone || (obj as THREE.SkinnedMesh).isSkinnedMesh) {
+      hasSkeleton = true;
+    }
+    const mesh = obj as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry) {
+      meshCount += 1;
+      const pos = mesh.geometry.attributes.position;
+      if (pos) totalVertices += pos.count;
+      if (mesh.geometry.index) {
+        totalTriangles += Math.floor(mesh.geometry.index.count / 3);
+      } else if (pos) {
+        totalTriangles += Math.floor(pos.count / 3);
+      }
+      const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      for (const m of mats) {
+        if (m instanceof THREE.MeshStandardMaterial || m instanceof THREE.MeshPhysicalMaterial) {
+          pbrMaterials += 1;
+        }
+      }
+    }
+  });
+
+  if (meshCount === 0) {
+    errors.push('El modelo no contiene ninguna malla 3D visible.');
+  }
+  if (meshCount > 180) {
+    errors.push(`Demasiados sub-objetos (${meshCount}/180 máx). Une mallas en Blender antes de exportar.`);
+  }
+  if (totalTriangles > 120000) {
+    errors.push(`Presupuesto de polígonos excedido (${totalTriangles.toLocaleString()} / 120.000 triángulos máx). Usa Decimate en Blender.`);
+  }
+
+  const box = new THREE.Box3().setFromObject(gltf.scene);
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  if (
+    !Number.isFinite(size.x) ||
+    !Number.isFinite(size.y) ||
+    !Number.isFinite(size.z) ||
+    Math.max(size.x, size.y, size.z) < 0.05
+  ) {
+    errors.push('Dimensiones degeneradas: el modelo es demasiado pequeño o vacío.');
+  } else if (Math.max(size.x, size.y, size.z) > 500) {
+    errors.push('Escala fuera de rango (>500m). Aplica escalas en Blender (Ctrl+A) antes de exportar.');
+  }
+
+  if (pbrMaterials === 0) {
+    warnings.push('No se detectaron materiales PBR estándar; se aplicará iluminación adaptativa.');
+  }
+  const clips = (gltf.animations ?? []).map((c) => c.name || 'Clip');
+  if (clips.length === 0) {
+    warnings.push('Sin clips de animación: el motor aplicará flotación y rotación procedural automática.');
+  }
+  if (!hasSkeleton) {
+    warnings.push('Modelo rígido (sin esqueleto/huesos); compatible como nave o núcleo.');
+  }
+
+  if (errors.length > 0) {
+    return { ok: false, errors, warnings };
+  }
+
+  const meta: CustomBossMeta = {
+    bossId: boss.id,
+    name: `${boss.name} (Blender)`,
+    fileName: file.name,
+    fileSizeBytes: file.size,
+    vertices: totalVertices,
+    triangles: totalTriangles,
+    meshes: meshCount,
+    clips,
+    hasSkeleton,
+    enabled: true,
+    uploadedAt: new Date().toLocaleString('es-ES'),
+  };
+
+  customBossGlbMap.set(boss.id, { gltf, meta });
+  await saveCustomBossBufferToIdb(boss.id, buffer, meta);
+
+  return { ok: true, errors: [], warnings, meta };
+}
+
+export function getCustomBossEntry(bossId: BossId): { gltf: GLTF; meta: CustomBossMeta } | null {
+  return customBossGlbMap.get(bossId) ?? null;
+}
+
+export function setCustomBossEnabledState(bossId: BossId, enabled: boolean): CustomBossMeta | null {
+  const entry = customBossGlbMap.get(bossId);
+  if (!entry) return null;
+  entry.meta = { ...entry.meta, enabled };
+  return entry.meta;
+}
+
+export async function removeCustomBossGlb(bossId: BossId): Promise<void> {
+  customBossGlbMap.delete(bossId);
+  await deleteCustomBossFromIdb(bossId);
+}
+
+export function instantiateCustomBossGlb(
+  bossId: BossId,
+  bossDef: BossDef,
+): { group: THREE.Group; mixer: THREE.AnimationMixer | null } | null {
+  const entry = customBossGlbMap.get(bossId);
+  if (!entry || !entry.meta.enabled) return null;
+
+  const res = instantiateStaticOrAnimatedGlb(entry.gltf, {
+    targetHeight: 4.8,
+    rotateY: 0,
+    accentHex: bossDef.primaryColor,
+    playClipRegex: /idle|loop|hover|fly/i,
+  });
+  const root = new THREE.Group();
+  // Center vertically around y = 0 for aerial boss rig alignment
+  const b = new THREE.Box3().setFromObject(res.modelGroup);
+  const center = new THREE.Vector3();
+  b.getCenter(center);
+  res.modelGroup.position.y -= center.y;
+  root.add(res.modelGroup);
+  root.userData.bossId = bossId;
+  root.userData.isCustomBoss = true;
+  root.userData.customMixer = res.mixer;
+  root.userData.rings = [];
+  root.userData.wings = [];
+  root.userData.segments = [];
+  root.userData.core = res.modelGroup;
+  return { group: root, mixer: res.mixer };
+}
+
 export function instantiateStaticOrAnimatedGlb(
   gltf: GLTF,
   options: {
@@ -138,7 +512,7 @@ export function instantiateStaticOrAnimatedGlb(
           const m = mat.clone();
           clonedMaterials.push(m);
           if (m instanceof THREE.MeshStandardMaterial) {
-            m.envMapIntensity = 0.9;
+            m.envMapIntensity = 0.85;
             if (accentColor && /emissive|glow|visor|trim|light/i.test(m.name || '')) {
               m.emissive.copy(accentColor);
               m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.5);
@@ -231,7 +605,7 @@ export function instantiateGlbRunner(
             const matName = (m.name || '').toLowerCase();
             if (/joint|accent|glow|visor|eye|emissive|light|trim/i.test(matName)) {
               m.emissive.copy(accentColor);
-              m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.55);
+              m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.52);
             } else if (/alpha|primary|body|armor|torso|vanguard/i.test(matName)) {
               m.color.lerp(jacketColor, 0.25);
             }
@@ -247,16 +621,13 @@ export function instantiateGlbRunner(
     }
   });
 
-  // Compute normalized bounding box -> height 1.82m, feet grounded at y = 0, facing -Z
   const wrapper = new THREE.Group();
-  clone.rotation.y = Math.PI; // glTF forward +Z -> game runner forward -Z
+  clone.rotation.y = Math.PI;
   clone.updateMatrixWorld(true);
 
   const box = new THREE.Box3().setFromObject(clone);
   const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
   box.getSize(size);
-  box.getCenter(center);
 
   const safeH = Math.max(0.01, size.y);
   const scaleFactor = 1.82 / safeH;
@@ -332,8 +703,9 @@ export function updateGlbRunnerAnimation(
     targetKey = 'idle';
   } else if (action === 'celebrate') {
     targetKey = animState.actions.celebrate ? 'celebrate' : 'idle';
-  } else if (action === 'stumble') {
+  } else if (action === 'stumble' || action === 'captureStruggle') {
     targetKey = animState.actions.stumble ? 'stumble' : 'idle';
+    timeScale = action === 'captureStruggle' ? 1.3 : 1.0;
   } else if (action === 'slide' || action === 'vehicle') {
     targetKey = animState.actions.slide ? 'slide' : 'idle';
   } else if (
@@ -342,7 +714,8 @@ export function updateGlbRunnerAnimation(
     action === 'vault' ||
     action === 'dive' ||
     action === 'zipline' ||
-    action === 'grapple'
+    action === 'grapple' ||
+    action === 'swingBar'
   ) {
     targetKey = animState.actions.jump ? 'jump' : 'run';
     timeScale = 1.1;
