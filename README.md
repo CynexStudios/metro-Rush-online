@@ -4,7 +4,7 @@
 
 **Videojuego 3D de parkour urbano, combates de jefes secuenciales, vehículos futuristas y multijugador LAN/Internet para PC (Windows / Electron).**
 
-**Versión actual:** `v2.4.0` · **Autor:** Jaderson Liriano (**Líder de XynexDevs**)
+**Versión actual:** `v3.0.1` · **Autor:** Jaderson Liriano (**Líder de XynexDevs**)
 
 [![Version](https://img.shields.io/badge/version-2.4.0-22d3ee?style=for-the-badge)](./package.json)
 [![Electron](https://img.shields.io/badge/Electron-Desktop%20PC-0f172a?style=for-the-badge&logo=electron)](./electron/main.ts)
