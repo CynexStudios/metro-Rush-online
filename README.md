@@ -168,8 +168,8 @@ npm run dist:win
 Al completar `npm run dist:win`, los ejecutables listos para distribuir se generan en `release/`:
 
 ```text
-release\Metro-Rush-Neon-City-Setup-7.0.1.exe
-release\Metro-Rush-Neon-City-Portable-7.0.1.exe
+release\Metro-Rush-Neon-City-Setup-8.0.0.exe
+release\Metro-Rush-Neon-City-Portable-8.0.0.exe
 ```
 
 ---

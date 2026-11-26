@@ -1,8 +1,8 @@
 {
   "name": "metro-rush-neon-city",
   "private": true,
-  "version": "7.0.1",
-  "description": "METRO RUSH: NEON CITY 7.0.1 — NEON OVERDRIVE: Videojuego 3D de parkour urbano, vehículos con batería activable, jefes con drones de apoyo en 4 fases, ciudad subterránea renovada y multijugador autoritativo.",
+  "version": "8.0.0",
+  "description": "METRO RUSH: NEON CITY 8.0.0 — SKYLINE PROTOCOL: Videojuego 3D de parkour urbano, 10 metrópolis, vehículos terrestres y voladores, jefes con radar y drones de apoyo, tienda 3D/2D y multijugador LAN/Internet.",
   "author": "Jaderson Liriano (XynexDevs)",
   "main": "dist-electron/main.cjs",
   "type": "module",
