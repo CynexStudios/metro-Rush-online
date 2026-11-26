@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GLTF, GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/addons/libs/meshopt_decoder.module.js';
 import * as SkeletonUtils from 'three/addons/utils/SkeletonUtils.js';
 import {
   BossDef,
@@ -16,9 +17,25 @@ export interface GlbAnimationState {
   actions: Partial<Record<'idle' | 'run' | 'jump' | 'slide' | 'celebrate' | 'stumble', THREE.AnimationAction>>;
   currentKey: string | null;
   lastPlayedTime: number;
+  hasNativeSlideClip: boolean;
 }
 
 const gltfLoader = new GLTFLoader();
+let meshoptConfigured = false;
+async function ensureMeshoptReady(): Promise<void> {
+  if (!meshoptConfigured) {
+    try {
+      await MeshoptDecoder.ready;
+      gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+      meshoptConfigured = true;
+    } catch {
+      // Fallback if MeshoptDecoder WASM fails in constrained context
+      gltfLoader.setMeshoptDecoder(MeshoptDecoder);
+      meshoptConfigured = true;
+    }
+  }
+}
+
 const cachedGlb = new Map<string, GLTF>();
 const pendingLoads = new Map<string, Promise<GLTF>>();
 let customGlbData: GLTF | null = null;
@@ -33,13 +50,76 @@ export function getCustomGlbInfo(): { loaded: boolean; name: string | null } {
   return { loaded: customGlbData !== null, name: customGlbName };
 }
 
-export type ExtraGlbId = 'fox' | 'helmet' | 'ion_drive' | 'milk_truck';
+export type ExtraGlbId =
+  | 'helmet'
+  | 'ion_drive'
+  | 'milk_truck'
+  | 'cesium_man'
+  | 'brain_stem'
+  | 'astronaut_a'
+  | 'astronaut_b'
+  | 'kenney_skyscraper_a'
+  | 'kenney_skyscraper_b'
+  | 'kenney_building_commercial'
+  | 'kenney_building_industrial'
+  | 'kenney_hangar'
+  | 'kenney_cog'
+  | 'kenney_factory_machine'
+  | 'kenney_robot_arm'
+  | 'kenney_monorail'
+  | 'kenney_police'
+  | 'kenney_race_future'
+  | 'kenney_rover'
+  | 'kenney_truck'
+  | 'kenney_glider'
+  | 'kenney_viper'
+  | 'kenney_speeder'
+  | 'kenney_bomber'
+  | 'kenney_turret'
+  | 'kenney_speedboat'
+  | 'kenney_boat_fan';
 
 const EXTRA_GLB_URLS: Record<ExtraGlbId, string> = {
-  fox: '/models/Fox.glb',
   helmet: '/models/DamagedHelmet.glb',
   ion_drive: '/models/PrimaryIonDrive.glb',
   milk_truck: '/models/CesiumMilkTruck.glb',
+  cesium_man: '/models/CesiumMan.glb',
+  brain_stem: '/models/BrainStem.glb',
+  astronaut_a: '/models/kenney_astronaut_a.glb',
+  astronaut_b: '/models/kenney_astronaut_b.glb',
+  kenney_skyscraper_a: '/models/kenney_skyscraper_a.glb',
+  kenney_skyscraper_b: '/models/kenney_skyscraper_b.glb',
+  kenney_building_commercial: '/models/kenney_building_commercial.glb',
+  kenney_building_industrial: '/models/kenney_building_industrial.glb',
+  kenney_hangar: '/models/kenney_hangar.glb',
+  kenney_cog: '/models/kenney_cog.glb',
+  kenney_factory_machine: '/models/kenney_factory_machine.glb',
+  kenney_robot_arm: '/models/kenney_robot_arm.glb',
+  kenney_monorail: '/models/kenney_monorail.glb',
+  kenney_police: '/models/kenney_police.glb',
+  kenney_race_future: '/models/kenney_race_future.glb',
+  kenney_rover: '/models/kenney_rover.glb',
+  kenney_truck: '/models/kenney_truck.glb',
+  kenney_glider: '/models/kenney_glider.glb',
+  kenney_viper: '/models/kenney_viper.glb',
+  kenney_speeder: '/models/kenney_speeder.glb',
+  kenney_bomber: '/models/kenney_bomber.glb',
+  kenney_turret: '/models/kenney_turret.glb',
+  kenney_speedboat: '/models/kenney_speedboat.glb',
+  kenney_boat_fan: '/models/kenney_boat_fan.glb',
+};
+
+const RUNNER_MODEL_URLS: Record<
+  'cesium_man' | 'brain_stem' | 'astronaut_a' | 'astronaut_b' | 'xbot' | 'robot' | 'soldier',
+  string
+> = {
+  cesium_man: '/models/CesiumMan.glb',
+  brain_stem: '/models/BrainStem.glb',
+  astronaut_a: '/models/kenney_astronaut_a.glb',
+  astronaut_b: '/models/kenney_astronaut_b.glb',
+  xbot: '/models/Xbot.glb',
+  robot: '/models/RobotExpressive.glb',
+  soldier: '/models/Soldier.glb',
 };
 
 function loadGlbByUrl(url: string): Promise<GLTF> {
@@ -49,33 +129,32 @@ function loadGlbByUrl(url: string): Promise<GLTF> {
   const inflight = pendingLoads.get(url);
   if (inflight) return inflight;
 
-  const promise = new Promise<GLTF>((resolve, reject) => {
-    gltfLoader.load(
-      url,
-      (gltf) => {
-        cachedGlb.set(url, gltf);
-        pendingLoads.delete(url);
-        resolve(gltf);
-      },
-      undefined,
-      (err) => {
-        pendingLoads.delete(url);
-        reject(err);
-      },
-    );
-  });
+  const promise = (async () => {
+    await ensureMeshoptReady();
+    return new Promise<GLTF>((resolve, reject) => {
+      gltfLoader.load(
+        url,
+        (gltf) => {
+          cachedGlb.set(url, gltf);
+          pendingLoads.delete(url);
+          resolve(gltf);
+        },
+        undefined,
+        (err) => {
+          pendingLoads.delete(url);
+          reject(err);
+        },
+      );
+    });
+  })();
   pendingLoads.set(url, promise);
   return promise;
 }
 
-export async function preloadGlbModel(style: 'xbot' | 'robot' | 'soldier'): Promise<GLTF> {
-  const url =
-    style === 'xbot'
-      ? '/models/Xbot.glb'
-      : style === 'soldier'
-        ? '/models/Soldier.glb'
-        : '/models/RobotExpressive.glb';
-  return loadGlbByUrl(url);
+export async function preloadGlbModel(
+  style: 'cesium_man' | 'brain_stem' | 'astronaut_a' | 'astronaut_b' | 'xbot' | 'robot' | 'soldier',
+): Promise<GLTF> {
+  return loadGlbByUrl(RUNNER_MODEL_URLS[style]);
 }
 
 export async function preloadExtraGlbModel(id: ExtraGlbId): Promise<GLTF> {
@@ -83,14 +162,13 @@ export async function preloadExtraGlbModel(id: ExtraGlbId): Promise<GLTF> {
 }
 
 export async function preloadAllExtraGlbModels(): Promise<void> {
+  await ensureMeshoptReady();
+  const ids = Object.keys(EXTRA_GLB_URLS) as ExtraGlbId[];
   await Promise.allSettled([
     preloadGlbModel('xbot'),
     preloadGlbModel('robot'),
     preloadGlbModel('soldier'),
-    preloadExtraGlbModel('fox'),
-    preloadExtraGlbModel('helmet'),
-    preloadExtraGlbModel('ion_drive'),
-    preloadExtraGlbModel('milk_truck'),
+    ...ids.map((id) => preloadExtraGlbModel(id)),
     restorePersistedCustomBosses(),
   ]);
 }
@@ -100,6 +178,7 @@ export function getCachedExtraGlb(id: ExtraGlbId): GLTF | null {
 }
 
 export async function parseCustomGlbFile(file: File): Promise<{ name: string; clipCount: number }> {
+  await ensureMeshoptReady();
   const buffer = await file.arrayBuffer();
   return new Promise((resolve, reject) => {
     gltfLoader.parse(
@@ -118,11 +197,10 @@ export async function parseCustomGlbFile(file: File): Promise<{ name: string; cl
 }
 
 export function getCachedGlbForStyle(style: PlayerModelStyle): GLTF | null {
-  if (style === 'xbot') return cachedGlb.get('/models/Xbot.glb') ?? null;
-  if (style === 'robot') return cachedGlb.get('/models/RobotExpressive.glb') ?? null;
-  if (style === 'soldier') return cachedGlb.get('/models/Soldier.glb') ?? null;
   if (style === 'custom') return customGlbData;
-  return null;
+  if (style === 'procedural') return null;
+  const url = RUNNER_MODEL_URLS[style];
+  return url ? (cachedGlb.get(url) ?? null) : null;
 }
 
 /**
@@ -491,6 +569,7 @@ export function instantiateStaticOrAnimatedGlb(
     targetHeight?: number;
     rotateY?: number;
     accentHex?: string;
+    tintHex?: string;
     playClipRegex?: RegExp;
   } = {},
 ): {
@@ -501,21 +580,25 @@ export function instantiateStaticOrAnimatedGlb(
   const clone = SkeletonUtils.clone(gltf.scene) as THREE.Group;
   const clonedMaterials: THREE.Material[] = [];
   const accentColor = options.accentHex ? new THREE.Color(options.accentHex) : null;
+  const tintColor = options.tintHex ? new THREE.Color(options.tintHex) : null;
 
   clone.traverse((obj) => {
     const mesh = obj as THREE.Mesh;
     if (mesh.isMesh) {
       mesh.castShadow = true;
       mesh.receiveShadow = true;
+      mesh.frustumCulled = true;
       if (mesh.material) {
         const cloneMat = (mat: THREE.Material): THREE.Material => {
           const m = mat.clone();
           clonedMaterials.push(m);
           if (m instanceof THREE.MeshStandardMaterial) {
             m.envMapIntensity = 0.85;
-            if (accentColor && /emissive|glow|visor|trim|light/i.test(m.name || '')) {
+            if (accentColor && /emissive|glow|visor|trim|light|window/i.test(m.name || '')) {
               m.emissive.copy(accentColor);
-              m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.5);
+              m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.52);
+            } else if (tintColor && /paint|body|hull|main|car/i.test(m.name || '')) {
+              m.color.lerp(tintColor, 0.35);
             }
           }
           return m;
@@ -577,9 +660,35 @@ function findClip(clips: THREE.AnimationClip[], candidates: RegExp[]): THREE.Ani
   return null;
 }
 
+function detectCustomGlbFacingMinusZ(root: THREE.Object3D): boolean {
+  let headZ: number | null = null;
+  let footZ: number | null = null;
+  let toeZ: number | null = null;
+  root.updateMatrixWorld(true);
+  const v = new THREE.Vector3();
+  root.traverse((obj) => {
+    const name = (obj.name || '').toLowerCase();
+    if (/head|visor|nose|face/.test(name) && headZ === null) {
+      obj.getWorldPosition(v);
+      headZ = v.z;
+    } else if (/toe|footfront/.test(name) && toeZ === null) {
+      obj.getWorldPosition(v);
+      toeZ = v.z;
+    } else if (/foot|ankle|heel/.test(name) && footZ === null) {
+      obj.getWorldPosition(v);
+      footZ = v.z;
+    }
+  });
+  if (toeZ !== null && footZ !== null && Math.abs(toeZ - footZ) > 0.02) {
+    return toeZ < footZ;
+  }
+  return false;
+}
+
 export function instantiateGlbRunner(
   gltf: GLTF,
   char: CharacterDef,
+  style: PlayerModelStyle = 'xbot',
 ): {
   modelGroup: THREE.Group;
   animState: GlbAnimationState | null;
@@ -606,8 +715,8 @@ export function instantiateGlbRunner(
             if (/joint|accent|glow|visor|eye|emissive|light|trim/i.test(matName)) {
               m.emissive.copy(accentColor);
               m.emissiveIntensity = Math.max(m.emissiveIntensity, 0.52);
-            } else if (/alpha|primary|body|armor|torso|vanguard/i.test(matName)) {
-              m.color.lerp(jacketColor, 0.25);
+            } else if (/alpha|primary|body|armor|torso|vanguard|suit|cloth/i.test(matName)) {
+              m.color.lerp(jacketColor, 0.3);
             }
           }
           return m;
@@ -622,7 +731,14 @@ export function instantiateGlbRunner(
   });
 
   const wrapper = new THREE.Group();
-  clone.rotation.y = Math.PI;
+  // Soldier.glb root skeleton faces -Z natively; CesiumMan, BrainStem, Xbot, RobotExpressive, Astronaut face +Z.
+  let rotY = Math.PI;
+  if (style === 'soldier') {
+    rotY = 0;
+  } else if (style === 'custom') {
+    rotY = detectCustomGlbFacingMinusZ(clone) ? 0 : Math.PI;
+  }
+  clone.rotation.y = rotY;
   clone.updateMatrixWorld(true);
 
   const box = new THREE.Box3().setFromObject(clone);
@@ -649,9 +765,11 @@ export function instantiateGlbRunner(
     const actions: GlbAnimationState['actions'] = {};
 
     const idleClip = findClip(clips, [/^idle$/i, /idle/i, /^standing$/i, /stand/i]);
-    const runClip = findClip(clips, [/^running$/i, /^run$/i, /sprint/i, /walk/i]);
+    const runClip = findClip(clips, [/^running$/i, /^run$/i, /sprint/i, /walk/i]) ?? clips[0];
     const jumpClip = findClip(clips, [/^jump$/i, /walkjump/i, /jump/i, /^running$/i, /^run$/i]);
-    const slideClip = findClip(clips, [/sitting/i, /sneak/i, /crouch/i, /slide/i, /^walk$/i]);
+    const nativeSlideClip = findClip(clips, [/sitting/i, /sneak/i, /crouch/i, /slide/i, /roll/i]);
+    const hasNativeSlideClip = Boolean(nativeSlideClip);
+    const slideClip = nativeSlideClip ?? idleClip ?? runClip;
     const celebrateClip = findClip(clips, [/dance/i, /thumbsup/i, /wave/i, /agree/i, /^idle$/i]);
     const stumbleClip = findClip(clips, [/death/i, /sad/i, /punch/i, /no/i, /^idle$/i]);
 
@@ -677,6 +795,7 @@ export function instantiateGlbRunner(
       actions,
       currentKey: 'idle',
       lastPlayedTime: 0,
+      hasNativeSlideClip,
     };
   }
 
@@ -708,6 +827,7 @@ export function updateGlbRunnerAnimation(
     timeScale = action === 'captureStruggle' ? 1.3 : 1.0;
   } else if (action === 'slide' || action === 'vehicle') {
     targetKey = animState.actions.slide ? 'slide' : 'idle';
+    timeScale = action === 'slide' && !animState.hasNativeSlideClip ? 0.45 : 1.0;
   } else if (
     action === 'jump' ||
     action === 'doubleJump' ||

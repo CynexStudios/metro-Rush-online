@@ -5,7 +5,7 @@ import path from 'node:path';
 const ROOT = process.cwd();
 const PKG_PATH = path.join(ROOT, 'package.json');
 const pkg = JSON.parse(fs.readFileSync(PKG_PATH, 'utf8'));
-const version = process.env.RELEASE_VERSION || pkg.version || '3.0.1';
+const version = process.env.RELEASE_VERSION || pkg.version || '7.0.1';
 const repo = process.env.METRO_RUSH_UPDATE_REPO || 'CynexStudios/metro-Rush-online';
 const releaseDir = path.join(ROOT, 'release');
 const expectedExeName = `Metro-Rush-Neon-City-Setup-${version}.exe`;
@@ -35,7 +35,7 @@ const manifest = {
   sizeBytes: sizeBytes || null,
   minCompatibleVersion: '3.0.0',
   releaseNotes:
-    'Metro Rush: Neon City 3.0.1 — Escudo con explosión en cadena, Doble Salto rediseñado, 3 mapas de 5 carriles, Parkour Extremo de 2 pisos, Jefes de 4 fases estilo Elden Ring, Modelos Custom GLB de Blender, Hangar 3D, Captura por Dron en Derrota, Pase de Batalla de 40 niveles (solo Gemas) y Auto-Updater público.',
+    'Metro Rush: Neon City 7.0.1 — NEON OVERDRIVE: Jefes coreografiados con drones de apoyo, cámara y curva de velocidad equilibradas, Contrarreloj de supervivencia, Ciudad Subterránea y cielo GLSL renovados, 2da planta real, vehículos por batería activable, Pase de Corredor de 50 niveles, 9 personajes con habilidades únicas, Soldier corregido, navegación completa por teclado y visibilidad multijugador corregida.',
 };
 
 fs.mkdirSync(releaseDir, { recursive: true });

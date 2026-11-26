@@ -12,12 +12,19 @@ import {
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
+  CHARACTER_BOOSTERS,
   CHARACTERS,
+  COMPANION_DRONES,
   COSMETICS,
   getCharacterById,
   SKILL_TREE,
 } from '../game/data';
-import { purchaseCharacter, purchaseOrEquipCosmetic } from '../game/economy';
+import {
+  purchaseCharacter,
+  purchaseOrEquipBooster,
+  purchaseOrEquipCosmetic,
+  purchaseOrEquipDrone,
+} from '../game/economy';
 import { ExtraGlbId } from '../game/gltfAssets';
 import { CosmeticSlot, PlayerSaveData } from '../game/types';
 import { ModelPreview3D, ModelPreview3DProps } from './ModelPreview3D';
@@ -40,8 +47,8 @@ const SLOT_LABELS: Record<CosmeticSlot, string> = {
 };
 
 const GLB_RELICS: { id: ExtraGlbId; name: string; role: string; accent: string }[] = [
-  { id: 'fox', name: 'Zorro Cyber (.GLB)', role: 'Compañero en pista y mascota táctica', accent: '#f97316' },
-  { id: 'helmet', name: 'Casco Battle-Damaged (.GLB)', role: 'Artefacto coleccionable PBR', accent: '#22d3ee' },
+  { id: 'kenney_turret', name: 'Dron Centinela (.GLB)', role: 'Dron táctico de apoyo invocable en pista', accent: '#22d3ee' },
+  { id: 'helmet', name: 'Casco Battle-Damaged (.GLB)', role: 'Artefacto coleccionable PBR', accent: '#38bdf8' },
   { id: 'ion_drive', name: 'Propulsor Iónico (.GLB)', role: 'Motor cuántico de impulso aéreo', accent: '#a855f7' },
   { id: 'milk_truck', name: 'Transporte Urbano (.GLB)', role: 'Vehículo de tráfico urbano en ciudad', accent: '#eab308' },
 ];
@@ -256,70 +263,131 @@ export const InventoryView: React.FC<InventoryViewProps> = ({
                 </button>
               </div>
 
-              {/* Mascota 3D Acompañante: Zorro Cyber */}
-              {(() => {
-                const ownsFox = (save.ownedPets ?? ['fox_cyber']).includes('fox_cyber');
-                const foxEquipped = save.equippedPetId === 'fox_cyber';
-                return (
-                  <div
-                    onClick={() =>
-                      setInspected({
-                        kind: 'relic',
-                        itemId: 'fox',
-                        extraGlbId: 'fox',
-                        title: 'Zorro Cyber (.GLB)',
-                        subtitle: foxEquipped
-                          ? 'Equipado en lobby y carreras'
-                          : 'Desequipado (guardado en taquilla)',
-                        accentColor: '#f97316',
-                      })
-                    }
-                    className={`p-5 rounded-xl border flex flex-wrap items-center justify-between gap-4 cursor-pointer ${
-                      foxEquipped
-                        ? 'bg-[#0e1a33] border-amber-400/60'
-                        : 'bg-[#0b1224] border-white/10 hover:border-white/25'
-                    }`}
-                  >
-                    <div className="space-y-1 max-w-lg">
-                      <div className="flex items-center gap-2 text-xs font-bold text-amber-300">
-                        <Sparkles className="w-4 h-4" />
-                        Mascota 3D Acompañante ·{' '}
-                        <span className={foxEquipped ? 'text-emerald-300' : 'text-slate-400'}>
-                          {foxEquipped ? 'Equipada' : 'Desequipada'}
-                        </span>
-                      </div>
-                      <div className="font-display text-lg font-bold text-white">
-                        Zorro Cyber (Fox.glb)
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        Corre junto a tu corredor en el lobby 3D y durante las partidas. Puedes equiparlo o desequiparlo cuando prefieras correr en solitario.
-                      </p>
-                    </div>
-
-                    {ownsFox && (
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          audioEngine.playUiClick(true);
-                          onUpdateSave({
-                            ...save,
-                            ownedPets: save.ownedPets?.length ? save.ownedPets : ['fox_cyber'],
-                            equippedPetId: foxEquipped ? null : 'fox_cyber',
-                          });
-                        }}
-                        className={`px-4 py-2.5 rounded-lg font-display font-bold text-xs cursor-pointer whitespace-nowrap shrink-0 ${
-                          foxEquipped
-                            ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/60 text-rose-200'
-                            : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+              {/* Drones Acompañantes & Potenciadores de Personaje */}
+              <div className="space-y-3">
+                <div className="text-xs font-bold tracking-wider text-cyan-300 uppercase">
+                  Drones Acompañantes (Tecla [{save.settings.keybindings.callDrone?.replace('Key', '') || 'G'}])
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {COMPANION_DRONES.filter((d) =>
+                    (save.ownedDrones ?? ['drone_aegis_mk1']).includes(d.id),
+                  ).map((drone) => {
+                    const equipped = save.equippedDroneId === drone.id;
+                    const glbId: ExtraGlbId =
+                      drone.modelKey === 'bomber'
+                        ? 'kenney_bomber'
+                        : drone.modelKey === 'speeder'
+                          ? 'kenney_speeder'
+                          : 'kenney_turret';
+                    return (
+                      <div
+                        key={drone.id}
+                        onClick={() =>
+                          setInspected({
+                            kind: 'relic',
+                            itemId: glbId,
+                            extraGlbId: glbId,
+                            title: drone.name,
+                            subtitle: `${drone.title} · ${drone.activeDurationSec}s activo / ${drone.cooldownSec}s CD`,
+                            accentColor: drone.accentColor,
+                          })
+                        }
+                        className={`p-4 rounded-xl border flex flex-col justify-between gap-3 cursor-pointer ${
+                          equipped
+                            ? 'bg-[#0e1a33] border-cyan-400/70'
+                            : 'bg-[#0b1224] border-white/10 hover:border-white/25'
                         }`}
                       >
-                        {foxEquipped ? 'DESEQUIPAR MASCOTA' : 'EQUIPAR MASCOTA'}
-                      </button>
-                    )}
+                        <div className="space-y-1">
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-cyan-300">{drone.rarity}</span>
+                            <span className={equipped ? 'text-emerald-300' : 'text-slate-400'}>
+                              {equipped ? 'EQUIPADO' : 'EN TAQUILLA'}
+                            </span>
+                          </div>
+                          <div className="font-display text-base font-bold text-white">
+                            {drone.name}
+                          </div>
+                          <p className="text-xs text-slate-300 leading-relaxed">
+                            {drone.description}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            audioEngine.playUiClick(true);
+                            const res = purchaseOrEquipDrone(save, drone.id);
+                            if (res.ok) onUpdateSave(res.nextSave);
+                          }}
+                          className={`px-3.5 py-2 rounded-lg font-display font-bold text-xs cursor-pointer ${
+                            equipped
+                              ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/60 text-rose-200'
+                              : 'bg-cyan-400 hover:bg-cyan-300 text-slate-950'
+                          }`}
+                        >
+                          {equipped ? 'DESEQUIPAR DRON' : 'EQUIPAR DRON'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {(save.ownedBoosters ?? []).length > 0 && (
+                <div className="space-y-3">
+                  <div className="text-xs font-bold tracking-wider text-amber-300 uppercase">
+                    Potenciadores de Corredor Equipables
                   </div>
-                );
-              })()}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                    {CHARACTER_BOOSTERS.filter((b) =>
+                      (save.ownedBoosters ?? []).includes(b.id),
+                    ).map((booster) => {
+                      const equipped = save.equippedBoosterId === booster.id;
+                      return (
+                        <div
+                          key={booster.id}
+                          className={`p-4 rounded-xl border flex flex-col justify-between gap-3 ${
+                            equipped
+                              ? 'bg-[#1a1428] border-amber-400/70'
+                              : 'bg-[#0b1224] border-white/10'
+                          }`}
+                        >
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between text-[11px] font-bold">
+                              <span className="text-amber-300">{booster.iconTag} · {booster.rarity}</span>
+                              <span className={equipped ? 'text-emerald-300' : 'text-slate-400'}>
+                                {equipped ? 'ACTIVO' : 'DISPONIBLE'}
+                              </span>
+                            </div>
+                            <div className="font-display text-base font-bold text-white">
+                              {booster.name}
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed">
+                              {booster.description}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              audioEngine.playUiClick(true);
+                              const res = purchaseOrEquipBooster(save, booster.id);
+                              if (res.ok) onUpdateSave(res.nextSave);
+                            }}
+                            className={`px-3.5 py-2 rounded-lg font-display font-bold text-xs cursor-pointer ${
+                              equipped
+                                ? 'bg-rose-500/20 hover:bg-rose-500/35 border border-rose-400/60 text-rose-200'
+                                : 'bg-amber-400 hover:bg-amber-300 text-slate-950'
+                            }`}
+                          >
+                            {equipped ? 'DESEQUIPAR POTENCIADOR' : 'EQUIPAR POTENCIADOR'}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
           )}
 

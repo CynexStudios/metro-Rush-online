@@ -1,5 +1,6 @@
-export const GAME_VERSION = '3.0.1';
-export const PROTOCOL_VERSION = 3;
+export const GAME_VERSION = '8.0.0';
+export const PROTOCOL_VERSION = 8;
+export const UPDATE_CODENAME = 'SKYLINE PROTOCOL';
 
 export function isVersionCompatible(remoteVersion: string | undefined | null): boolean {
   if (!remoteVersion) return false;

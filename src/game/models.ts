@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { COSMETICS, getBossById, getVehicleById } from './data';
+import { COMPANION_DRONES, COSMETICS, getBossById, getCompanionDroneById, getVehicleById } from './data';
 import {
   ExtraGlbId,
   getCachedExtraGlb,
@@ -14,6 +14,7 @@ import { ProceduralTexturePack } from './materials';
 import {
   BossDef,
   BossId,
+  BossSupportDroneRole,
   CharacterDef,
   DistrictDef,
   EnemyClass,
@@ -55,6 +56,11 @@ export interface CollectibleAssetPool {
   empCoreGeo: THREE.CylinderGeometry;
   empCapGeo: THREE.CylinderGeometry;
   empRingGeo: THREE.TorusGeometry;
+  batteryBodyGeo: THREE.CylinderGeometry;
+  batteryCapGeo: THREE.CylinderGeometry;
+  batteryRingGeo: THREE.TorusGeometry;
+  timeOrbCoreGeo: THREE.OctahedronGeometry;
+  timeOrbRingGeo: THREE.TorusGeometry;
   shieldDiscGeo: THREE.CylinderGeometry;
   shieldRingGeo: THREE.TorusGeometry;
   magnetArcGeo: THREE.ExtrudeGeometry;
@@ -72,6 +78,10 @@ export interface CollectibleAssetPool {
   secretCageMat: THREE.MeshStandardMaterial;
   empMat: THREE.MeshStandardMaterial;
   empCapMat: THREE.MeshStandardMaterial;
+  batteryMat: THREE.MeshStandardMaterial;
+  batteryCapMat: THREE.MeshStandardMaterial;
+  timeOrbMat: THREE.MeshPhysicalMaterial;
+  timeOrbRingMat: THREE.MeshStandardMaterial;
   shieldMat: THREE.MeshPhysicalMaterial;
   magnetMat: THREE.MeshStandardMaterial;
   magnetTipMat: THREE.MeshStandardMaterial;
@@ -127,6 +137,41 @@ export function createVehicleGroup(
     emissiveIntensity: 0.95,
     roughness: 0.2,
   });
+
+  // Prefer real cached Kenney CC0 .GLB vehicle models when loaded
+  const glbMap: Record<VehicleId, ExtraGlbId> = {
+    hover_bike: 'kenney_speeder',
+    cyber_coupe: 'kenney_race_future',
+    quantum_glider: 'kenney_glider',
+    titan_rammer: 'kenney_rover',
+    star_viper: 'kenney_viper',
+    plasma_bomber: 'kenney_bomber',
+  };
+  const cachedVehGlb = getCachedExtraGlb(glbMap[vehicleId]);
+  if (cachedVehGlb) {
+    const isShip = vehicleId === 'quantum_glider' || vehicleId === 'star_viper' || vehicleId === 'plasma_bomber';
+    const inst = instantiateStaticOrAnimatedGlb(cachedVehGlb, {
+      targetHeight: isShip ? 1.08 : 0.92,
+      rotateY: Math.PI,
+      accentHex,
+      tintHex: paintHex,
+    });
+    inst.modelGroup.position.y = isShip ? 0.28 : 0.08;
+    g.add(inst.modelGroup);
+
+    // Thruster glow cones & repulsor ring
+    for (const sx of [-0.26, 0.26]) {
+      const flame = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.44, 10), glowMat);
+      flame.rotation.x = Math.PI / 2;
+      flame.position.set(sx, isShip ? 0.62 : 0.36, 1.38);
+      g.add(flame);
+    }
+    const underRing = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.035, 8, 22), glowMat);
+    underRing.rotation.x = Math.PI / 2;
+    underRing.position.y = 0.08;
+    g.add(underRing);
+    return g;
+  }
 
   if (vehicleId === 'cyber_coupe') {
     const carShape = new THREE.Shape();
@@ -303,6 +348,34 @@ export function createVehicleGroup(
       thruster.rotation.x = Math.PI / 2;
       thruster.position.set(sx * 0.52, 0.64, 1.48);
       g.add(tread, glowTrack, thruster);
+    }
+    return g;
+  }
+
+  if (vehicleId === 'plasma_bomber') {
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(1.72, 0.72, 2.85), hullMat);
+    hull.position.set(0, 0.64, 0);
+    hull.castShadow = true;
+    const plow = new THREE.Mesh(new THREE.BoxGeometry(1.92, 0.42, 0.56), darkMat);
+    plow.position.set(0, 0.42, -1.55);
+    plow.rotation.x = 0.24;
+    const canopy = new THREE.Mesh(new THREE.BoxGeometry(1.04, 0.34, 0.92), visorMat);
+    canopy.position.set(0, 1.05, -0.35);
+    const mortarRing = new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.075, 8, 20), glowMat);
+    mortarRing.position.set(0, 0.74, -1.78);
+    g.add(hull, plow, canopy, mortarRing);
+
+    for (const sx of [-1.02, 1.02]) {
+      const pod = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.34, 2.3, 12), trimMat);
+      pod.rotation.x = Math.PI / 2;
+      pod.position.set(sx, 0.56, 0.08);
+      const canister = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 1.05, 10), glowMat);
+      canister.rotation.x = Math.PI / 2;
+      canister.position.set(sx, 0.88, -0.2);
+      const thruster = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.62, 10), glowMat);
+      thruster.rotation.x = Math.PI / 2;
+      thruster.position.set(sx * 0.68, 0.58, 1.65);
+      g.add(pod, canister, thruster);
     }
     return g;
   }
@@ -516,6 +589,103 @@ export function buildPursuerModel(accentHex = '#ef4444'): THREE.Group {
 }
 
 /**
+ * Distinct Character Silhouette Gear (§18.1 Visual Differentiation)
+ */
+export function buildCharacterSilhouetteGear(
+  char: CharacterDef,
+  visorMat: THREE.Material,
+): THREE.Group {
+  const g = new THREE.Group();
+  const gearType = char.silhouetteGear ?? 'blade_pack';
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: char.colors.accent,
+    emissive: char.colors.accent,
+    emissiveIntensity: 0.9,
+    roughness: 0.22,
+    metalness: 0.62,
+  });
+  const frameMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    metalness: 0.84,
+    roughness: 0.28,
+  });
+
+  if (gearType === 'blade_pack') {
+    for (const sx of [-0.14, 0.14]) {
+      const blade = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.68, 0.12), accentMat);
+      blade.position.set(sx, 0.16, 0.14);
+      blade.rotation.z = sx > 0 ? -0.36 : 0.36;
+      g.add(blade);
+    }
+  } else if (gearType === 'drone_rig') {
+    const pod = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.34, 0.14), frameMat);
+    pod.position.set(0, 0.05, 0.12);
+    const orbit = new THREE.Mesh(new THREE.OctahedronGeometry(0.095, 0), accentMat);
+    orbit.position.set(0.32, 0.34, -0.04);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.14, 0.02, 6, 16), visorMat);
+    ring.rotation.x = Math.PI / 2;
+    ring.position.copy(orbit.position);
+    g.add(pod, orbit, ring);
+  } else if (gearType === 'exo_frame') {
+    for (const sx of [-0.26, 0.26]) {
+      const pipe = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.065, 0.48, 8), frameMat);
+      pipe.position.set(sx, 0.14, 0.1);
+      pipe.rotation.z = sx > 0 ? -0.2 : 0.2;
+      const tip = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.04, 0.12, 8), accentMat);
+      tip.position.set(sx * 1.12, 0.4, 0.12);
+      g.add(pipe, tip);
+    }
+  } else if (gearType === 'twin_wings') {
+    for (const sx of [-1, 1]) {
+      const wing = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.18, 0.04), accentMat);
+      wing.position.set(sx * 0.36, 0.14, 0.16);
+      wing.rotation.z = sx * 0.28;
+      wing.rotation.y = sx * -0.25;
+      g.add(wing);
+    }
+  } else if (gearType === 'tech_halo') {
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.32, 0.03, 8, 24), accentMat);
+    halo.position.set(0, 0.24, 0.14);
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.08, 0), visorMat);
+    core.position.set(0, 0.24, 0.14);
+    g.add(halo, core);
+  } else if (gearType === 'heavy_pauldrons') {
+    for (const sx of [-0.36, 0.36]) {
+      const plate = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.24, 0.28), frameMat);
+      plate.position.set(sx, 0.24, -0.02);
+      plate.rotation.z = sx > 0 ? -0.25 : 0.25;
+      const bar = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.3), accentMat);
+      bar.position.set(sx, 0.34, -0.02);
+      g.add(plate, bar);
+    }
+  } else if (gearType === 'cloak_fins') {
+    for (let i = -1; i <= 1; i++) {
+      const fin = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.56, 0.22), i === 0 ? accentMat : frameMat);
+      fin.position.set(i * 0.14, 0.06, 0.16);
+      fin.rotation.x = 0.25;
+      g.add(fin);
+    }
+  } else if (gearType === 'stealth_cape') {
+    const scarf = new THREE.Mesh(new THREE.BoxGeometry(0.36, 0.52, 0.06), accentMat);
+    scarf.position.set(0, -0.02, 0.16);
+    scarf.rotation.x = 0.32;
+    g.add(scarf);
+  } else {
+    // 'overdrive_crown' (Valkor)
+    const crownRing = new THREE.Mesh(new THREE.TorusGeometry(0.36, 0.035, 8, 24), accentMat);
+    crownRing.position.set(0, 0.34, 0.12);
+    for (let i = -1; i <= 1; i++) {
+      const spike = new THREE.Mesh(new THREE.ConeGeometry(0.055, 0.34, 6), accentMat);
+      spike.position.set(i * 0.22, 0.44, 0.12);
+      spike.rotation.z = -i * 0.35;
+      g.add(spike);
+    }
+    g.add(crownRing);
+  }
+  return g;
+}
+
+/**
  * 24+ Part Sculpted Composite 3D Character Rig OR Real Loaded .GLB Skeletal Rig
  */
 export function buildCharacterRig(
@@ -568,8 +738,12 @@ export function buildCharacterRig(
   if (modelStyle !== 'procedural') {
     const gltf = getCachedGlbForStyle(modelStyle);
     if (gltf) {
-      const { modelGroup, animState, disposeGlb } = instantiateGlbRunner(gltf, char);
+      const { modelGroup, animState, disposeGlb } = instantiateGlbRunner(gltf, char, modelStyle);
       bodyPivot.add(modelGroup);
+
+      const gear = buildCharacterSilhouetteGear(char, visorMat);
+      gear.position.set(0, 1.24, 0.12);
+      bodyPivot.add(gear);
 
       const emptyGrp = () => new THREE.Group();
       return {
@@ -594,6 +768,14 @@ export function buildCharacterRig(
           disposeGlb();
           shieldMesh.geometry.dispose();
           (shieldMesh.material as THREE.Material).dispose();
+          gear.traverse((obj) => {
+            if ((obj as THREE.Mesh).isMesh) {
+              const m = obj as THREE.Mesh;
+              m.geometry.dispose();
+              if (Array.isArray(m.material)) m.material.forEach((mat) => mat.dispose());
+              else m.material.dispose();
+            }
+          });
           hoverBikeGroup.traverse((obj) => {
             if ((obj as THREE.Mesh).isMesh) {
               const m = obj as THREE.Mesh;
@@ -895,6 +1077,8 @@ export function buildCharacterRig(
     const spineGlow = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.26, 0.095), accentMat);
     backpackGroup.add(spine, spineGlow);
   }
+  const silhouetteGearGroup = buildCharacterSilhouetteGear(char, visorMat);
+  backpackGroup.add(silhouetteGearGroup);
 
   // Sculpted Arms + Pauldrons + Gauntlets
   const buildArm = (side: -1 | 1) => {
@@ -1014,11 +1198,22 @@ export function animateCharacterRig(
   laneTilt: number,
   dt: number,
   flipProgress = 0,
+  isShip = false,
 ): void {
   const k = Math.min(1, dt * 16);
   const damp = (cur: number, target: number) => THREE.MathUtils.lerp(cur, target, k);
 
   rig.hoverBikeGroup.visible = action === 'vehicle';
+  if (action === 'vehicle') {
+    rig.hoverBikeGroup.rotation.z = damp(
+      rig.hoverBikeGroup.rotation.z,
+      laneTilt * (isShip ? -0.48 : -0.26),
+    );
+    rig.hoverBikeGroup.rotation.x = damp(
+      rig.hoverBikeGroup.rotation.x,
+      isShip ? Math.sin(time * 4.5) * 0.08 : 0,
+    );
+  }
 
   if (rig.isGlb) {
     let targetPivotY = 0;
@@ -1030,11 +1225,19 @@ export function animateCharacterRig(
           ? -0.55
           : action === 'balanceBeam'
             ? Math.sin(time * 5.2) * 0.14
-            : laneTilt * (action === 'vehicle' ? -0.35 : -0.2);
+            : laneTilt * (action === 'vehicle' ? (isShip ? -0.45 : -0.3) : -0.2);
 
-    if (action === 'vehicle') targetPivotY = 0.34 + Math.sin(time * 8) * 0.03;
-    else if (action === 'slide') targetPivotY = -0.32;
-    else if (action === 'doubleJump') targetPivotRotX = -flipProgress * Math.PI * 2;
+    if (action === 'vehicle') {
+      targetPivotY = (isShip ? 0.48 : 0.34) + Math.sin(time * (isShip ? 6.2 : 8)) * 0.035;
+    } else if (action === 'slide') {
+      if (rig.glbAnim && !rig.glbAnim.hasNativeSlideClip) {
+        // Procedural crouch-slide fallback when GLB lacks a dedicated crouch/slide clip (§19)
+        targetPivotY = -0.52;
+        targetPivotRotX = 0.64;
+      } else {
+        targetPivotY = -0.32;
+      }
+    } else if (action === 'doubleJump') targetPivotRotX = -flipProgress * Math.PI * 2;
     else if (action === 'swingBar') {
       targetPivotY = 0.25;
       targetPivotRotX = Math.sin(time * 9) * 0.38;
@@ -1220,15 +1423,15 @@ export function animateCharacterRig(
     targetLHipX = -0.3;
     targetRHipX = -0.3;
   } else if (action === 'vehicle') {
-    targetPivotY = 0.26 + Math.sin(time * 8) * 0.03;
-    targetTorsoRotX = 0.45;
-    targetPivotRotZ = laneTilt * -0.38;
+    targetPivotY = (isShip ? 0.48 : 0.26) + Math.sin(time * (isShip ? 6.2 : 8)) * 0.035;
+    targetTorsoRotX = isShip ? 0.62 : 0.45;
+    targetPivotRotZ = laneTilt * (isShip ? -0.52 : -0.38);
     targetLShoulderX = -1.1;
     targetRShoulderX = -1.1;
     targetLForearmX = -0.45;
     targetRForearmX = -0.45;
-    targetLHipX = 0.85;
-    targetRHipX = 0.85;
+    targetLHipX = isShip ? 0.65 : 0.85;
+    targetRHipX = isShip ? 0.65 : 0.85;
     targetLShinX = 1.15;
     targetRShinX = 1.15;
   } else if (action === 'stumble') {
@@ -1277,6 +1480,13 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
   const empCoreGeo = new THREE.CylinderGeometry(0.32, 0.32, 0.78, 12);
   const empCapGeo = new THREE.CylinderGeometry(0.4, 0.4, 0.14, 12);
   const empRingGeo = new THREE.TorusGeometry(0.52, 0.045, 8, 18);
+
+  const batteryBodyGeo = new THREE.CylinderGeometry(0.28, 0.28, 0.86, 12);
+  const batteryCapGeo = new THREE.CylinderGeometry(0.18, 0.26, 0.14, 12);
+  const batteryRingGeo = new THREE.TorusGeometry(0.48, 0.04, 8, 18);
+
+  const timeOrbCoreGeo = new THREE.OctahedronGeometry(0.42, 1);
+  const timeOrbRingGeo = new THREE.TorusGeometry(0.64, 0.055, 8, 24);
 
   const shieldDiscGeo = new THREE.CylinderGeometry(0.54, 0.54, 0.12, 6);
   shieldDiscGeo.rotateX(Math.PI / 2);
@@ -1355,6 +1565,35 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
     metalness: 0.85,
     roughness: 0.25,
   });
+  const batteryMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x0ea5e9,
+    emissiveIntensity: 1.0,
+    metalness: 0.55,
+    roughness: 0.2,
+  });
+  const batteryCapMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.8,
+    metalness: 0.85,
+    roughness: 0.2,
+  });
+  const timeOrbMat = new THREE.MeshPhysicalMaterial({
+    color: 0x34d399,
+    emissive: 0x10b981,
+    emissiveIntensity: 1.0,
+    metalness: 0.45,
+    roughness: 0.12,
+    clearcoat: 1.0,
+  });
+  const timeOrbRingMat = new THREE.MeshStandardMaterial({
+    color: 0xfde047,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.95,
+    metalness: 0.72,
+    roughness: 0.18,
+  });
   const shieldMat = new THREE.MeshPhysicalMaterial({
     color: 0x38bdf8,
     emissive: 0x0284c7,
@@ -1414,6 +1653,11 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
     empCoreGeo,
     empCapGeo,
     empRingGeo,
+    batteryBodyGeo,
+    batteryCapGeo,
+    batteryRingGeo,
+    timeOrbCoreGeo,
+    timeOrbRingGeo,
     shieldDiscGeo,
     shieldRingGeo,
     magnetArcGeo,
@@ -1432,6 +1676,10 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
     secretCageMat,
     empMat,
     empCapMat,
+    batteryMat,
+    batteryCapMat,
+    timeOrbMat,
+    timeOrbRingMat,
     shieldMat,
     magnetMat,
     magnetTipMat,
@@ -1451,6 +1699,11 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
     empCoreGeo,
     empCapGeo,
     empRingGeo,
+    batteryBodyGeo,
+    batteryCapGeo,
+    batteryRingGeo,
+    timeOrbCoreGeo,
+    timeOrbRingGeo,
     shieldDiscGeo,
     shieldRingGeo,
     magnetArcGeo,
@@ -1467,6 +1720,10 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
     secretCageMat,
     empMat,
     empCapMat,
+    batteryMat,
+    batteryCapMat,
+    timeOrbMat,
+    timeOrbRingMat,
     shieldMat,
     magnetMat,
     magnetTipMat,
@@ -1483,7 +1740,17 @@ export function createCollectibleAssetPool(): CollectibleAssetPool {
 }
 
 export function buildCollectibleModel(
-  kind: 'coin' | 'gem' | 'shield' | 'magnet' | 'slowmo' | 'secret' | 'empCell' | 'talisman',
+  kind:
+    | 'coin'
+    | 'gem'
+    | 'shield'
+    | 'magnet'
+    | 'slowmo'
+    | 'secret'
+    | 'empCell'
+    | 'talisman'
+    | 'battery'
+    | 'timeOrb',
   pool: CollectibleAssetPool,
 ): THREE.Group {
   const g = new THREE.Group();
@@ -1528,6 +1795,22 @@ export function buildCollectibleModel(
     const ring2 = ring1.clone();
     ring2.position.y = -0.15;
     g.add(core, capT, capB, ring1, ring2);
+  } else if (kind === 'battery') {
+    const cell = new THREE.Mesh(pool.batteryBodyGeo, pool.batteryMat);
+    const anode = new THREE.Mesh(pool.batteryCapGeo, pool.batteryCapMat);
+    anode.position.y = 0.48;
+    const cathode = new THREE.Mesh(pool.batteryCapGeo, pool.empCapMat);
+    cathode.position.y = -0.45;
+    const ring = new THREE.Mesh(pool.batteryRingGeo, pool.batteryCapMat);
+    ring.rotation.x = Math.PI / 2;
+    g.add(cell, anode, cathode, ring);
+  } else if (kind === 'timeOrb') {
+    const core = new THREE.Mesh(pool.timeOrbCoreGeo, pool.timeOrbMat);
+    const ringA = new THREE.Mesh(pool.timeOrbRingGeo, pool.timeOrbRingMat);
+    ringA.rotation.x = Math.PI / 3;
+    const ringB = new THREE.Mesh(pool.timeOrbRingGeo, pool.timeOrbMat);
+    ringB.rotation.y = Math.PI / 2.5;
+    g.add(core, ringA, ringB);
   } else if (kind === 'shield') {
     const disc = new THREE.Mesh(pool.shieldDiscGeo, pool.shieldMat);
     const ring = new THREE.Mesh(pool.shieldRingGeo, pool.shieldMat);
@@ -1596,23 +1879,37 @@ export function buildBuildingLOD(
   mats: ProceduralTexturePack,
   side: -1 | 1,
   switchDist = 68,
+  glbVariant?: ExtraGlbId,
 ): THREE.LOD {
   const lod = new THREE.LOD();
 
   const highGroup = new THREE.Group();
+  const cachedBld = glbVariant ? getCachedExtraGlb(glbVariant) : null;
+  if (cachedBld) {
+    const inst = instantiateStaticOrAnimatedGlb(cachedBld, {
+      targetHeight: bh,
+      rotateY: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+      accentHex: '#' + mats.neonTrimMat.color.getHexString(),
+    });
+    highGroup.add(inst.modelGroup);
+    const roofBeacon = new THREE.Mesh(unitBoxGeo, mats.neonTrimMat);
+    roofBeacon.scale.set(bw * 0.42, 0.28, bd * 0.42);
+    roofBeacon.position.y = bh + 0.14;
+    highGroup.add(roofBeacon);
+  } else {
+    // 1. Ground Podium Base
+    const podiumH = Math.min(4.0, bh * 0.22);
+    const podium = new THREE.Mesh(unitBoxGeo, mats.darkMetalMat);
+    podium.scale.set(bw * 1.06, podiumH, bd * 1.03);
+    podium.position.y = podiumH * 0.5;
+    highGroup.add(podium);
 
-  // 1. Ground Podium Base
-  const podiumH = Math.min(4.0, bh * 0.22);
-  const podium = new THREE.Mesh(unitBoxGeo, mats.darkMetalMat);
-  podium.scale.set(bw * 1.06, podiumH, bd * 1.03);
-  podium.position.y = podiumH * 0.5;
-  highGroup.add(podium);
-
-  // 2. Main Glass/Facade Tower Shaft
-  const main = new THREE.Mesh(unitBoxGeo, mats.buildingMat);
-  main.scale.set(bw, bh, bd);
-  main.position.y = bh * 0.5;
-  highGroup.add(main);
+    // 2. Main Glass/Facade Tower Shaft
+    const main = new THREE.Mesh(unitBoxGeo, mats.buildingMat);
+    main.scale.set(bw, bh, bd);
+    main.position.y = bh * 0.5;
+    highGroup.add(main);
+  }
 
   // 3. Structural Corner Pilasters on Track-Facing Edge
   const faceX = side * -(bw * 0.5);
@@ -2118,8 +2415,18 @@ export function buildBossModel(bossId: BossId, useCustom = true): THREE.Group {
     orbitRing1.rotation.x = Math.PI / 2.6;
     const orbitRing2 = new THREE.Mesh(new THREE.TorusGeometry(3.75, 0.12, 10, 34), priMat);
     orbitRing2.rotation.y = Math.PI / 2.4;
+    const shieldMat = new THREE.MeshBasicMaterial({
+      color: '#38bdf8',
+      transparent: true,
+      opacity: 0.34,
+      wireframe: true,
+      depthWrite: false,
+    });
+    const shieldSphere = new THREE.Mesh(new THREE.IcosahedronGeometry(4.25, 2), shieldMat);
+    shieldSphere.name = 'omegaShieldSphere';
+    g.userData.shieldSphere = shieldSphere;
     rings.push(armorShell, orbitRing1, orbitRing2);
-    g.add(singularity, armorShell, orbitRing1, orbitRing2);
+    g.add(singularity, armorShell, orbitRing1, orbitRing2, shieldSphere);
     for (let i = 0; i < 6; i++) {
       const ang = (i * Math.PI) / 3;
       const blade = new THREE.Mesh(new THREE.OctahedronGeometry(0.58, 0), secMat);
@@ -2249,7 +2556,13 @@ export function buildCityObstacleModel(
     | 'floodZone'
     | 'rubble'
     | 'maintBot'
-    | 'turbineHazard',
+    | 'turbineHazard'
+    | 'ventTrap'
+    | 'subwayCar'
+    | 'ceilingLaser'
+    | 'boatHazard'
+    | 'robotArmHazard'
+    | 'cogHazard',
   mats: ProceduralTexturePack,
 ): THREE.Group {
   const g = new THREE.Group();
@@ -2405,6 +2718,110 @@ export function buildCityObstacleModel(
       g.add(ring, spinner);
       break;
     }
+    case 'ventTrap': {
+      // Underground pressurized steam grate + floor spinning fan
+      const grate = new THREE.Mesh(new THREE.BoxGeometry(2.55, 0.28, 2.4), mats.darkMetalMat);
+      grate.position.y = 0.14;
+      const rim = new THREE.Mesh(new THREE.BoxGeometry(2.65, 0.12, 2.5), mats.hazardMat);
+      rim.position.y = 0.3;
+      const exhaust = new THREE.Mesh(new THREE.CylinderGeometry(0.76, 0.92, 0.45, 14), mats.secTrimMat);
+      exhaust.position.y = 0.38;
+      const fan = new THREE.Group();
+      fan.name = 'spinner';
+      fan.position.y = 0.64;
+      const b1 = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.08, 0.24), mats.neonTrimMat);
+      const b2 = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.08, 1.4), mats.neonTrimMat);
+      fan.add(b1, b2);
+      g.add(grate, rim, exhaust, fan);
+      break;
+    }
+    case 'subwayCar': {
+      // Abandoned wrecked underground subway carriage
+      const hull = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.25, 5.8), mats.darkMetalMat);
+      hull.position.y = 1.18;
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.58, 0.26, 5.86), mats.hazardMat);
+      stripe.position.y = 1.12;
+      const roofPod = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.3, 3.6), mats.walkMat);
+      roofPod.position.y = 2.42;
+      const headL = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.28, 0.18), mats.secTrimMat);
+      headL.position.set(-0.75, 0.72, 2.95);
+      const headR = headL.clone();
+      headR.position.x = 0.75;
+      g.add(hull, stripe, roofPod, headL, headR);
+      break;
+    }
+    case 'ceilingLaser': {
+      // Tunnel overhead emitter requiring slide-under (< 1.12m)
+      for (const sx of [-1.25, 1.25]) {
+        const strut = new THREE.Mesh(new THREE.BoxGeometry(0.22, 3.6, 0.28), mats.darkMetalMat);
+        strut.position.set(sx, 1.8, 0);
+        g.add(strut);
+      }
+      const emitter = new THREE.Mesh(new THREE.BoxGeometry(2.75, 0.52, 0.62), mats.darkMetalMat);
+      emitter.position.set(0, 2.75, 0);
+      const laserPanel = new THREE.Mesh(new THREE.BoxGeometry(2.45, 0.85, 0.28), mats.secTrimMat);
+      laserPanel.position.set(0, 1.78, 0);
+      laserPanel.name = 'laserBeam';
+      const warnTop = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.14, 0.66), mats.hazardMat);
+      warnTop.position.set(0, 2.42, 0);
+      g.add(emitter, laserPanel, warnTop);
+      break;
+    }
+    case 'boatHazard': {
+      const cachedBoat = getCachedExtraGlb('kenney_speedboat') ?? getCachedExtraGlb('kenney_boat_fan');
+      if (cachedBoat) {
+        const inst = instantiateStaticOrAnimatedGlb(cachedBoat, {
+          targetHeight: 1.55,
+          rotateY: 0,
+          accentHex: '#' + mats.neonTrimMat.color.getHexString(),
+        });
+        g.add(inst.modelGroup);
+      } else {
+        const hull = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.9, 3.8), mats.darkMetalMat);
+        hull.position.y = 0.45;
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.5, 2.4), mats.neonTrimMat);
+        deck.position.set(0, 1.0, -0.2);
+        g.add(hull, deck);
+      }
+      break;
+    }
+    case 'robotArmHazard': {
+      const cachedArm = getCachedExtraGlb('kenney_robot_arm') ?? getCachedExtraGlb('kenney_factory_machine');
+      if (cachedArm) {
+        const inst = instantiateStaticOrAnimatedGlb(cachedArm, {
+          targetHeight: 2.3,
+          rotateY: Math.PI / 2,
+          accentHex: '#' + mats.hazardMat.color.getHexString(),
+        });
+        g.add(inst.modelGroup);
+      } else {
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 0.85, 1.1, 10), mats.darkMetalMat);
+        ped.position.y = 0.55;
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.35, 0.45), mats.hazardMat);
+        arm.position.set(0, 1.45, 0);
+        g.add(ped, arm);
+      }
+      break;
+    }
+    case 'cogHazard': {
+      const cachedCog = getCachedExtraGlb('kenney_cog');
+      if (cachedCog) {
+        const inst = instantiateStaticOrAnimatedGlb(cachedCog, {
+          targetHeight: 2.25,
+          rotateY: Math.PI / 2,
+          accentHex: '#' + mats.secTrimMat.color.getHexString(),
+        });
+        inst.modelGroup.name = 'spinner';
+        g.add(inst.modelGroup);
+      } else {
+        const gear = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.05, 0.42, 10), mats.hazardMat);
+        gear.rotation.x = Math.PI / 2;
+        gear.position.y = 1.1;
+        gear.name = 'spinner';
+        g.add(gear);
+      }
+      break;
+    }
   }
   return g;
 }
@@ -2486,37 +2903,72 @@ export function buildDistrictLandmark(
       g.add(cage, core, ring);
       break;
     }
-    case 'harbor': {
-      const stanchion = new THREE.Mesh(new THREE.BoxGeometry(1.0, 15, 1.0), mats.darkMetalMat);
-      stanchion.position.y = 7.5;
-      const boom = new THREE.Mesh(new THREE.BoxGeometry(7.2, 0.72, 0.72), mats.hazardMat);
-      boom.position.set(side * -2.6, 14.5, 0);
-      const crate = new THREE.Mesh(new THREE.BoxGeometry(2.5, 2.2, 4.4), mats.secTrimMat);
-      crate.position.set(side * -4.2, 10.2, 0);
-      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.65, 10), mats.neonTrimMat);
-      beacon.position.set(side * -5.4, 15.1, 0);
-      g.add(stanchion, boom, crate, beacon);
+    case 'skyfall': {
+      const cachedSky = getCachedExtraGlb('kenney_skyscraper_b') ?? getCachedExtraGlb('kenney_skyscraper_a');
+      if (cachedSky) {
+        const inst = instantiateStaticOrAnimatedGlb(cachedSky, {
+          targetHeight: 19,
+          rotateY: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+          accentHex: '#' + mats.neonTrimMat.color.getHexString(),
+        });
+        g.add(inst.modelGroup);
+      } else {
+        const spire = new THREE.Mesh(new THREE.BoxGeometry(2.8, 18, 2.8), mats.buildingMat);
+        spire.position.y = 9;
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(3.2, 0.35, 3.2), mats.neonTrimMat);
+        beam.position.y = 18.2;
+        g.add(spire, beam);
+      }
       break;
     }
-    case 'citadel': {
-      const spireBase = new THREE.Mesh(new THREE.CylinderGeometry(0.95, 1.65, 12, 6), mats.darkMetalMat);
-      spireBase.position.y = 6;
-      const crystal = new THREE.Mesh(new THREE.ConeGeometry(0.9, 5.2, 6), mats.neonTrimMat);
-      crystal.position.y = 14.6;
-      const halo = new THREE.Mesh(new THREE.TorusGeometry(1.75, 0.1, 8, 20), mats.secTrimMat);
-      halo.rotation.x = Math.PI / 2;
-      halo.position.y = 11.2;
-      g.add(spireBase, crystal, halo);
+    case 'factory': {
+      const cachedFactory =
+        getCachedExtraGlb('kenney_robot_arm') ??
+        getCachedExtraGlb('kenney_factory_machine') ??
+        getCachedExtraGlb('kenney_hangar');
+      if (cachedFactory) {
+        const inst = instantiateStaticOrAnimatedGlb(cachedFactory, {
+          targetHeight: 7.4,
+          rotateY: side < 0 ? Math.PI / 2 : -Math.PI / 2,
+          accentHex: '#' + mats.hazardMat.color.getHexString(),
+        });
+        g.add(inst.modelGroup);
+      } else {
+        const press = new THREE.Mesh(new THREE.BoxGeometry(2.4, 8.5, 2.4), mats.darkMetalMat);
+        press.position.y = 4.25;
+        const piston = new THREE.Mesh(new THREE.BoxGeometry(1.5, 2.2, 1.5), mats.hazardMat);
+        piston.position.y = 7.8;
+        g.add(press, piston);
+      }
+      const cachedCog = getCachedExtraGlb('kenney_cog');
+      if (cachedCog) {
+        const cogInst = instantiateStaticOrAnimatedGlb(cachedCog, {
+          targetHeight: 3.4,
+          rotateY: Math.PI / 2,
+          accentHex: '#' + mats.secTrimMat.color.getHexString(),
+        });
+        cogInst.modelGroup.position.set(side * -1.4, 3.8, 0);
+        cogInst.modelGroup.name = 'factoryGear';
+        g.add(cogInst.modelGroup);
+      }
       break;
     }
-    case 'monolith': {
-      const obelisk = new THREE.Mesh(new THREE.BoxGeometry(1.5, 16, 1.5), mats.darkMetalMat);
-      obelisk.position.y = 8;
-      const slit = new THREE.Mesh(new THREE.BoxGeometry(0.34, 13.5, 1.64), mats.neonTrimMat);
-      slit.position.y = 8;
-      const crown = new THREE.Mesh(new THREE.OctahedronGeometry(1.15, 0), mats.secTrimMat);
-      crown.position.y = 17.6;
-      g.add(obelisk, slit, crown);
+    case 'ocean': {
+      const buoy = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.85, 7.5, 10), mats.darkMetalMat);
+      buoy.position.y = 3.2;
+      const beacon = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.75, 10), mats.neonTrimMat);
+      beacon.position.y = 7.25;
+      g.add(buoy, beacon);
+      const cachedBoat = getCachedExtraGlb('kenney_boat_fan') ?? getCachedExtraGlb('kenney_speedboat');
+      if (cachedBoat) {
+        const boatInst = instantiateStaticOrAnimatedGlb(cachedBoat, {
+          targetHeight: 1.85,
+          rotateY: side < 0 ? 0.45 : -0.45,
+          accentHex: '#' + mats.secTrimMat.color.getHexString(),
+        });
+        boatInst.modelGroup.position.set(side * -2.6, -1.65, 0);
+        g.add(boatInst.modelGroup);
+      }
       break;
     }
     default: {
@@ -2537,64 +2989,72 @@ export function buildBossDroneModel(): THREE.Group {
 }
 
 /**
- * Cyber-Companion Fox Builder (Uses Fox.glb when cached, else procedural cyber-fox)
+ * Callable Companion Drone Rig (Uses Kenney Turret / Bomber / Speeder GLBs with Procedural Fallback)
  */
-export function buildCompanionFoxModel(accentHex = '#22d3ee'): {
+export function buildCompanionDroneGroup(
+  droneId: string,
+  accentHexOverride?: string,
+): {
   group: THREE.Group;
-  mixer: THREE.AnimationMixer | null;
   dispose: () => void;
 } {
-  const cached = getCachedExtraGlb('fox');
-  if (cached) {
-    const inst = instantiateStaticOrAnimatedGlb(cached, {
-      targetHeight: 0.95,
-      rotateY: Math.PI,
-      accentHex,
-      playClipRegex: /run|walk|survey/i,
-    });
-    const collar = new THREE.Mesh(
-      new THREE.TorusGeometry(0.16, 0.025, 6, 16),
-      new THREE.MeshStandardMaterial({
-        color: accentHex,
-        emissive: accentHex,
-        emissiveIntensity: 0.9,
-      }),
-    );
-    collar.rotation.x = Math.PI / 2;
-    collar.position.set(0, 0.42, -0.25);
-    inst.modelGroup.add(collar);
-    return {
-      group: inst.modelGroup,
-      mixer: inst.mixer,
-      dispose: () => {
-        collar.geometry.dispose();
-        (collar.material as THREE.Material).dispose();
-        inst.dispose();
-      },
-    };
-  }
+  const def = getCompanionDroneById(droneId) ?? COMPANION_DRONES[0];
+  const priHex = def.primaryColor;
+  const accHex = accentHexOverride || def.accentColor;
+
+  const glbKey: ExtraGlbId =
+    def.modelKey === 'bomber'
+      ? 'kenney_bomber'
+      : def.modelKey === 'speeder'
+        ? 'kenney_speeder'
+        : 'kenney_turret';
+  const cached = getCachedExtraGlb(glbKey);
 
   const g = new THREE.Group();
-  const furMat = new THREE.MeshStandardMaterial({ color: 0xf97316, roughness: 0.5 });
-  const glowMat = new THREE.MeshStandardMaterial({
-    color: accentHex,
-    emissive: accentHex,
-    emissiveIntensity: 0.9,
+  let extraDispose: (() => void) | null = null;
+  if (cached) {
+    const inst = instantiateStaticOrAnimatedGlb(cached, {
+      targetHeight: 0.72,
+      rotateY: Math.PI,
+      accentHex: accHex,
+      tintHex: priHex,
+    });
+    g.add(inst.modelGroup);
+    extraDispose = inst.dispose;
+  } else {
+    const bodyMat = new THREE.MeshPhysicalMaterial({
+      color: 0x0f172a,
+      metalness: 0.85,
+      roughness: 0.22,
+      clearcoat: 0.8,
+    });
+    const glowMat = new THREE.MeshStandardMaterial({
+      color: priHex,
+      emissive: accHex,
+      emissiveIntensity: 1.0,
+    });
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 1), bodyMat);
+    core.position.y = 0.36;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.14, 10, 10), glowMat);
+    eye.position.set(0, 0.36, -0.25);
+    g.add(core, eye);
+  }
+
+  const haloMat = new THREE.MeshStandardMaterial({
+    color: accHex,
+    emissive: accHex,
+    emissiveIntensity: 0.95,
   });
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.28, 0.65), furMat);
-  body.position.y = 0.32;
-  const head = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.24, 0.28), furMat);
-  head.position.set(0, 0.48, -0.34);
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.06, 0.1), glowMat);
-  visor.position.set(0, 0.5, -0.46);
-  const tail = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.42, 6), glowMat);
-  tail.rotation.x = -Math.PI * 0.35;
-  tail.position.set(0, 0.4, 0.42);
-  g.add(body, head, visor, tail);
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.46, 0.035, 8, 22), haloMat);
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = 0.36;
+  halo.name = 'droneHalo';
+  g.add(halo);
+
   return {
     group: g,
-    mixer: null,
     dispose: () => {
+      extraDispose?.();
       g.traverse((obj) => {
         if ((obj as THREE.Mesh).isMesh) {
           const m = obj as THREE.Mesh;
@@ -2608,7 +3068,7 @@ export function buildCompanionFoxModel(accentHex = '#22d3ee'): {
 }
 
 /**
- * Relic / Showcase GLB Wrapper (DamagedHelmet, PrimaryIonDrive, CesiumMilkTruck, Fox)
+ * Relic / Showcase GLB Wrapper (DamagedHelmet, PrimaryIonDrive, CesiumMilkTruck, Kenney)
  */
 export function buildRelicGlbModel(
   id: ExtraGlbId,
@@ -2650,16 +3110,18 @@ export function buildRelicGlbModel(
 }
 
 /**
- * Urban Traffic Truck Obstacle (Uses CesiumMilkTruck.glb when cached, else procedural urban truck)
+ * Urban Traffic Truck / Police Obstacle (Uses Kenney Truck/Police or CesiumMilkTruck.glb when cached)
  */
 export function buildTrafficTruckObstacle(
   primaryHex: string,
   secondaryHex: string,
 ): THREE.Group {
-  const cached = getCachedExtraGlb('milk_truck');
-  if (cached) {
-    const inst = instantiateStaticOrAnimatedGlb(cached, {
-      targetHeight: 2.35,
+  const glbPick =
+    getCachedExtraGlb(Math.random() < 0.4 ? 'kenney_police' : 'kenney_truck') ??
+    getCachedExtraGlb('milk_truck');
+  if (glbPick) {
+    const inst = instantiateStaticOrAnimatedGlb(glbPick, {
+      targetHeight: 2.15,
       rotateY: Math.PI / 2,
       accentHex: primaryHex,
     });
@@ -2823,7 +3285,7 @@ export function buildHelicopterModel(
 }
 
 /**
- * Enclosed Subterranean Metro Tunnel Vault Segment (Ribs, Ceiling Lights, Conduits)
+ * Enclosed Subterranean Metro Tunnel Vault Segment (Ribs, Stations, Vent Fans, Emergency Beacons, Pipes)
  */
 export function buildUndergroundTunnelSegment(
   length: number,
@@ -2832,13 +3294,12 @@ export function buildUndergroundTunnelSegment(
 ): THREE.Group {
   const g = new THREE.Group();
   const concreteMat = new THREE.MeshStandardMaterial({
-    color: 0x161d2b,
-    roughness: 0.82,
-    metalness: 0.18,
+    color: 0x101724,
+    roughness: 0.86,
+    metalness: 0.16,
     side: THREE.BackSide,
   });
 
-  // Semi-cylindrical tunnel vault shell spanning the street + sidewalks (scales with 3 or 5 lanes)
   const vaultGeo = new THREE.CylinderGeometry(
     vaultRadius,
     vaultRadius,
@@ -2855,15 +3316,56 @@ export function buildUndergroundTunnelSegment(
   vault.position.set(0, 0.2, -length * 0.5);
   g.add(vault);
 
-  // Structural steel ribs + overhead industrial lights
-  const ribGeo = new THREE.TorusGeometry(vaultRadius - 0.35, 0.38, 6, 18, Math.PI);
+  const ribGeo = new THREE.TorusGeometry(vaultRadius - 0.35, 0.42, 6, 18, Math.PI);
   const lightGeo = new THREE.BoxGeometry(Math.max(1.8, vaultRadius * 0.18), 0.14, 2.2);
   for (let z = -7; z > -length; z -= 14) {
     const rib = new THREE.Mesh(ribGeo, mats.darkMetalMat);
     rib.position.set(0, 0.2, z);
     const lamp = new THREE.Mesh(lightGeo, mats.neonTrimMat);
-    lamp.position.set(0, vaultRadius - 0.85, z);
+    lamp.position.set(0, vaultRadius - 0.88, z);
+
+    // Emergency rotating warning beacons on rib flanks
+    for (const sx of [-1, 1]) {
+      const beacon = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.34, 0.24), mats.secTrimMat);
+      beacon.position.set(sx * (vaultRadius - 1.35), 4.8, z);
+      beacon.name = 'emergBeacon';
+      g.add(beacon);
+    }
+
+    // Ceiling ventilation fan turbine every 28m
+    if (Math.abs(z) % 28 < 14) {
+      const fanHousing = new THREE.Mesh(
+        new THREE.CylinderGeometry(1.35, 1.35, 0.35, 14),
+        mats.darkMetalMat,
+      );
+      fanHousing.position.set(0, vaultRadius - 1.35, z - 6);
+      const blades = new THREE.Group();
+      blades.name = 'ventFan';
+      blades.position.set(0, vaultRadius - 1.56, z - 6);
+      const bA = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.06, 0.28), mats.hazardMat);
+      const bB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 2.1), mats.hazardMat);
+      blades.add(bA, bB);
+      g.add(fanHousing, blades);
+    }
+
     g.add(rib, lamp);
+  }
+
+  // Abandoned station side platforms + deteriorated warning curbs
+  for (const sx of [-1, 1]) {
+    const platform = new THREE.Mesh(
+      new THREE.BoxGeometry(2.1, 1.05, length * 0.65),
+      mats.walkMat,
+    );
+    platform.position.set(sx * (vaultRadius - 2.35), 0.52, -length * 0.5);
+    const yellowEdge = new THREE.Mesh(
+      new THREE.BoxGeometry(0.22, 0.14, length * 0.65),
+      mats.hazardMat,
+    );
+    yellowEdge.position.set(sx * (vaultRadius - 3.35), 1.06, -length * 0.5);
+    const pillar = new THREE.Mesh(new THREE.BoxGeometry(0.55, 6.2, 0.75), mats.darkMetalMat);
+    pillar.position.set(sx * (vaultRadius - 2.3), 3.1, -length * 0.5);
+    g.add(platform, yellowEdge, pillar);
   }
 
   // Side pressurized pipes & signal cables along tunnel walls
@@ -2873,7 +3375,9 @@ export function buildUndergroundTunnelSegment(
   pipeL.position.set(-(vaultRadius - 1.05), 3.1, -length * 0.5);
   const pipeR = new THREE.Mesh(pipeGeo, mats.secTrimMat);
   pipeR.position.set(vaultRadius - 1.05, 3.6, -length * 0.5);
-  g.add(pipeL, pipeR);
+  const auxPipe = new THREE.Mesh(pipeGeo, mats.neonTrimMat);
+  auxPipe.position.set(-(vaultRadius - 1.15), 4.2, -length * 0.5);
+  g.add(pipeL, pipeR, auxPipe);
 
   return g;
 }
@@ -2952,36 +3456,231 @@ export function buildBossShockwave(colorHex = '#f97316', width = 10.6): THREE.Gr
 }
 
 /**
- * Remote Multiplayer Runner Avatar + Floating Name Tag Sprite
+ * Role-Specialized Boss Support Drone (§2.3: scout, bomber, shield, relay)
+ */
+export function buildBossSupportDrone(
+  role: BossSupportDroneRole,
+  primaryHex = '#22d3ee',
+  secondaryHex = '#ef4444',
+): THREE.Group {
+  const g = new THREE.Group();
+  const hullMat = new THREE.MeshPhysicalMaterial({
+    color: 0x0f172a,
+    metalness: 0.86,
+    roughness: 0.22,
+    clearcoat: 0.8,
+  });
+  const roleColor =
+    role === 'shield'
+      ? '#38bdf8'
+      : role === 'bomber'
+        ? '#f97316'
+        : role === 'relay'
+          ? '#a855f7'
+          : primaryHex;
+  const glowMat = new THREE.MeshStandardMaterial({
+    color: roleColor,
+    emissive: roleColor,
+    emissiveIntensity: 1.05,
+  });
+  const secMat = new THREE.MeshStandardMaterial({
+    color: secondaryHex,
+    emissive: secondaryHex,
+    emissiveIntensity: 0.9,
+  });
+
+  if (role === 'bomber') {
+    const hull = new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.52, 1.05), hullMat);
+    const podL = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 0.85, 8), glowMat);
+    podL.rotation.x = Math.PI / 2;
+    podL.position.set(-0.62, -0.05, 0);
+    const podR = podL.clone();
+    podR.position.x = 0.62;
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.24, 10, 10), secMat);
+    eye.position.set(0, -0.04, 0.5);
+    g.add(hull, podL, podR, eye);
+  } else if (role === 'shield') {
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), hullMat);
+    const shieldPlate = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.95, 0.14), glowMat);
+    shieldPlate.position.set(0, 0, 0.55);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.88, 0.06, 8, 20), glowMat);
+    ring.name = 'spinnerRing';
+    g.add(core, shieldPlate, ring);
+  } else if (role === 'relay') {
+    const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.48, 1.15, 6), hullMat);
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), glowMat);
+    core.position.y = 0.72;
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(0.75, 0.05, 8, 20), glowMat);
+    ringA.name = 'spinnerRing';
+    ringA.rotation.x = Math.PI / 2;
+    g.add(spire, core, ringA);
+  } else {
+    // 'scout'
+    const hull = new THREE.Mesh(new THREE.ConeGeometry(0.54, 1.25, 6), hullMat);
+    hull.rotation.x = Math.PI / 2;
+    const wing = new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.08, 0.42), glowMat);
+    const halo = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.045, 6, 18), secMat);
+    halo.name = 'spinnerRing';
+    halo.rotation.x = Math.PI / 2;
+    g.add(hull, wing, halo);
+  }
+  return g;
+}
+
+/**
+ * Isolated Studio Plinth & Backdrop Stage for Defeat Diorama (§13)
+ */
+export function buildDefeatStudioStage(accentHex = '#ef4444'): THREE.Group {
+  const g = new THREE.Group();
+  const plinthMat = new THREE.MeshPhysicalMaterial({
+    color: 0x050912,
+    metalness: 0.85,
+    roughness: 0.18,
+    clearcoat: 0.9,
+  });
+  const wallMat = new THREE.MeshStandardMaterial({
+    color: 0x03060c,
+    roughness: 0.92,
+    metalness: 0.1,
+  });
+  const rimMat = new THREE.MeshStandardMaterial({
+    color: accentHex,
+    emissive: accentHex,
+    emissiveIntensity: 0.9,
+  });
+  const cyanMat = new THREE.MeshStandardMaterial({
+    color: '#22d3ee',
+    emissive: '#06b6d4',
+    emissiveIntensity: 0.65,
+  });
+
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(8.5, 9.4, 0.45, 36), plinthMat);
+  base.position.set(0, -0.22, 0);
+  base.receiveShadow = true;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(4.4, 0.055, 8, 40), rimMat);
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(-1.35, 0.03, 0);
+  const outerRing = new THREE.Mesh(new THREE.TorusGeometry(6.8, 0.04, 8, 44), cyanMat);
+  outerRing.rotation.x = Math.PI / 2;
+  outerRing.position.set(-1.35, 0.02, 0);
+
+  // Enclosing studio cyclorama wall behind diorama so race chunks never bleed in
+  const cyclorama = new THREE.Mesh(
+    new THREE.CylinderGeometry(16, 16, 18, 28, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0x030712, side: THREE.BackSide }),
+  );
+  cyclorama.position.set(0, 6.5, 0);
+  const backMonolith = new THREE.Mesh(new THREE.BoxGeometry(22, 14, 0.8), wallMat);
+  backMonolith.position.set(0, 6.5, -10.5);
+
+  g.add(base, ring, outerRing, cyclorama, backMonolith);
+  return g;
+}
+
+/**
+ * Full Articulated Remote Multiplayer Runner + Vehicle + Floating Name Sprite (§21)
  */
 export function buildRemoteRunnerGhost(
   username: string,
   accentHex = '#22d3ee',
+  characterId = 'kai',
 ): THREE.Group {
   const g = new THREE.Group();
-  const bodyMat = new THREE.MeshStandardMaterial({
+  const bodyPivot = new THREE.Group();
+  bodyPivot.name = 'remoteBodyPivot';
+  g.add(bodyPivot);
+
+  const jacketHex =
+    characterId === 'blaze'
+      ? '#ef4444'
+      : characterId === 'nova'
+        ? '#6366f1'
+        : characterId === 'mika'
+          ? '#10b981'
+          : characterId === 'cipher'
+            ? '#eab308'
+            : characterId === 'valkyrie'
+              ? '#e11d48'
+              : characterId === 'zero'
+                ? '#1e293b'
+                : characterId === 'kage'
+                  ? '#312e81'
+                  : characterId === 'valkor'
+                    ? '#9f1239'
+                    : '#f97316';
+
+  const bodyMat = new THREE.MeshPhysicalMaterial({
+    color: jacketHex,
+    metalness: 0.45,
+    roughness: 0.3,
+    clearcoat: 0.55,
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
     color: 0x0f172a,
-    emissive: accentHex,
-    emissiveIntensity: 0.55,
-    transparent: true,
-    opacity: 0.85,
+    metalness: 0.72,
+    roughness: 0.32,
   });
   const visorMat = new THREE.MeshStandardMaterial({
     color: accentHex,
     emissive: accentHex,
-    emissiveIntensity: 1.1,
+    emissiveIntensity: 1.05,
   });
 
-  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.72, 6, 12), bodyMat);
-  torso.position.y = 1.05;
-  const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 10), bodyMat);
-  head.position.y = 1.72;
-  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.34, 0.09, 0.18), visorMat);
-  visor.position.set(0, 1.74, -0.15);
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.04, 6, 20), visorMat);
+  const torso = new THREE.Group();
+  torso.name = 'remoteTorso';
+  torso.position.y = 0.92;
+  bodyPivot.add(torso);
+
+  const chest = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.54, 0.28), bodyMat);
+  chest.position.y = 0.28;
+  const pack = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.34, 0.14), visorMat);
+  pack.position.set(0, 0.3, 0.18);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 10), darkMat);
+  head.position.set(0, 0.72, 0);
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.16), visorMat);
+  visor.position.set(0, 0.73, -0.13);
+  torso.add(chest, pack, head, visor);
+
+  const armL = new THREE.Group();
+  armL.name = 'remoteArmL';
+  armL.position.set(-0.31, 0.48, 0);
+  const aMeshL = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, 0.34, 4, 8), bodyMat);
+  aMeshL.position.y = -0.2;
+  armL.add(aMeshL);
+
+  const armR = new THREE.Group();
+  armR.name = 'remoteArmR';
+  armR.position.set(0.31, 0.48, 0);
+  const aMeshR = aMeshL.clone();
+  armR.add(aMeshR);
+
+  const legL = new THREE.Group();
+  legL.name = 'remoteLegL';
+  legL.position.set(-0.13, 0, 0);
+  const lMesh = new THREE.Mesh(new THREE.CapsuleGeometry(0.075, 0.48, 4, 8), darkMat);
+  lMesh.position.y = -0.34;
+  const bootL = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.1, 0.28), visorMat);
+  bootL.position.set(0, -0.66, -0.04);
+  legL.add(lMesh, bootL);
+
+  const legR = new THREE.Group();
+  legR.name = 'remoteLegR';
+  legR.position.set(0.13, 0, 0);
+  const rMesh = lMesh.clone();
+  const bootR = bootL.clone();
+  legR.add(rMesh, bootR);
+
+  torso.add(armL, armR, legL, legR);
+
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.045, 6, 20), visorMat);
   ring.rotation.x = Math.PI / 2;
-  ring.position.y = 0.06;
-  g.add(torso, head, visor, ring);
+  ring.position.y = 0.05;
+  g.add(ring);
+
+  const vehicleMesh = createVehicleGroup('hover_bike', '#162136', accentHex, visorMat);
+  vehicleMesh.name = 'remoteVehicleMesh';
+  vehicleMesh.visible = false;
+  g.add(vehicleMesh);
 
   // Floating Name Canvas Sprite
   const canvas = document.createElement('canvas');
@@ -2989,11 +3688,11 @@ export function buildRemoteRunnerGhost(
   canvas.height = 64;
   const ctx = canvas.getContext('2d');
   if (ctx) {
-    ctx.fillStyle = 'rgba(2, 6, 23, 0.82)';
-    ctx.fillRect(16, 10, 224, 44);
+    ctx.fillStyle = 'rgba(2, 6, 23, 0.85)';
+    ctx.fillRect(14, 10, 228, 44);
     ctx.strokeStyle = accentHex;
     ctx.lineWidth = 3;
-    ctx.strokeRect(16, 10, 224, 44);
+    ctx.strokeRect(14, 10, 228, 44);
     ctx.fillStyle = '#f8fafc';
     ctx.font = 'bold 22px sans-serif';
     ctx.textAlign = 'center';
@@ -3004,11 +3703,67 @@ export function buildRemoteRunnerGhost(
   tex.colorSpace = THREE.SRGBColorSpace;
   const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false });
   const sprite = new THREE.Sprite(spriteMat);
-  sprite.position.set(0, 2.38, 0);
-  sprite.scale.set(2.2, 0.55, 1);
+  sprite.position.set(0, 2.42, 0);
+  sprite.scale.set(2.35, 0.58, 1);
   g.add(sprite);
 
   return g;
+}
+
+export function animateRemoteRunnerRig(
+  mesh: THREE.Group,
+  action: ParkourAction,
+  time: number,
+  speedRatio: number,
+  isRidingVehicle: boolean,
+  rotY: number,
+  dt: number,
+): void {
+  const k = Math.min(1, dt * 16);
+  const bodyPivot = mesh.getObjectByName('remoteBodyPivot') as THREE.Group | undefined;
+  const torso = mesh.getObjectByName('remoteTorso') as THREE.Group | undefined;
+  const armL = mesh.getObjectByName('remoteArmL') as THREE.Group | undefined;
+  const armR = mesh.getObjectByName('remoteArmR') as THREE.Group | undefined;
+  const legL = mesh.getObjectByName('remoteLegL') as THREE.Group | undefined;
+  const legR = mesh.getObjectByName('remoteLegR') as THREE.Group | undefined;
+  const veh = mesh.getObjectByName('remoteVehicleMesh') as THREE.Group | undefined;
+
+  if (veh) {
+    veh.visible = isRidingVehicle || action === 'vehicle';
+  }
+  if (bodyPivot) {
+    bodyPivot.rotation.y = THREE.MathUtils.lerp(bodyPivot.rotation.y, rotY, k);
+    const targetY = action === 'slide' ? -0.42 : veh?.visible ? 0.34 : 0;
+    bodyPivot.position.y = THREE.MathUtils.lerp(bodyPivot.position.y, targetY, k);
+    const targetTiltZ =
+      action === 'wallRunLeft' ? 0.5 : action === 'wallRunRight' ? -0.5 : 0;
+    bodyPivot.rotation.z = THREE.MathUtils.lerp(bodyPivot.rotation.z, targetTiltZ, k);
+  }
+  if (torso) {
+    const torsoTilt =
+      action === 'slide' ? -0.85 : action === 'sprint' || veh?.visible ? 0.34 : 0.18;
+    torso.rotation.x = THREE.MathUtils.lerp(torso.rotation.x, torsoTilt, k);
+  }
+
+  const freq = (action === 'sprint' ? 15 : 12) * (0.85 + speedRatio * 0.35);
+  const phase = time * freq;
+  const swing = action === 'idle' || veh?.visible ? 0.06 : Math.sin(phase) * 0.85;
+  if (legL) legL.rotation.x = THREE.MathUtils.lerp(legL.rotation.x, swing, k);
+  if (legR) legR.rotation.x = THREE.MathUtils.lerp(legR.rotation.x, -swing, k);
+  if (armL) {
+    armL.rotation.x = THREE.MathUtils.lerp(
+      armL.rotation.x,
+      action === 'zipline' || action === 'grapple' ? -2.6 : -swing * 0.85,
+      k,
+    );
+  }
+  if (armR) {
+    armR.rotation.x = THREE.MathUtils.lerp(
+      armR.rotation.x,
+      action === 'zipline' || action === 'grapple' ? -2.6 : swing * 0.85,
+      k,
+    );
+  }
 }
 
 /**
@@ -3497,25 +4252,26 @@ export function buildShieldShatterEffect(colorHex = '#38bdf8'): THREE.Group {
 }
 
 /**
- * 3.0.1 Shifts Boss Phase Colors / Aura / Scale Across 4 Phases (§2)
+ * Shifts Boss Phase Colors / Aura / Scale Across 2..8 Phases
  */
 export function applyBossPhaseVisuals(
   bossMesh: THREE.Group,
   bossDef: BossDef,
   phaseIndex: number,
 ): void {
-  const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(3, phaseIndex))];
+  const maxIdx = Math.max(0, bossDef.phasesConfig.length - 1);
+  const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(maxIdx, phaseIndex))];
   if (!phaseCfg) return;
   const priMat = bossMesh.userData.priMat as THREE.MeshStandardMaterial | undefined;
   const secMat = bossMesh.userData.secMat as THREE.MeshStandardMaterial | undefined;
   if (priMat) {
     priMat.color.set(phaseCfg.auraColor);
     priMat.emissive.set(phaseCfg.auraColor);
-    priMat.emissiveIntensity = 0.85 + phaseIndex * 0.12;
+    priMat.emissiveIntensity = 0.85 + phaseIndex * 0.1;
   }
   if (secMat && phaseIndex >= 2) {
-    secMat.emissiveIntensity = 1.0 + (phaseIndex - 1) * 0.15;
+    secMat.emissiveIntensity = 1.0 + (phaseIndex - 1) * 0.12;
   }
-  bossMesh.scale.setScalar(phaseCfg.scaleBoost ?? 1 + phaseIndex * 0.06);
+  bossMesh.scale.setScalar(phaseCfg.scaleBoost ?? 1 + phaseIndex * 0.05);
 }
 

@@ -4,9 +4,9 @@
 
 **Videojuego 3D de parkour urbano, combates de jefes secuenciales, vehículos futuristas y multijugador LAN/Internet para PC (Windows / Electron).**
 
-**Versión actual:** `v7.0.1` · **Autor:** Jaderson Liriano (**Líder de XynexDevs**)
+**Versión actual:** `v8.0.0` (*SKYLINE PROTOCOL*) · **Autor:** Jaderson Liriano (**Líder de XynexDevs Studios**)
 
-[![Version](https://img.shields.io/badge/version-2.4.0-22d3ee?style=for-the-badge)](./package.json)
+[![Version](https://img.shields.io/badge/version-8.0.0-22d3ee?style=for-the-badge)](./package.json)
 [![Electron](https://img.shields.io/badge/Electron-Desktop%20PC-0f172a?style=for-the-badge&logo=electron)](./electron/main.ts)
 [![Three.js](https://img.shields.io/badge/Three.js-WebGL%203D-ec4899?style=for-the-badge&logo=threedotjs)](./src/game/engine.ts)
 [![SQLite](https://img.shields.io/badge/SQLite-Dual%20Engine-38bdf8?style=for-the-badge&logo=sqlite)](./src/db/sqlite.ts)
@@ -49,12 +49,13 @@ Este documento funciona como **guía técnica, manual de juego y directiva ofici
 | `07` | **THE SENTINEL** | Guardián Cuántico de Defensa | Future District | `3,500 M` · `50 G` |
 | `08` | **OMEGA CORE** | Reactor Singularidad Final | Future District | Jefe Final |
 
-### Metrópolis, Corredores, Vehículos y Acompañantes
-- **7 Metrópolis Diferenciadas:** *Neon Downtown*, *Old City*, *Industrial Core*, *Skyline Zero*, *Beach Sunset*, *Cyber Underground* y *Future District*.
-- **8 Corredores Jugables:** *Kai*, *Nova*, *Blaze*, *Zero*, *Mika*, *Valkyrie*, *Cipher* y *Kage*, cada uno con habilidad activa, pasiva y secundaria únicas.
-- **4 Vehículos Futuristas:** *Hover Bike*, *Cyber Coupe*, *Quantum Glider* y *Titan Rammer*.
-- **Mascota 3D Acompañante:** *Zorro Cyber* (`Fox.glb`) equipable y desequipable libremente desde **Personalizar -> Especiales**.
-- **Perfil y Estadísticas:** Editor de perfil unificado (apodo, avatar, cambio de contraseña, sesiones activas y respaldos JSON) y gráficas SVG filtrables por período (`7d`, `30d`, `90d`, `Todo`).
+### Metrópolis, Corredores, Vehículos y Drones de Ayuda
+- **10 Metrópolis Diferenciadas:** *Neon Downtown*, *Old City*, *Industrial Core*, *Skyline Zero*, *Beach Sunset*, *Cyber Underground*, *Future District*, **Cuidado si te caes** (`skyfall_towers`), **La Creación** (`the_creation`) y **No te ahogues** (`dont_drown`), con eventos dinámicos de túneles subterráneos, callejones de 1–2 carriles y autopista de 5 carriles.
+- **Corredores Jugables:** Cada personaje cuenta con habilidad activa, pasiva y habilidad única al activar vehículo, además de ranura para **Potenciadores** equipables.
+- **6 Vehículos Futuristas (Terrestres y Aéreos):** *Hover Bike*, *Cyber Coupe*, *Quantum Glider*, *Titan Rammer*, *Star Viper* y *Plasma Bomber* (los vehículos aéreos despegan y sortean obstáculos en altura).
+- **Drones Aliados Invocables:** Sistema táctico de drones con tiempo activo y enfriamiento en pista.
+- **Tienda 3D/2D y Economía:** Catálogo por tarjetas con vista previa 3D/2D al seleccionar, pestaña **Todo**, rotación semanal de 6 semanas, cambio de Gemas a Monedas, avatares y potenciadores.
+- **Perfil, Onboarding y Controles Adaptables:** Pantalla inicial de **XynexDevs Studios**, escaneo automático de hardware (CPU/RAM/GPU), enfriamiento de 3 días para cambio de nombre offline, estadísticas integradas en el perfil y controles en pantalla adaptados a **Teclado, Xbox, PlayStation y Nintendo**.
 
 ---
 
@@ -163,11 +164,12 @@ npm run build
 npm run dist:win
 ```
 
-### Instalador Generado
-Al completar `npm run dist:win`, el instalador listo para distribuir se genera en:
+### Instalador y Portable Generados
+Al completar `npm run dist:win`, los ejecutables listos para distribuir se generan en `release/`:
 
 ```text
-release\Metro-Rush-Neon-City-Setup-2.4.0.exe
+release\Metro-Rush-Neon-City-Setup-7.0.1.exe
+release\Metro-Rush-Neon-City-Portable-7.0.1.exe
 ```
 
 ---

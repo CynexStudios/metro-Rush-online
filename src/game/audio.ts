@@ -177,9 +177,9 @@ class ProceduralAudioEngine {
   }
 
   public setBossPhase(phase: number): void {
-    this.bossPhase = Math.max(1, Math.min(4, Math.round(phase)));
+    this.bossPhase = Math.max(1, Math.min(8, Math.round(phase)));
     if (this.musicMode === 'boss') {
-      this.intensity = Math.min(1, 0.72 + this.bossPhase * 0.07);
+      this.intensity = Math.min(1, 0.68 + this.bossPhase * 0.04);
     }
   }
 
@@ -290,12 +290,12 @@ class ProceduralAudioEngine {
     weather: WeatherType,
   ): void {
     this.districtId = districtId;
-    this.inTunnel = districtId === 'underground';
+    this.inTunnel = districtId === 'underground' || districtId === 'the_creation';
     if (!this.ctx) return;
     const now = this.ctx.currentTime;
     if (this.tunnelFeedback) {
       this.tunnelFeedback.gain.setTargetAtTime(
-        this.inTunnel ? 0.36 : districtId === 'oldcity' ? 0.14 : 0.0,
+        this.inTunnel ? 0.34 : districtId === 'oldcity' ? 0.14 : 0.0,
         now,
         0.15,
       );
@@ -303,10 +303,10 @@ class ProceduralAudioEngine {
     if (this.ambientFilter) {
       let freq = 420;
       if (districtId === 'underground') freq = 210;
-      else if (districtId === 'beach' || districtId === 'cyber_port') freq = 320;
-      else if (districtId === 'industrial' || districtId === 'obsidian_citadel') freq = 260;
-      else if (districtId === 'skyline') freq = 620;
-      else if (districtId === 'future' || districtId === 'crimson_metropolis') freq = 520;
+      else if (districtId === 'beach' || districtId === 'dont_drown') freq = 340;
+      else if (districtId === 'industrial' || districtId === 'the_creation') freq = 260;
+      else if (districtId === 'skyline' || districtId === 'skyfall_towers') freq = 620;
+      else if (districtId === 'future') freq = 520;
       if (weather === 'rain' || weather === 'storm') freq += 460;
       if (timePeriod === 'night' || timePeriod === 'midnight') freq *= 0.88;
       this.ambientFilter.frequency.setTargetAtTime(freq, now, 0.25);
@@ -424,9 +424,9 @@ class ProceduralAudioEngine {
         beach: [0, 4, 7, 9, 12, 16, 12, 7],
         underground: [0, 1, 5, 7, 10, 7, 5, 1],
         future: [0, 6, 7, 11, 12, 18, 12, 7],
-        cyber_port: [0, 3, 7, 11, 14, 15, 11, 7],
-        obsidian_citadel: [0, 1, 6, 7, 13, 14, 7, 1],
-        crimson_metropolis: [0, 1, 4, 6, 7, 12, 13, 6],
+        skyfall_towers: [0, 4, 7, 11, 14, 16, 19, 14],
+        the_creation: [0, 1, 6, 7, 10, 12, 7, 1],
+        dont_drown: [0, 3, 7, 10, 12, 15, 10, 7],
       };
       // Dark futuristic-horror phrygian/tritone motif when boss is active
       const bossHorrorIntervals =
@@ -1077,6 +1077,43 @@ class ProceduralAudioEngine {
     });
   }
 
+  public playRadarAlert(urgent = false): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.chaseGain) return;
+    const now = ctx.currentTime;
+    const freqs = urgent ? [980, 1240, 1480] : [680, 880];
+    freqs.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.055);
+      gain.gain.setValueAtTime(urgent ? 0.15 : 0.1, now + i * 0.055);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.055 + 0.09);
+      osc.connect(gain);
+      gain.connect(this.chaseGain!);
+      osc.start(now + i * 0.055);
+      osc.stop(now + i * 0.055 + 0.1);
+    });
+  }
+
+  public playDroneDeploy(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.droneGain) return;
+    const now = ctx.currentTime;
+    [360, 540, 820].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + i * 0.045);
+      gain.gain.setValueAtTime(0.18, now + i * 0.045);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.16);
+      osc.connect(gain);
+      gain.connect(this.droneGain!);
+      osc.start(now + i * 0.045);
+      osc.stop(now + i * 0.045 + 0.18);
+    });
+  }
+
   public playBossShockwave(): void {
     const ctx = this.ensureContext();
     if (!ctx || !this.chaseGain) return;
@@ -1229,6 +1266,110 @@ class ProceduralAudioEngine {
       gain.connect(this.uiGain!);
       osc.start(now + i * 0.05);
       osc.stop(now + i * 0.05 + 0.24);
+    });
+  }
+
+  public playTimeOrbGain(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.sfxGain) return;
+    const now = ctx.currentTime;
+    [587.33, 880, 1318.51].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(f, now + i * 0.045);
+      gain.gain.setValueAtTime(0.22, now + i * 0.045);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.045 + 0.24);
+      osc.connect(gain);
+      gain.connect(this.sfxGain!);
+      osc.start(now + i * 0.045);
+      osc.stop(now + i * 0.045 + 0.26);
+    });
+  }
+
+  public playBatteryPickup(fullReady: boolean): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.vehicleGain) return;
+    const now = ctx.currentTime;
+    const freqs = fullReady ? [440, 659.25, 987.77] : [480, 720];
+    freqs.forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(f, now + i * 0.05);
+      gain.gain.setValueAtTime(fullReady ? 0.24 : 0.16, now + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.2);
+      osc.connect(gain);
+      gain.connect(this.vehicleGain!);
+      osc.start(now + i * 0.05);
+      osc.stop(now + i * 0.05 + 0.22);
+    });
+  }
+
+  public playVehicleActivate(isExplosive = false): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.vehicleGain) return;
+    const now = ctx.currentTime;
+    const turbine = ctx.createOscillator();
+    const tGain = ctx.createGain();
+    turbine.type = 'sawtooth';
+    turbine.frequency.setValueAtTime(110, now);
+    turbine.frequency.exponentialRampToValueAtTime(480, now + 0.35);
+    tGain.gain.setValueAtTime(0.24, now);
+    tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.42);
+    turbine.connect(tGain);
+    tGain.connect(this.vehicleGain);
+    turbine.start(now);
+    turbine.stop(now + 0.44);
+
+    if (isExplosive) {
+      const boom = ctx.createOscillator();
+      const bGain = ctx.createGain();
+      boom.type = 'sine';
+      boom.frequency.setValueAtTime(160, now);
+      boom.frequency.exponentialRampToValueAtTime(36, now + 0.36);
+      bGain.gain.setValueAtTime(0.35, now);
+      bGain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+      boom.connect(bGain);
+      bGain.connect(this.vehicleGain);
+      boom.start(now);
+      boom.stop(now + 0.4);
+    }
+  }
+
+  public playBossDroneSpawn(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.droneGain) return;
+    const now = ctx.currentTime;
+    [660, 990, 740].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(f, now + i * 0.05);
+      gain.gain.setValueAtTime(0.11, now + i * 0.05);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.05 + 0.1);
+      osc.connect(gain);
+      gain.connect(this.droneGain!);
+      osc.start(now + i * 0.05);
+      osc.stop(now + i * 0.05 + 0.11);
+    });
+  }
+
+  public playBossTelegraphDanger(): void {
+    const ctx = this.ensureContext();
+    if (!ctx || !this.chaseGain) return;
+    const now = ctx.currentTime;
+    [880, 1174.66].forEach((f, i) => {
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(f, now + i * 0.075);
+      gain.gain.setValueAtTime(0.16, now + i * 0.075);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + i * 0.075 + 0.11);
+      osc.connect(gain);
+      gain.connect(this.chaseGain!);
+      osc.start(now + i * 0.075);
+      osc.stop(now + i * 0.075 + 0.12);
     });
   }
 }

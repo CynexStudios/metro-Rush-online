@@ -303,9 +303,20 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           : 'items-center justify-end bg-transparent pointer-events-none'
       }`}
     >
+      {!summary.victory && (
+        <div className="fixed bottom-5 left-5 bg-[#080d1c]/92 border border-rose-500/45 rounded-xl px-4 py-2.5 pointer-events-none space-y-0.5">
+          <div className="text-[10px] font-bold tracking-wider uppercase text-rose-300">
+            {t(language, 'results.dioramaBadge')}
+          </div>
+          <div className="text-xs font-semibold text-white">
+            {cityLabel.name} · {summary.distance} m
+          </div>
+        </div>
+      )}
+
       <div
         className={`w-full bg-[#0a0f1f]/96 border ${borderTheme} rounded-xl p-6 space-y-4 my-auto pointer-events-auto shadow-2xl ${
-          summary.victory ? 'max-w-3xl' : 'max-w-[660px]'
+          summary.victory ? 'max-w-3xl' : 'max-w-[650px]'
         }`}
       >
         {/* Victory vs Defeat Header */}
@@ -405,7 +416,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
             [t(language, 'results.duration'), `${summary.durationSec}s`],
             [t(language, 'common.coins'), `+${animCoins} M`],
             [t(language, 'common.gems'), `+${animGems} G`],
-            ['XP / Pase Batalla', `+${animXp} / +${animBpXp}`],
+            ['XP / Pase Corredor', `+${animXp} / +${animBpXp}`],
             [
               'Enemigos / Revivir',
               `${summary.enemiesEliminated} / ${summary.revivesUsed}`,
@@ -423,7 +434,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           ))}
         </div>
 
-        {/* 3.0.1 Detailed Action Breakdown */}
+        {/* Detailed Action Breakdown */}
         <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]">
           {[
             ['Obstáculos', animObstacles],
@@ -456,7 +467,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
           </div>
         )}
 
-        {/* Unlocks / Level / Battle Pass / Claimable Missions */}
+        {/* Unlocks / Level / Runner Pass / Claimable Missions */}
         {(summary.leveledUp ||
           summary.bpLeveledUp ||
           summary.completedEventTitle ||
@@ -477,7 +488,7 @@ export const ResultsModal: React.FC<ResultsModalProps> = ({
             )}
             {summary.bpLeveledUp && (
               <div className="flex items-center gap-2 font-bold text-fuchsia-300">
-                <Award className="w-4 h-4" /> Pase de Batalla: Nivel{' '}
+                <Award className="w-4 h-4" /> Pase de Corredor: Nivel{' '}
                 {summary.newBpLevel} alcanzado
               </div>
             )}

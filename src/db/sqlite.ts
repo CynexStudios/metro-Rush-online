@@ -239,7 +239,19 @@ async function createSqlJsAdapter(dbFilePath: string): Promise<SqlEngineAdapter>
   };
 }
 
-const CURRENT_SCHEMA_VERSION = 3;
+const CURRENT_SCHEMA_VERSION = 4;
+
+export interface FriendRequestRow {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  toUserId: string;
+  toUsername: string;
+  serverKey: string;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 function runMigrations(adapter: SqlEngineAdapter, dbFilePath: string, backupDirPath: string): void {
   adapter.exec(`
@@ -409,6 +421,35 @@ function runMigrations(adapter: SqlEngineAdapter, dbFilePath: string, backupDirP
       CREATE INDEX IF NOT EXISTS idx_invitations_room ON room_invitations(room_code, status);
     `);
     curVersion = 3;
+  }
+
+  if (curVersion < 4) {
+    adapter.exec(`
+      CREATE TABLE IF NOT EXISTS friend_requests (
+        id TEXT PRIMARY KEY,
+        from_user_id TEXT NOT NULL,
+        from_username TEXT NOT NULL,
+        to_user_id TEXT NOT NULL,
+        to_username TEXT NOT NULL,
+        server_key TEXT NOT NULL DEFAULT 'local',
+        status TEXT NOT NULL DEFAULT 'pending',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_friend_req_to ON friend_requests(to_user_id, status);
+      CREATE INDEX IF NOT EXISTS idx_friend_req_from ON friend_requests(from_user_id, status);
+
+      DELETE FROM runs;
+      DELETE FROM used_run_ids;
+      DELETE FROM mp_matches;
+      DELETE FROM player_saves;
+      DELETE FROM local_profiles;
+      DELETE FROM account_link_logs;
+      DELETE FROM room_invitations;
+      UPDATE users SET total_runs = 0, best_score = 0, best_distance = 0;
+    `);
+    curVersion = 4;
   }
 
   adapter
@@ -1351,5 +1392,142 @@ export function getDatabaseDiagnostics(): {
     runCount,
     mpMatchCount,
     sizeBytes,
+  };
+}
+
+export function createFriendRequest(params: {
+  fromUserId: string;
+  fromUsername: string;
+  toUserId: string;
+  toUsername: string;
+  serverKey: string;
+}): FriendRequestRow {
+  const db = getEngineSync();
+  const existing = db
+    .prepare(
+      `SELECT * FROM friend_requests
+       WHERE ((from_user_id = ? AND to_user_id = ?) OR (from_user_id = ? AND to_user_id = ?))
+         AND status IN ('pending', 'accepted')
+       LIMIT 1`,
+    )
+    .get(params.fromUserId, params.toUserId, params.toUserId, params.fromUserId);
+
+  const nowIso = new Date().toISOString();
+  if (existing) {
+    return {
+      id: String(existing.id),
+      fromUserId: String(existing.from_user_id),
+      fromUsername: String(existing.from_username),
+      toUserId: String(existing.to_user_id),
+      toUsername: String(existing.to_username),
+      serverKey: String(existing.server_key || 'local'),
+      status: String(existing.status),
+      createdAt: String(existing.created_at),
+      updatedAt: String(existing.updated_at),
+    };
+  }
+
+  const id = `freq_${crypto.randomUUID()}`;
+  db.prepare(
+    `INSERT INTO friend_requests (
+      id, from_user_id, from_username, to_user_id, to_username, server_key, status, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?)`,
+  ).run(
+    id,
+    params.fromUserId,
+    params.fromUsername,
+    params.toUserId,
+    params.toUsername,
+    params.serverKey || 'local',
+    nowIso,
+    nowIso,
+  );
+  return {
+    id,
+    fromUserId: params.fromUserId,
+    fromUsername: params.fromUsername,
+    toUserId: params.toUserId,
+    toUsername: params.toUsername,
+    serverKey: params.serverKey || 'local',
+    status: 'pending',
+    createdAt: nowIso,
+    updatedAt: nowIso,
+  };
+}
+
+export function listFriendRequestsForUser(userId: string): {
+  incoming: FriendRequestRow[];
+  outgoing: FriendRequestRow[];
+  accepted: FriendRequestRow[];
+} {
+  const db = getEngineSync();
+  const rows = db
+    .prepare(
+      `SELECT * FROM friend_requests
+       WHERE from_user_id = ? OR to_user_id = ?
+       ORDER BY updated_at DESC LIMIT 60`,
+    )
+    .all(userId, userId);
+
+  const mapRow = (r: Record<string, unknown>): FriendRequestRow => ({
+    id: String(r.id),
+    fromUserId: String(r.from_user_id),
+    fromUsername: String(r.from_username),
+    toUserId: String(r.to_user_id),
+    toUsername: String(r.to_username),
+    serverKey: String(r.server_key || 'local'),
+    status: String(r.status),
+    createdAt: String(r.created_at),
+    updatedAt: String(r.updated_at),
+  });
+
+  const mapped = rows.map(mapRow);
+  return {
+    incoming: mapped.filter((r) => r.toUserId === userId && r.status === 'pending'),
+    outgoing: mapped.filter((r) => r.fromUserId === userId && r.status === 'pending'),
+    accepted: mapped.filter((r) => r.status === 'accepted'),
+  };
+}
+
+export function respondFriendRequest(
+  requestId: string,
+  userId: string,
+  accept: boolean,
+): FriendRequestRow | null {
+  const db = getEngineSync();
+  const existing = db
+    .prepare('SELECT * FROM friend_requests WHERE id = ? LIMIT 1')
+    .get(requestId);
+  if (!existing) return null;
+  if (String(existing.to_user_id) !== userId && String(existing.from_user_id) !== userId) {
+    return null;
+  }
+  const nextStatus = accept ? 'accepted' : 'rejected';
+  const nowIso = new Date().toISOString();
+  db.prepare('UPDATE friend_requests SET status = ?, updated_at = ? WHERE id = ?').run(
+    nextStatus,
+    nowIso,
+    requestId,
+  );
+  if (accept) {
+    try {
+      const fromU = String(existing.from_username);
+      const toU = String(existing.to_username);
+      addUserFriend(String(existing.from_user_id), toU);
+      addUserFriend(String(existing.to_user_id), fromU);
+    } catch {
+      // Guests on same Radmin server may not have full registered rows
+    }
+  }
+  return {
+    id: String(existing.id),
+    fromUserId: String(existing.from_user_id),
+    fromUsername: String(existing.from_username),
+    toUserId: String(existing.to_user_id),
+    toUsername: String(existing.to_username),
+    serverKey: String(existing.server_key || 'local'),
+    status: nextStatus,
+    createdAt: String(existing.created_at),
+    updatedAt: nowIso,
   };
 }

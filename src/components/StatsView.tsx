@@ -246,7 +246,7 @@ export const StatsView: React.FC<StatsViewProps> = ({
             <div className="p-4 rounded-xl bg-[#0b1224] border border-fuchsia-500/30 flex items-center justify-between text-xs">
               <div>
                 <div className="font-bold text-fuchsia-300">
-                  Pase de Batalla Temporada {save.battlePass.season}
+                  Pase de Corredor · Temporada {save.battlePass.season}
                 </div>
                 <div className="text-slate-300 mt-0.5">
                   Nivel {save.battlePass.level}/{BATTLE_PASS_TIERS.length} ·{' '}

@@ -23,9 +23,11 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: build/icon.ico
-  artifactName: Metro-Rush-Neon-City-Setup-${version}.${ext}
+    - target: portable
+      arch:
+        - x64
 nsis:
+  artifactName: Metro-Rush-Neon-City-Setup-${version}.${ext}
   oneClick: false
   perMachine: false
   allowToChangeInstallationDirectory: true
@@ -33,6 +35,8 @@ nsis:
   createStartMenuShortcut: true
   shortcutName: Metro Rush Neon City
   deleteAppDataOnUninstall: false
+portable:
+  artifactName: Metro-Rush-Neon-City-Portable-${version}.${ext}
 linux:
   target:
     - dir

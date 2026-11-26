@@ -1,8 +1,8 @@
 {
   "name": "metro-rush-neon-city",
   "private": true,
-  "version": "3.0.1",
-  "description": "METRO RUSH: NEON CITY — Actualización Maestra 3.0.1: Videojuego 3D de parkour urbano, vehículos futuristas, jefes de 4 fases y multijugador LAN/Internet para PC.",
+  "version": "7.0.1",
+  "description": "METRO RUSH: NEON CITY 7.0.1 — NEON OVERDRIVE: Videojuego 3D de parkour urbano, vehículos con batería activable, jefes con drones de apoyo en 4 fases, ciudad subterránea renovada y multijugador autoritativo.",
   "author": "Jaderson Liriano (XynexDevs)",
   "main": "dist-electron/main.cjs",
   "type": "module",
@@ -18,7 +18,13 @@
     "lint": "tsc --noEmit"
   },
   "dependencies": {
+    "@gltf-transform/core": "^4.5.1",
+    "@gltf-transform/extensions": "^4.5.1",
+    "@gltf-transform/functions": "^4.5.1",
     "@google/genai": "^2.4.0",
+    "@gradio/client": "^2.8.0",
+    "@radix-ui/react-dialog": "^1.3.1",
+    "@radix-ui/react-tabs": "^1.2.1",
     "@tailwindcss/vite": "^4.3.3",
     "@types/three": "^0.187.0",
     "@types/ws": "^8.18.2",
@@ -26,11 +32,13 @@
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "lucide-react": "^0.546.0",
+    "meshoptimizer": "^1.3.0",
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
     "sql.js": "^1.16.0",
     "three": "^0.187.0",
+    "trystero": "^0.27.0",
     "vite": "^8.3.0",
     "ws": "^8.23.0"
   },

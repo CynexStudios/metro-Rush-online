@@ -1,825 +1,812 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import {
+  ArrowRightLeft,
+  Bot,
+  Car,
   Check,
   Coins,
   Gem,
   Lock,
-  Receipt,
   ShieldAlert,
   ShoppingBag,
   Sparkles,
   Ticket,
   UserCheck,
+  X,
   Zap,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
   CHARACTERS,
+  CHARACTER_BOOSTERS,
+  COMPANION_DRONES,
   COSMETICS,
-  getCharacterById,
-  SKILL_TREE,
+  GEM_EXCHANGE_PACKS,
+  getSeasonWeekIndex,
+  getWeeklyShopRotation,
+  PROFILE_AVATARS,
   SPECIAL_SHOP_ITEMS,
+  VEHICLES,
 } from '../game/data';
 import {
   checkUnlockRequirement,
-  getSkillCoinCost,
-  getSkillTicketCost,
+  EconomyResult,
+  exchangeGemsForCoins,
   purchaseCharacter,
+  purchaseOrEquipAvatar,
+  purchaseOrEquipBooster,
   purchaseOrEquipCosmetic,
+  purchaseOrEquipDrone,
+  purchaseOrSelectVehicle,
   purchaseSpecialItem,
-  upgradeSkill,
 } from '../game/economy';
-import { ExtraGlbId } from '../game/gltfAssets';
-import {
-  CosmeticSlot,
-  PlayerSaveData,
-  SpecialItemId,
-} from '../game/types';
+import { PlayerSaveData } from '../game/types';
 import { ModelPreview3D, ModelPreview3DProps } from './ModelPreview3D';
 
-type ShopTab = 'characters' | 'cosmetics' | 'upgrades' | 'specials';
+type ShopTab =
+  | 'all'
+  | 'characters'
+  | 'vehicles'
+  | 'boosters'
+  | 'drones'
+  | 'avatars'
+  | 'cosmetics'
+  | 'exchange'
+  | 'specials';
 
 interface ShopViewProps {
   save: PlayerSaveData;
   onUpdateSave: (next: PlayerSaveData) => void;
 }
 
-interface PendingConfirm {
+interface InspectedItem {
+  id: string;
   title: string;
   subtitle: string;
-  costLabel: string;
-  onConfirm: () => { ok: boolean; reason?: string; nextSave: PlayerSaveData };
+  description: string;
+  categoryLabel: string;
+  rarity?: string;
+  accentColor: string;
+  preview3D?: ModelPreview3DProps;
+  glyph?: string;
+  badgeGradient?: string;
+  details: string[];
+  owned?: boolean;
+  equipped?: boolean;
+  lockedReason?: string;
+  priceCoins?: number;
+  priceGems?: number;
+  onBuyCoins?: () => EconomyResult;
+  onBuyGems?: () => EconomyResult;
+  onEquip?: () => EconomyResult;
 }
 
-const SLOT_LABELS: Record<CosmeticSlot, string> = {
-  jacket: 'Chaquetas',
-  visor: 'Visores',
-  sneakers: 'Calzado',
-  backpack: 'Mochilas',
-  hair: 'Estilos / Cascos',
-  trail: 'Estelas Neón',
-};
-
-const GLB_RELIC_CATALOG: { id: ExtraGlbId; name: string; desc: string; accent: string }[] = [
-  { id: 'fox', name: 'Zorro Cyber (.GLB)', desc: 'Acompañante animado real integrado en pista.', accent: '#f97316' },
-  { id: 'helmet', name: 'Casco Battle-Damaged (.GLB)', desc: 'Reliquia PBR metálica de alta fidelidad.', accent: '#22d3ee' },
-  { id: 'ion_drive', name: 'Propulsor Iónico (.GLB)', desc: 'Núcleo energético de alta potencia.', accent: '#a855f7' },
-  { id: 'milk_truck', name: 'Unidad Logística (.GLB)', desc: 'Vehículo pesado de tráfico urbano.', accent: '#eab308' },
-];
-
 export const ShopView: React.FC<ShopViewProps> = ({ save, onUpdateSave }) => {
-  const [subTab, setSubTab] = useState<ShopTab>('characters');
-  const [slotFilter, setSlotFilter] = useState<CosmeticSlot | 'all'>('all');
-  const [pending, setPending] = useState<PendingConfirm | null>(null);
-  const [feedback, setFeedback] = useState<{
-    type: 'ok' | 'err';
-    msg: string;
-  } | null>(null);
+  const [subTab, setSubTab] = useState<ShopTab>('all');
+  const [inspected, setInspected] = useState<InspectedItem | null>(null);
+  const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; msg: string } | null>(null);
 
-  const [inspected, setInspected] = useState<ModelPreview3DProps>(() => ({
-    kind: 'character',
-    itemId: save.selectedCharacterId,
-    characterId: save.selectedCharacterId,
-    title: getCharacterById(save.selectedCharacterId).name,
-    subtitle: getCharacterById(save.selectedCharacterId).title,
-    accentColor: getCharacterById(save.selectedCharacterId).colors.accent,
-  }));
+  const weekIdx = useMemo(() => getSeasonWeekIndex(save.seasonStartAtMs), [save.seasonStartAtMs]);
+  const rotation = useMemo(() => getWeeklyShopRotation(weekIdx), [weekIdx]);
+  const rotatingSet = useMemo(() => new Set(rotation.rotatingCosmeticIds), [rotation]);
 
-  const notify = (type: 'ok' | 'err', msg: string) => {
-    setFeedback({ type, msg });
-  };
-
-  const executeConfirm = () => {
-    if (!pending) return;
-    const res = pending.onConfirm();
+  const runEconomyAction = (action: () => EconomyResult, successTitle: string) => {
+    const res = action();
     if (res.ok) {
       audioEngine.playPurchaseConfirm();
       onUpdateSave(res.nextSave);
-      notify('ok', `Adquisición completada: ${pending.title}`);
+      setFeedback({ type: 'ok', msg: `${successTitle} completado.` });
+      setInspected(null);
     } else {
       audioEngine.playUiClick();
-      notify('err', res.reason ?? 'No se pudo completar la compra.');
+      setFeedback({ type: 'err', msg: res.reason ?? 'No se pudo completar la operación.' });
     }
-    setPending(null);
   };
 
-  const subTabs: { id: ShopTab; label: string; count?: string }[] = [
-    {
-      id: 'characters',
-      label: 'Personajes',
-      count: `${save.unlockedCharacters.length}/${CHARACTERS.length}`,
-    },
-    {
-      id: 'cosmetics',
-      label: 'Trajes y Aspectos',
-      count: `${save.ownedCosmetics.length}/${COSMETICS.length}`,
-    },
-    { id: 'upgrades', label: 'Tiques y Mejoras' },
-    { id: 'specials', label: 'Objetos Especiales' },
+  const tabs: { id: ShopTab; label: string }[] = [
+    { id: 'all', label: 'Todo' },
+    { id: 'characters', label: 'Personajes' },
+    { id: 'vehicles', label: 'Vehículos' },
+    { id: 'boosters', label: 'Potenciadores' },
+    { id: 'drones', label: 'Drones' },
+    { id: 'avatars', label: 'Avatares' },
+    { id: 'cosmetics', label: 'Trajes' },
+    { id: 'exchange', label: 'Gemas → Monedas' },
+    { id: 'specials', label: 'Especiales' },
   ];
 
-  const switchSubTab = (next: ShopTab) => {
-    audioEngine.playUiClick();
-    setSubTab(next);
-    if (next === 'characters') {
-      const ch = getCharacterById(save.selectedCharacterId);
-      setInspected({
-        kind: 'character',
-        itemId: ch.id,
-        characterId: ch.id,
-        title: ch.name,
-        subtitle: ch.title,
-        accentColor: ch.colors.accent,
-      });
-    } else if (next === 'cosmetics') {
-      const firstCos = COSMETICS[0];
-      setInspected({
-        kind: 'cosmetic',
-        itemId: firstCos.id,
-        title: firstCos.name,
-        subtitle: `${SLOT_LABELS[firstCos.slot]} · ${firstCos.rarity}`,
-        accentColor: firstCos.color,
-      });
-    } else if (next === 'upgrades') {
-      const node = SKILL_TREE[0];
-      setInspected({
-        kind: 'skill',
-        itemId: node.id,
-        title: node.name,
-        subtitle: node.effectPerLevel,
-        accentColor: '#22d3ee',
-      });
-    } else {
-      const sp = SPECIAL_SHOP_ITEMS[0];
-      setInspected({
-        kind: 'special',
-        itemId: sp.id,
-        title: sp.name,
-        subtitle: sp.rarity,
-        accentColor: '#f59e0b',
-      });
-    }
-  };
+  const showSection = (id: ShopTab) => subTab === 'all' || subTab === id;
 
   return (
     <div className="space-y-5">
-      {/* Store Header + Currencies */}
+      {/* Header & Currencies */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-3.5">
         <div>
-          <div className="text-[11px] font-bold tracking-wider text-amber-400">
-            Mercado Cibernético Oficial
+          <div className="text-[11px] font-bold tracking-wider uppercase text-amber-400">
+            Semana {rotation.weekNumber}/6 · {rotation.label}
           </div>
           <h2 className="font-display text-2xl font-bold text-white flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-amber-400" />
-            Tienda 3D de Neon City
+            Tienda de Neon City
           </h2>
         </div>
 
         <div className="flex flex-wrap items-center gap-3 bg-[#0b1224] border border-white/15 rounded-xl px-4 py-2 text-xs font-mono-num">
-          <span className="text-amber-400 font-bold">
-            {save.coins.toLocaleString('es-ES')} M
+          <span className="text-amber-400 font-bold flex items-center gap-1">
+            <Coins className="w-3.5 h-3.5" /> {save.coins.toLocaleString('es-ES')} M
           </span>
-          <span className="text-slate-600">·</span>
-          <span className="text-fuchsia-400 font-bold">{save.gems} G</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-cyan-300 font-bold">{save.tickets} Tiques</span>
-          <span className="text-slate-600">·</span>
-          <span className="text-emerald-300 font-bold">
-            {save.reviveTokens} Revivir
+          <span className="text-slate-600">|</span>
+          <span className="text-fuchsia-400 font-bold flex items-center gap-1">
+            <Gem className="w-3.5 h-3.5" /> {save.gems.toLocaleString('es-ES')} G
           </span>
-          <span className="text-slate-600">·</span>
-          <span className="text-amber-200 font-bold">
-            {save.talismans} Talismanes
+          <span className="text-slate-600">|</span>
+          <span className="text-cyan-400 font-bold flex items-center gap-1">
+            <Ticket className="w-3.5 h-3.5" /> {save.tickets} Tiques
           </span>
         </div>
       </div>
 
-      {/* Store Category Navigation */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          {subTabs.map((tItem) => {
-            const active = subTab === tItem.id;
-            return (
-              <button
-                key={tItem.id}
-                onClick={() => switchSubTab(tItem.id)}
-                className={`px-3.5 py-2 rounded-lg text-xs font-bold border transition-colors cursor-pointer whitespace-nowrap ${
-                  active
-                    ? 'bg-amber-400 text-slate-950 border-amber-400'
-                    : 'bg-[#0b1224] text-slate-300 border-white/10 hover:border-white/30 hover:text-white'
-                }`}
-              >
-                {tItem.label}
-                {tItem.count ? ` (${tItem.count})` : ''}
-              </button>
-            );
-          })}
-        </div>
-
-        {feedback && (
-          <div
-            className={`px-3.5 py-1.5 rounded-lg border text-xs font-semibold ${
-              feedback.type === 'ok'
-                ? 'bg-emerald-950/50 border-emerald-400/50 text-emerald-200'
-                : 'bg-rose-950/50 border-rose-400/50 text-rose-200'
+      {/* Category Pills */}
+      <div className="flex flex-wrap gap-1.5">
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => {
+              audioEngine.playUiClick();
+              setSubTab(tab.id);
+            }}
+            className={`px-3 py-1.5 rounded-lg text-xs font-semibold border transition cursor-pointer ${
+              subTab === tab.id
+                ? 'bg-amber-500/20 border-amber-400 text-amber-200'
+                : 'bg-slate-900/70 border-white/10 text-slate-300 hover:border-white/25'
             }`}
           >
-            {feedback.msg}
-          </div>
-        )}
+            {tab.label}
+          </button>
+        ))}
       </div>
 
-      {/* Main Split: Catalog + Sticky 3D Inspector */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1fr_340px] gap-5 items-start">
-        <div className="space-y-4">
-          {/* TAB 1: CHARACTERS */}
-          {subTab === 'characters' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {CHARACTERS.map((ch) => {
-                const unlocked = save.unlockedCharacters.includes(ch.id);
-                const selected = save.selectedCharacterId === ch.id;
-                const reqCheck = checkUnlockRequirement(save, ch.unlockRequirement);
-                const canCoins = reqCheck.met && save.coins >= ch.unlockCostCoins;
-                const canGems =
-                  reqCheck.met && ch.unlockCostGems > 0 && save.gems >= ch.unlockCostGems;
-                const isInspected = inspected.itemId === ch.id && inspected.kind === 'character';
-
-                return (
-                  <div
-                    key={ch.id}
-                    onClick={() =>
-                      setInspected({
-                        kind: 'character',
-                        itemId: ch.id,
-                        characterId: ch.id,
-                        title: ch.name,
-                        subtitle: `${ch.origin} · ${ch.title}`,
-                        accentColor: ch.colors.accent,
-                      })
-                    }
-                    className={`p-4 rounded-xl border flex flex-col justify-between gap-3 cursor-pointer transition-colors ${
-                      selected
-                        ? 'bg-[#0d192f] border-cyan-400/70'
-                        : isInspected
-                          ? 'bg-[#0e1529] border-amber-400/50'
-                          : 'bg-[#0b1224] border-white/10 hover:border-white/25'
-                    }`}
-                  >
-                    <div className="space-y-1.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-cyan-300">
-                          {ch.origin} · {ch.title}
-                        </span>
-                        <span
-                          className="w-4 h-4 rounded-full border border-white/30"
-                          style={{ backgroundColor: ch.colors.jacket }}
-                        />
-                      </div>
-                      <div className="font-display text-lg font-bold text-white">
-                        {ch.name}
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2">{ch.bio}</p>
-                      <div className="text-[11px] text-fuchsia-300 font-semibold pt-1">
-                        Activa: {ch.abilityName} (CD {ch.abilityCooldown}s)
-                      </div>
-                      {ch.passiveName && (
-                        <div className="text-[11px] text-emerald-300">
-                          Pasiva: {ch.passiveName}
-                        </div>
-                      )}
-                      {!unlocked && ch.unlockRequirement && (
-                        <div
-                          className={`mt-1.5 px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold flex items-center justify-between gap-2 ${
-                            reqCheck.met
-                              ? 'bg-emerald-950/35 border-emerald-400/40 text-emerald-200'
-                              : 'bg-amber-950/35 border-amber-400/40 text-amber-200'
-                          }`}
-                        >
-                          <span className="flex items-center gap-1 truncate">
-                            <Lock className="w-3 h-3 shrink-0" />
-                            {ch.unlockRequirement.label}
-                          </span>
-                          <span className="font-mono-num shrink-0">
-                            {Math.min(reqCheck.current, reqCheck.target)}/{reqCheck.target}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-
-                    <div
-                      className="pt-2.5 border-t border-white/10 flex items-center justify-between gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      {unlocked ? (
-                        <button
-                          onClick={() => {
-                            const res = purchaseCharacter(save, ch.id);
-                            if (res.ok) {
-                              audioEngine.playUiClick(true);
-                              onUpdateSave(res.nextSave);
-                            }
-                          }}
-                          className={`w-full py-2 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer ${
-                            selected
-                              ? 'bg-emerald-500/20 border border-emerald-400 text-emerald-200'
-                              : 'bg-white/10 hover:bg-white/20 text-white'
-                          }`}
-                        >
-                          {selected ? (
-                            <>
-                              <Check className="w-3.5 h-3.5" /> Equipado en Lobby
-                            </>
-                          ) : (
-                            <>
-                              <UserCheck className="w-3.5 h-3.5" /> Equipar Corredor
-                            </>
-                          )}
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            disabled={!canCoins}
-                            onClick={() =>
-                              setPending({
-                                title: ch.name,
-                                subtitle: `Desbloquear corredor ${ch.title}`,
-                                costLabel: `${ch.unlockCostCoins.toLocaleString('es-ES')} Monedas`,
-                                onConfirm: () => purchaseCharacter(save, ch.id, 'coins'),
-                              })
-                            }
-                            className="flex-1 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num cursor-pointer disabled:cursor-not-allowed"
-                          >
-                            {!reqCheck.met
-                              ? `Req. (${Math.min(reqCheck.current, reqCheck.target)}/${reqCheck.target})`
-                              : `${ch.unlockCostCoins.toLocaleString('es-ES')} M`}
-                          </button>
-                          {ch.unlockCostGems > 0 && (
-                            <button
-                              disabled={!canGems}
-                              onClick={() =>
-                                setPending({
-                                  title: ch.name,
-                                  subtitle: `Desbloquear corredor ${ch.title}`,
-                                  costLabel: `${ch.unlockCostGems} Gemas`,
-                                  onConfirm: () => purchaseCharacter(save, ch.id, 'gems'),
-                                })
-                              }
-                              className="px-3 py-2 rounded-lg bg-fuchsia-500 hover:bg-fuchsia-400 disabled:bg-slate-800 disabled:text-slate-500 text-white text-xs font-bold font-mono-num cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              {ch.unlockCostGems} G
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-
-          {/* TAB 2: COSMETICS */}
-          {subTab === 'cosmetics' && (
-            <div className="space-y-4">
-              <div className="flex flex-wrap gap-1.5">
-                <button
-                  onClick={() => setSlotFilter('all')}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer ${
-                    slotFilter === 'all'
-                      ? 'bg-cyan-400 text-slate-950 border-cyan-400'
-                      : 'bg-[#0b1224] text-slate-300 border-white/10'
-                  }`}
-                >
-                  Todo
-                </button>
-                {(Object.keys(SLOT_LABELS) as CosmeticSlot[]).map((s) => (
-                  <button
-                    key={s}
-                    onClick={() => setSlotFilter(s)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-semibold border cursor-pointer ${
-                      slotFilter === s
-                        ? 'bg-cyan-400 text-slate-950 border-cyan-400'
-                        : 'bg-[#0b1224] text-slate-300 border-white/10'
-                    }`}
-                  >
-                    {SLOT_LABELS[s]}
-                  </button>
-                ))}
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {COSMETICS.filter(
-                  (c) => slotFilter === 'all' || c.slot === slotFilter,
-                ).map((item) => {
-                  const owned = save.ownedCosmetics.includes(item.id);
-                  const equipped = save.equippedCosmetics[item.slot] === item.id;
-                  const canAfford =
-                    save.coins >= item.costCoins && save.gems >= item.costGems;
-                  const costLabel = `${item.costCoins} M${
-                    item.costGems > 0 ? ` + ${item.costGems} G` : ''
-                  }`;
-                  const isInspected = inspected.itemId === item.id;
-
-                  return (
-                    <div
-                      key={item.id}
-                      onClick={() =>
-                        setInspected({
-                          kind: 'cosmetic',
-                          itemId: item.id,
-                          title: item.name,
-                          subtitle: `${SLOT_LABELS[item.slot]} · ${item.rarity}`,
-                          accentColor: item.color,
-                        })
-                      }
-                      className={`p-4 rounded-xl bg-[#0b1224] border flex flex-col justify-between gap-3 cursor-pointer transition-colors ${
-                        isInspected ? 'border-cyan-400/70' : 'border-white/10 hover:border-white/25'
-                      }`}
-                    >
-                      <div className="space-y-1.5">
-                        <div className="flex items-center justify-between">
-                          <span className="text-[11px] font-semibold text-cyan-300">
-                            {SLOT_LABELS[item.slot]} · {item.rarity}
-                          </span>
-                          <span
-                            className="w-4 h-4 rounded-full border border-white/30"
-                            style={{ backgroundColor: item.color }}
-                          />
-                        </div>
-                        <div className="font-display font-bold text-base text-white">
-                          {item.name}
-                        </div>
-                        <p className="text-xs text-slate-400">{item.description}</p>
-                      </div>
-
-                      <div
-                        className="flex items-center justify-between pt-2.5 border-t border-white/10"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <span className="font-mono-num text-xs text-amber-300 font-bold">
-                          {owned ? 'En Propiedad' : costLabel}
-                        </span>
-                        <button
-                          disabled={!owned && !canAfford}
-                          onClick={() => {
-                            if (owned) {
-                              const res = purchaseOrEquipCosmetic(save, item.id);
-                              if (res.ok) {
-                                audioEngine.playUiClick(true);
-                                onUpdateSave(res.nextSave);
-                              }
-                            } else {
-                              setPending({
-                                title: item.name,
-                                subtitle: `${SLOT_LABELS[item.slot]} (${item.rarity})`,
-                                costLabel,
-                                onConfirm: () => purchaseOrEquipCosmetic(save, item.id),
-                              });
-                            }
-                          }}
-                          className={`px-3.5 py-1.5 rounded-lg text-xs font-bold cursor-pointer ${
-                            equipped
-                              ? 'bg-emerald-500/20 border border-emerald-400 text-emerald-200'
-                              : owned
-                                ? 'bg-white/10 hover:bg-white/20 text-white'
-                                : canAfford
-                                  ? 'bg-amber-400 hover:bg-amber-300 text-slate-950'
-                                  : 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                          }`}
-                        >
-                          {equipped ? 'Equipado' : owned ? 'Equipar' : 'Comprar'}
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 3: TICKETS & SKILL UPGRADES */}
-          {subTab === 'upgrades' && (
-            <div className="space-y-4">
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/30 flex flex-wrap items-center justify-between gap-3 text-xs">
-                <div className="space-y-0.5">
-                  <div className="font-bold text-cyan-300 flex items-center gap-1.5">
-                    <Ticket className="w-4 h-4" /> Mejoras de Corredor y Packs de Tiques
-                  </div>
-                  <p className="text-slate-300">
-                    Mejora tus 6 habilidades pasivas usando Monedas o Tiques de Mejora (también válidos en el Garaje 3D).
-                  </p>
-                </div>
-                <button
-                  onClick={() => switchSubTab('specials')}
-                  className="px-3.5 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer whitespace-nowrap"
-                >
-                  Comprar Tiques
-                </button>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-                {SKILL_TREE.map((node) => {
-                  const lvl = save.skillLevels[node.id] ?? 0;
-                  const maxed = lvl >= node.maxLevel;
-                  const coinCost = getSkillCoinCost(node.id, lvl);
-                  const ticketCost = getSkillTicketCost(node.id, lvl);
-
-                  return (
-                    <div
-                      key={node.id}
-                      onClick={() =>
-                        setInspected({
-                          kind: 'skill',
-                          itemId: node.id,
-                          title: node.name,
-                          subtitle: `Nv. ${lvl}/${node.maxLevel} · ${node.effectPerLevel}`,
-                          accentColor: '#22d3ee',
-                        })
-                      }
-                      className="p-4 rounded-xl bg-[#0b1224] border border-white/10 hover:border-cyan-400/50 space-y-3 cursor-pointer"
-                    >
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="font-display font-bold text-base text-white flex items-center gap-2">
-                            <Zap className="w-4 h-4 text-cyan-400" />
-                            {node.name}
-                          </div>
-                          <div className="text-[11px] text-emerald-300 font-semibold mt-0.5">
-                            {node.effectPerLevel}
-                          </div>
-                        </div>
-                        <span className="font-mono-num text-xs font-bold text-cyan-300">
-                          Nv. {lvl}/{node.maxLevel}
-                        </span>
-                      </div>
-
-                      <p className="text-xs text-slate-300">{node.description}</p>
-
-                      <div className="grid grid-cols-5 gap-1">
-                        {Array.from({ length: node.maxLevel }).map((_, i) => (
-                          <div
-                            key={i}
-                            className={`h-1.5 rounded ${
-                              i < lvl ? 'bg-cyan-400' : 'bg-slate-800'
-                            }`}
-                          />
-                        ))}
-                      </div>
-
-                      <div
-                        className="flex items-center gap-2 pt-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        {maxed ? (
-                          <div className="w-full py-2 rounded-lg bg-emerald-500/15 border border-emerald-400/40 text-emerald-300 text-xs font-bold text-center">
-                            Nivel Máximo Alcanzado
-                          </div>
-                        ) : (
-                          <>
-                            <button
-                              disabled={save.coins < coinCost}
-                              onClick={() =>
-                                setPending({
-                                  title: `${node.name} (Nv. ${lvl + 1})`,
-                                  subtitle: 'Mejora de habilidad pasiva',
-                                  costLabel: `${coinCost.toLocaleString('es-ES')} Monedas`,
-                                  onConfirm: () => upgradeSkill(save, node.id, 'coins'),
-                                })
-                              }
-                              className="flex-1 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              Mejorar · {coinCost} M
-                            </button>
-                            <button
-                              disabled={save.tickets < ticketCost}
-                              onClick={() =>
-                                setPending({
-                                  title: `${node.name} (Nv. ${lvl + 1})`,
-                                  subtitle: 'Mejora usando Tiques Técnicos',
-                                  costLabel: `${ticketCost} Tiques`,
-                                  onConfirm: () => upgradeSkill(save, node.id, 'tickets'),
-                                })
-                              }
-                              className="flex-1 py-2 rounded-lg bg-cyan-400 hover:bg-cyan-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold font-mono-num cursor-pointer disabled:cursor-not-allowed"
-                            >
-                              Usar {ticketCost} {ticketCost === 1 ? 'Tique' : 'Tiques'}
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-
-          {/* TAB 4: SPECIAL ITEMS */}
-          {subTab === 'specials' && (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
-              {SPECIAL_SHOP_ITEMS.map((item) => {
-                const canAfford =
-                  save.coins >= item.costCoins && save.gems >= item.costGems;
-                const costLabel = `${item.costCoins.toLocaleString('es-ES')} M${
-                  item.costGems > 0 ? ` + ${item.costGems} G` : ''
-                }`;
-                const accent =
-                  item.category === 'talisman'
-                    ? 'border-amber-400/45'
-                    : item.category === 'revive'
-                      ? 'border-emerald-400/35'
-                      : 'border-cyan-400/30';
-
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() =>
-                      setInspected({
-                        kind: 'special',
-                        itemId: item.id,
-                        title: item.name,
-                        subtitle: `${item.rarity} · ${item.category}`,
-                        accentColor:
-                          item.category === 'talisman'
-                            ? '#f59e0b'
-                            : item.category === 'revive'
-                              ? '#10b981'
-                              : '#22d3ee',
-                      })
-                    }
-                    className={`p-4 rounded-xl bg-[#0b1224] border ${accent} flex flex-col justify-between gap-3 cursor-pointer`}
-                  >
-                    <div className="space-y-2">
-                      <div className="flex items-center justify-between text-[11px] font-bold">
-                        <span className="text-cyan-300">
-                          {item.category === 'talisman'
-                            ? 'Reliquia Automática'
-                            : item.category === 'revive'
-                              ? 'Token Continuar'
-                              : item.category === 'tickets'
-                                ? 'Ingeniería'
-                                : 'Kit Táctico'}
-                        </span>
-                        <span className="text-amber-300">{item.rarity}</span>
-                      </div>
-                      <div className="font-display text-lg font-bold text-white flex items-center gap-2">
-                        {item.category === 'talisman' ? (
-                          <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
-                        ) : item.category === 'revive' ? (
-                          <ShieldAlert className="w-4 h-4 text-emerald-400 shrink-0" />
-                        ) : (
-                          <Ticket className="w-4 h-4 text-cyan-400 shrink-0" />
-                        )}
-                        {item.name}
-                      </div>
-                      <p className="text-xs text-slate-300 leading-relaxed">
-                        {item.description}
-                      </p>
-                    </div>
-
-                    <div
-                      className="pt-2.5 border-t border-white/10 flex items-center justify-between gap-2"
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div className="font-mono-num text-xs font-bold text-amber-300 flex items-center gap-1.5">
-                        <Coins className="w-3.5 h-3.5" />
-                        {item.costCoins.toLocaleString('es-ES')} M
-                        {item.costGems > 0 && (
-                          <span className="text-fuchsia-300 flex items-center gap-0.5 ml-1">
-                            <Gem className="w-3 h-3" /> {item.costGems}
-                          </span>
-                        )}
-                      </div>
-                      <button
-                        disabled={!canAfford}
-                        onClick={() =>
-                          setPending({
-                            title: item.name,
-                            subtitle: item.description,
-                            costLabel,
-                            onConfirm: () =>
-                              purchaseSpecialItem(save, item.id as SpecialItemId),
-                          })
-                        }
-                        className="px-4 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 disabled:bg-slate-800 disabled:text-slate-500 text-slate-950 text-xs font-bold cursor-pointer disabled:cursor-not-allowed"
-                      >
-                        Comprar
-                      </button>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Sticky Right 3D Inspector + GLB Relics Showcase */}
-        <div className="space-y-3 xl:sticky xl:top-0">
-          <ModelPreview3D
-            {...inspected}
-            save={save}
-            heightClass="h-64"
-          />
-
-          <div className="p-3.5 rounded-xl bg-[#0b1224] border border-white/10 space-y-2">
-            <div className="text-xs font-bold text-white">
-              Inspeccionar Modelos .GLB de Neon City
-            </div>
-            <div className="grid grid-cols-2 gap-1.5">
-              {GLB_RELIC_CATALOG.map((rel) => (
-                <button
-                  key={rel.id}
-                  onClick={() => {
-                    audioEngine.playUiClick();
-                    setInspected({
-                      kind: 'relic',
-                      itemId: rel.id,
-                      extraGlbId: rel.id,
-                      title: rel.name,
-                      subtitle: rel.desc,
-                      accentColor: rel.accent,
-                    });
-                  }}
-                  className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold border text-left truncate cursor-pointer ${
-                    inspected.kind === 'relic' && inspected.extraGlbId === rel.id
-                      ? 'bg-cyan-500/20 border-cyan-400 text-white'
-                      : 'bg-[#070b17] border-white/10 text-slate-300 hover:border-white/25'
-                  }`}
-                >
-                  {rel.name}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Recent Transactions Ledger */}
-      {save.transactions.length > 0 && (
-        <div className="rounded-xl bg-[#0b1224] border border-white/10 p-4 space-y-2.5">
-          <div className="flex items-center justify-between text-xs font-bold text-slate-200">
-            <span className="flex items-center gap-1.5">
-              <Receipt className="w-4 h-4 text-cyan-400" />
-              Historial Reciente de Compras
-            </span>
-            <span className="text-slate-400 font-mono-num">
-              Total gastado: {save.stats.coinsSpent.toLocaleString('es-ES')} M
-            </span>
-          </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
-            {save.transactions.slice(0, 6).map((tx) => (
-              <div
-                key={tx.id}
-                className="flex items-center justify-between px-3 py-2 rounded-lg bg-[#070b17] border border-white/5"
-              >
-                <div className="truncate pr-2">
-                  <span className="font-semibold text-white">{tx.item}</span>
-                  <span className="text-slate-400"> · {tx.category}</span>
-                </div>
-                <span className="font-mono-num text-amber-300 font-bold shrink-0">
-                  {tx.costText}
-                </span>
-              </div>
-            ))}
-          </div>
+      {feedback && (
+        <div
+          className={`flex items-center justify-between px-4 py-2.5 rounded-xl border text-xs font-medium ${
+            feedback.type === 'ok'
+              ? 'bg-emerald-500/15 border-emerald-400/40 text-emerald-200'
+              : 'bg-rose-500/15 border-rose-400/40 text-rose-200'
+          }`}
+        >
+          <span>{feedback.msg}</span>
+          <button type="button" onClick={() => setFeedback(null)} className="text-white/70 hover:text-white">
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
 
-      {/* Purchase Confirmation Modal */}
-      {pending && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
-          <div className="w-full max-w-md bg-[#0a0f1f] border border-amber-400/50 rounded-xl p-5 space-y-4">
-            <div>
-              <div className="text-[11px] font-bold tracking-wider text-amber-400">
-                Confirmar Transacción
-              </div>
-              <h3 className="font-display text-xl font-bold text-white mt-0.5">
-                {pending.title}
+      {/* Scrollable Store Catalog (Cards First, 3D/2D Modal on Click) */}
+      <div className="space-y-7 max-h-[62vh] overflow-y-auto pr-1">
+        {/* 1. CHARACTERS */}
+        {showSection('characters') && (
+          <section className="space-y-2.5">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-bold uppercase tracking-wider text-cyan-300 flex items-center gap-1.5">
+                <UserCheck className="w-4 h-4" /> Personajes ({save.unlockedCharacters.length}/{CHARACTERS.length})
               </h3>
-              <p className="text-xs text-slate-300 mt-1">{pending.subtitle}</p>
+              <span className="text-[11px] text-slate-400">Toca una tarjeta para vista 3D y habilidades</span>
             </div>
-            <div className="p-3 rounded-lg bg-[#0f172a] border border-white/10 flex items-center justify-between text-xs">
-              <span className="text-slate-400">Coste total:</span>
-              <span className="font-mono-num font-bold text-amber-300 text-sm">
-                {pending.costLabel}
-              </span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {CHARACTERS.map((ch) => {
+                const owned = save.unlockedCharacters.includes(ch.id);
+                const equipped = save.selectedCharacterId === ch.id;
+                const req = checkUnlockRequirement(save, ch.unlockRequirement);
+                return (
+                  <button
+                    key={ch.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: ch.id,
+                        title: ch.name,
+                        subtitle: ch.title,
+                        description: ch.bio,
+                        categoryLabel: 'Personaje 3D',
+                        accentColor: ch.colors.accent,
+                        preview3D: {
+                          kind: 'character',
+                          itemId: ch.id,
+                          characterId: ch.id,
+                          title: ch.name,
+                          subtitle: ch.title,
+                          accentColor: ch.colors.accent,
+                        },
+                        details: [
+                          `Pasiva: ${ch.passiveName} — ${ch.passiveDesc}`,
+                          `Activa: ${ch.abilityName} — ${ch.abilityDesc} (CD ${ch.abilityCooldown}s)`,
+                          `Vehículo: ${ch.vehicleAbilityName} — ${ch.vehicleAbilityDesc}`,
+                        ],
+                        owned,
+                        equipped,
+                        lockedReason: !req.met ? req.reason : undefined,
+                        priceCoins: ch.unlockCostCoins,
+                        priceGems: ch.unlockCostGems,
+                        onBuyCoins: () => purchaseCharacter(save, ch.id, 'coins'),
+                        onBuyGems: () => purchaseCharacter(save, ch.id, 'gems'),
+                        onEquip: () => ({
+                          ok: true,
+                          nextSave: { ...save, selectedCharacterId: ch.id },
+                        }),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer group ${
+                      equipped
+                        ? 'bg-cyan-500/15 border-cyan-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-cyan-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span
+                        className="w-3 h-3 rounded-full shrink-0"
+                        style={{ backgroundColor: ch.colors.accent }}
+                      />
+                      <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-white/10 text-slate-200">
+                        {equipped ? 'Equipado' : owned ? 'Tuyo' : `${ch.unlockCostCoins.toLocaleString('es-ES')} M`}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white group-hover:text-cyan-200 truncate">
+                      {ch.name}
+                    </div>
+                    <div className="text-[11px] text-slate-400 truncate">{ch.title}</div>
+                  </button>
+                );
+              })}
             </div>
-            <div className="flex justify-end gap-2.5">
+          </section>
+        )}
+
+        {/* 2. VEHICLES */}
+        {showSection('vehicles') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300 flex items-center gap-1.5">
+              <Car className="w-4 h-4" /> Vehículos ({save.ownedVehicles.length}/{VEHICLES.length})
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {VEHICLES.map((v) => {
+                const owned = save.ownedVehicles.includes(v.id);
+                const equipped = save.selectedVehicleId === v.id;
+                const req = checkUnlockRequirement(save, v.unlockRequirement);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: v.id,
+                        title: v.name,
+                        subtitle: `${v.category} · ${v.isShip ? 'Volador' : 'Terrestre'}`,
+                        description: v.description,
+                        categoryLabel: 'Vehículo 3D',
+                        accentColor: v.accentColor,
+                        preview3D: {
+                          kind: 'vehicle',
+                          itemId: v.id,
+                          title: v.name,
+                          subtitle: v.category,
+                          accentColor: v.accentColor,
+                        },
+                        details: [
+                          `Velocidad base: ${v.baseStats.speed} · Manejo: ${v.baseStats.handling}`,
+                          `Escudo: ${v.baseStats.shield} · Duración Boost: ${v.baseStats.boostDuration}s`,
+                          v.isShip
+                            ? 'Vehículo aéreo: despega sobre la pista y sortea obstáculos en altura.'
+                            : 'Vehículo terrestre de alta tracción.',
+                        ],
+                        owned,
+                        equipped,
+                        lockedReason: !req.met ? req.reason : undefined,
+                        priceCoins: v.unlockCostCoins,
+                        priceGems: v.unlockCostGems,
+                        onBuyCoins: () => purchaseOrSelectVehicle(save, v.id),
+                        onBuyGems: () => purchaseOrSelectVehicle(save, v.id),
+                        onEquip: () => purchaseOrSelectVehicle(save, v.id),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer ${
+                      equipped
+                        ? 'bg-amber-500/15 border-amber-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-amber-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between gap-2 mb-2">
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-white/10 text-amber-200">
+                        {v.isShip ? 'Aéreo' : 'Tierra'}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-200">
+                        {equipped ? 'Equipado' : owned ? 'Tuyo' : `${v.unlockCostCoins.toLocaleString('es-ES')} M`}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white truncate">{v.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{v.category}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 3. CHARACTER BOOSTERS */}
+        {showSection('boosters') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-fuchsia-300 flex items-center gap-1.5">
+              <Zap className="w-4 h-4" /> Potenciadores de Personaje ({save.ownedBoosters.length}/{CHARACTER_BOOSTERS.length})
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {CHARACTER_BOOSTERS.map((b) => {
+                const owned = save.ownedBoosters.includes(b.id);
+                const equipped = save.equippedBoosterId === b.id;
+                return (
+                  <button
+                    key={b.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: b.id,
+                        title: b.name,
+                        subtitle: `Potenciador · ${b.rarity}`,
+                        description: b.description,
+                        categoryLabel: 'Potenciador 2D',
+                        rarity: b.rarity,
+                        accentColor: '#e879f9',
+                        glyph: '⚡',
+                        details: [
+                          'Se puede equipar 1 potenciador activo por corredor.',
+                          `Rareza: ${b.rarity}`,
+                        ],
+                        owned,
+                        equipped,
+                        priceCoins: b.costCoins,
+                        priceGems: b.costGems,
+                        onBuyCoins: () => purchaseOrEquipBooster(save, b.id),
+                        onBuyGems: () => purchaseOrEquipBooster(save, b.id),
+                        onEquip: () => purchaseOrEquipBooster(save, b.id),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer ${
+                      equipped
+                        ? 'bg-fuchsia-500/15 border-fuchsia-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-fuchsia-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] mb-2">
+                      <span className="px-1.5 py-0.5 rounded bg-fuchsia-500/20 text-fuchsia-200 font-bold">
+                        {b.rarity}
+                      </span>
+                      <span className="text-slate-200 font-bold">
+                        {equipped ? 'Equipado' : owned ? 'Tuyo' : `${b.costCoins} M`}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white truncate">{b.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{b.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 4. COMPANION DRONES */}
+        {showSection('drones') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-sky-300 flex items-center gap-1.5">
+              <Bot className="w-4 h-4" /> Drones de Ayuda ({save.ownedDrones.length}/{COMPANION_DRONES.length})
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {COMPANION_DRONES.map((d) => {
+                const owned = save.ownedDrones.includes(d.id);
+                const equipped = save.equippedDroneId === d.id;
+                return (
+                  <button
+                    key={d.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: d.id,
+                        title: d.name,
+                        subtitle: `${d.title} · ${d.rarity}`,
+                        description: d.description,
+                        categoryLabel: 'Dron Aliado 3D',
+                        rarity: d.rarity,
+                        accentColor: d.accentColor,
+                        preview3D: {
+                          kind: 'relic',
+                          itemId:
+                            d.modelKey === 'bomber'
+                              ? 'kenney_bomber'
+                              : d.modelKey === 'speeder'
+                                ? 'kenney_speeder'
+                                : 'kenney_turret',
+                          title: d.name,
+                          subtitle: d.title,
+                          accentColor: d.accentColor,
+                        },
+                        details: [
+                          `Duración activo: ${d.activeDurationSec}s · Enfriamiento: ${d.cooldownSec}s`,
+                          'Invocable en partida para asistirte en pista.',
+                        ],
+                        owned,
+                        equipped,
+                        priceCoins: d.costCoins,
+                        priceGems: d.costGems,
+                        onBuyCoins: () => purchaseOrEquipDrone(save, d.id),
+                        onBuyGems: () => purchaseOrEquipDrone(save, d.id),
+                        onEquip: () => purchaseOrEquipDrone(save, d.id),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer ${
+                      equipped
+                        ? 'bg-sky-500/15 border-sky-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-sky-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] mb-2">
+                      <span className="px-1.5 py-0.5 rounded bg-sky-500/20 text-sky-200 font-bold">
+                        {d.rarity}
+                      </span>
+                      <span className="text-slate-200 font-bold">
+                        {equipped ? 'Equipado' : owned ? 'Tuyo' : `${d.costCoins} M`}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white truncate">{d.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{d.title}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 5. PROFILE AVATARS */}
+        {showSection('avatars') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-emerald-300 flex items-center gap-1.5">
+              <Sparkles className="w-4 h-4" /> Avatares de Perfil
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {PROFILE_AVATARS.map((av) => {
+                const owned = save.ownedAvatars.includes(av.id);
+                const equipped = save.equippedAvatarId === av.id || save.avatarId === av.id;
+                const shopAllowed = av.source === 'shop' || av.source === 'default';
+                return (
+                  <button
+                    key={av.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: av.id,
+                        title: av.name,
+                        subtitle: `Avatar · ${av.rarity}`,
+                        description: av.description,
+                        categoryLabel: 'Avatar de Perfil',
+                        rarity: av.rarity,
+                        accentColor: av.accentColor,
+                        glyph: av.glyph,
+                        badgeGradient: av.badgeGradient,
+                        details: [av.description],
+                        owned,
+                        equipped,
+                        lockedReason: !owned && !shopAllowed ? av.description : undefined,
+                        priceCoins: shopAllowed ? av.costCoins : 0,
+                        priceGems: shopAllowed ? av.costGems : 0,
+                        onBuyCoins: shopAllowed
+                          ? () => purchaseOrEquipAvatar(save, av.id)
+                          : undefined,
+                        onBuyGems: shopAllowed
+                          ? () => purchaseOrEquipAvatar(save, av.id)
+                          : undefined,
+                        onEquip: () => purchaseOrEquipAvatar(save, av.id),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer ${
+                      equipped
+                        ? 'bg-emerald-500/15 border-emerald-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-emerald-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-2">
+                      <span
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-black text-white"
+                        style={{ background: av.badgeGradient }}
+                      >
+                        {av.glyph}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-200">
+                        {equipped
+                          ? 'Equipado'
+                          : owned
+                            ? 'Tuyo'
+                            : shopAllowed
+                              ? `${av.costCoins} M`
+                              : av.source === 'pass'
+                                ? 'Pase'
+                                : 'Misión'}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white truncate">{av.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{av.rarity}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 6. COSMETICS (6-Week Rotation + Permanents) */}
+        {showSection('cosmetics') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-indigo-300">
+              Trajes y Estelas (Rotación Semana {rotation.weekNumber}/6)
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {COSMETICS.map((cos) => {
+                const owned = save.ownedCosmetics.includes(cos.id);
+                const equipped = save.equippedCosmetics[cos.slot] === cos.id;
+                const isRotating = rotatingSet.has(cos.id);
+                return (
+                  <button
+                    key={cos.id}
+                    type="button"
+                    onClick={() => {
+                      audioEngine.playUiClick();
+                      setInspected({
+                        id: cos.id,
+                        title: cos.name,
+                        subtitle: `${cos.slot.toUpperCase()} · ${cos.rarity}`,
+                        description: cos.description,
+                        categoryLabel: isRotating ? `Rotación Semana ${rotation.weekNumber}` : 'Catálogo Fijo',
+                        rarity: cos.rarity,
+                        accentColor: cos.color,
+                        preview3D: {
+                          kind: 'cosmetic',
+                          itemId: cos.id,
+                          title: cos.name,
+                          subtitle: cos.rarity,
+                          accentColor: cos.color,
+                        },
+                        details: [
+                          `Ranura: ${cos.slot}`,
+                          isRotating
+                            ? 'Cosmético destacado de la rotación semanal actual.'
+                            : 'Disponible de forma permanente en la tienda.',
+                        ],
+                        owned,
+                        equipped,
+                        priceCoins: cos.costCoins,
+                        priceGems: cos.costGems,
+                        onBuyCoins: () => purchaseOrEquipCosmetic(save, cos.id),
+                        onEquip: () => purchaseOrEquipCosmetic(save, cos.id),
+                      });
+                    }}
+                    className={`text-left p-3.5 rounded-xl border transition cursor-pointer ${
+                      equipped
+                        ? 'bg-indigo-500/15 border-indigo-400'
+                        : 'bg-slate-900/75 border-white/10 hover:border-indigo-400/50'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between text-[10px] mb-2">
+                      <span
+                        className={`px-1.5 py-0.5 rounded font-bold ${
+                          isRotating ? 'bg-amber-500/20 text-amber-200' : 'bg-white/10 text-slate-300'
+                        }`}
+                      >
+                        {isRotating ? 'Rotación' : cos.rarity}
+                      </span>
+                      <span className="text-slate-200 font-bold">
+                        {equipped ? 'Equipado' : owned ? 'Tuyo' : `${cos.costCoins} M`}
+                      </span>
+                    </div>
+                    <div className="font-bold text-sm text-white truncate">{cos.name}</div>
+                    <div className="text-[11px] text-slate-400 truncate">{cos.description}</div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* 7. GEM TO COIN EXCHANGE */}
+        {showSection('exchange') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-fuchsia-300 flex items-center gap-1.5">
+              <ArrowRightLeft className="w-4 h-4" /> Cambio de Moneda Morada (Gemas → Monedas)
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {GEM_EXCHANGE_PACKS.map((pack) => (
+                <button
+                  key={pack.id}
+                  type="button"
+                  onClick={() => {
+                    audioEngine.playUiClick();
+                    setInspected({
+                      id: pack.id,
+                      title: pack.name,
+                      subtitle: pack.bonusLabel,
+                      description: `Convierte ${pack.costGems} Gemas moradas en ${pack.grantCoins.toLocaleString('es-ES')} Monedas del juego.`,
+                      categoryLabel: 'Cambio de Divisa',
+                      accentColor: '#d946ef',
+                      glyph: '💎→🪙',
+                      details: [pack.bonusLabel, 'Tasa equilibrada para mantener la economía del juego.'],
+                      priceGems: pack.costGems,
+                      onBuyGems: () => exchangeGemsForCoins(save, pack.id),
+                    });
+                  }}
+                  className="text-left p-4 rounded-xl bg-fuchsia-950/25 border border-fuchsia-400/25 hover:border-fuchsia-400 transition cursor-pointer"
+                >
+                  <div className="text-xs font-bold text-fuchsia-300">{pack.bonusLabel}</div>
+                  <div className="font-bold text-sm text-white mt-1">{pack.name}</div>
+                  <div className="text-xs text-amber-300 font-mono-num mt-2">
+                    +{pack.grantCoins.toLocaleString('es-ES')} Monedas
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+
+        {/* 8. SPECIALS */}
+        {showSection('specials') && (
+          <section className="space-y-2.5">
+            <h3 className="text-sm font-bold uppercase tracking-wider text-amber-300">
+              Objetos Especiales y Tiques
+            </h3>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              {SPECIAL_SHOP_ITEMS.map((sp) => (
+                <button
+                  key={sp.id}
+                  type="button"
+                  onClick={() => {
+                    audioEngine.playUiClick();
+                    setInspected({
+                      id: sp.id,
+                      title: sp.name,
+                      subtitle: sp.rarity,
+                      description: sp.description,
+                      categoryLabel: 'Objeto Especial',
+                      rarity: sp.rarity,
+                      accentColor: '#f59e0b',
+                      glyph: '✦',
+                      details: [sp.description],
+                      priceCoins: sp.costCoins,
+                      priceGems: sp.costGems,
+                      onBuyCoins: () => purchaseSpecialItem(save, sp.id),
+                      onBuyGems: () => purchaseSpecialItem(save, sp.id),
+                    });
+                  }}
+                  className="text-left p-3.5 rounded-xl bg-slate-900/75 border border-white/10 hover:border-amber-400/50 transition cursor-pointer"
+                >
+                  <div className="text-[10px] font-bold text-amber-300 mb-1.5">{sp.rarity}</div>
+                  <div className="font-bold text-sm text-white truncate">{sp.name}</div>
+                  <div className="text-[11px] text-slate-400 truncate mt-0.5">
+                    {sp.costCoins > 0 ? `${sp.costCoins} M` : `${sp.costGems} G`}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+
+      {/* 3D / 2D Inspection & Purchase Modal (Opens only when an item is clicked) */}
+      {inspected && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-2xl bg-[#0a1124] border border-white/20 rounded-2xl overflow-hidden shadow-2xl">
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-white/10 bg-slate-900/70">
+              <div>
+                <div className="text-[11px] font-bold uppercase tracking-wider text-cyan-300">
+                  {inspected.categoryLabel}
+                </div>
+                <h3 className="font-display text-lg font-bold text-white">{inspected.title}</h3>
+              </div>
               <button
-                onClick={() => {
-                  audioEngine.playUiClick();
-                  setPending(null);
-                }}
-                className="px-4 py-2 rounded-lg border border-white/15 text-xs font-semibold text-slate-300 hover:text-white cursor-pointer"
+                type="button"
+                onClick={() => setInspected(null)}
+                className="p-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white cursor-pointer"
               >
-                Cancelar
+                <X className="w-4 h-4" />
               </button>
-              <button
-                onClick={executeConfirm}
-                className="px-5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-display font-bold text-xs cursor-pointer"
-              >
-                Confirmar Compra
-              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-5">
+              {/* Left: 3D Preview OR 2D Visual Card */}
+              <div className="rounded-xl overflow-hidden border border-white/10 bg-[#050914] min-h-[240px] flex items-center justify-center">
+                {inspected.preview3D ? (
+                  <ModelPreview3D {...inspected.preview3D} />
+                ) : (
+                  <div className="flex flex-col items-center justify-center p-6 text-center space-y-3">
+                    <div
+                      className="w-24 h-24 rounded-2xl flex items-center justify-center text-3xl font-black text-white shadow-lg border border-white/20"
+                      style={{
+                        background:
+                          inspected.badgeGradient ??
+                          `linear-gradient(135deg, ${inspected.accentColor}, #0f172a)`,
+                      }}
+                    >
+                      {inspected.glyph ?? '★'}
+                    </div>
+                    <div className="text-xs font-semibold text-slate-300">{inspected.subtitle}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Right: Details & Purchase Actions */}
+              <div className="flex flex-col justify-between space-y-4">
+                <div className="space-y-3">
+                  <p className="text-xs text-slate-300 leading-relaxed">{inspected.description}</p>
+                  <ul className="space-y-1.5 text-[11px] text-slate-300 bg-slate-900/70 border border-white/10 rounded-xl p-3">
+                    {inspected.details.map((d, i) => (
+                      <li key={i} className="leading-snug">
+                        • {d}
+                      </li>
+                    ))}
+                  </ul>
+
+                  {inspected.lockedReason && (
+                    <div className="flex items-center gap-2 text-xs text-amber-300 bg-amber-500/10 border border-amber-400/30 rounded-lg p-2.5">
+                      <Lock className="w-4 h-4 shrink-0" />
+                      <span>Requisito: {inspected.lockedReason}</span>
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 pt-2">
+                  {inspected.equipped ? (
+                    <div className="w-full py-2.5 rounded-xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-200 text-xs font-bold flex items-center justify-center gap-1.5">
+                      <Check className="w-4 h-4" /> Equipado actualmente
+                    </div>
+                  ) : inspected.owned && inspected.onEquip ? (
+                    <button
+                      type="button"
+                      onClick={() => runEconomyAction(inspected.onEquip!, inspected.title)}
+                      className="w-full py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-slate-950 text-xs font-bold cursor-pointer"
+                    >
+                      Equipar ahora
+                    </button>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {inspected.priceCoins && inspected.priceCoins > 0 && inspected.onBuyCoins && (
+                        <button
+                          type="button"
+                          disabled={Boolean(inspected.lockedReason) || save.coins < inspected.priceCoins}
+                          onClick={() => runEconomyAction(inspected.onBuyCoins!, inspected.title)}
+                          className="flex-1 py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-slate-950 text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Coins className="w-3.5 h-3.5" />
+                          {inspected.priceCoins.toLocaleString('es-ES')} M
+                        </button>
+                      )}
+                      {inspected.priceGems && inspected.priceGems > 0 && inspected.onBuyGems && (
+                        <button
+                          type="button"
+                          disabled={Boolean(inspected.lockedReason) || save.gems < inspected.priceGems}
+                          onClick={() => runEconomyAction(inspected.onBuyGems!, inspected.title)}
+                          className="flex-1 py-2.5 px-3 rounded-xl bg-fuchsia-500 hover:bg-fuchsia-400 disabled:opacity-40 text-white text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer"
+                        >
+                          <Gem className="w-3.5 h-3.5" />
+                          {inspected.priceGems.toLocaleString('es-ES')} G
+                        </button>
+                      )}
+                      {!inspected.onBuyCoins && !inspected.onBuyGems && (
+                        <div className="w-full py-2 rounded-xl bg-slate-800 text-slate-300 text-xs text-center flex items-center justify-center gap-1.5">
+                          <ShieldAlert className="w-4 h-4 text-amber-400" />
+                          Se desbloquea mediante misiones o Pase de Corredor
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
           </div>
         </div>

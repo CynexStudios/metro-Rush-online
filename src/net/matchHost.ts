@@ -10,9 +10,13 @@ import {
   MultiplayerRoomPlayer,
   MultiplayerRoomState,
   NetworkConnectionMode,
+  PlayerModelStyle,
   RoomRulesConfig,
+  VehicleId,
 } from '../game/types';
 import { GAME_VERSION, isVersionCompatible } from '../game/version';
+
+const FIVE_LANE_DISTRICTS = new Set<string>();
 
 export interface RoomPeerInternal {
   ws: WebSocket;
@@ -20,6 +24,7 @@ export interface RoomPeerInternal {
   username: string;
   avatarId: string;
   characterId: string;
+  modelStyle: PlayerModelStyle;
   ready: boolean;
   isHost: boolean;
   paused: boolean;
@@ -32,6 +37,7 @@ export interface RoomPeerInternal {
   x: number;
   y: number;
   z: number;
+  rotY: number;
   lane: number;
   distance: number;
   score: number;
@@ -39,11 +45,15 @@ export interface RoomPeerInternal {
   eliminations: number;
   hitsTaken: number;
   action: string;
+  isRidingVehicle: boolean;
+  vehicleId?: VehicleId;
+  abilityActive: boolean;
   placement: number | null;
   rewardCoins: number;
   rewardGems: number;
   lastTickMs: number;
   lastAbilityMs: number;
+  lastInterferenceMs: number;
   antiCheatStrikes: number;
 }
 
@@ -272,13 +282,18 @@ export class AuthoritativeRoomManager {
       username: p.username,
       avatarId: p.avatarId,
       characterId: p.characterId,
+      modelStyle: p.modelStyle,
       x: p.x,
       y: p.y,
       z: p.z,
+      rotY: p.rotY,
       lane: p.lane,
       distance: Math.floor(p.distance),
       score: Math.floor(p.score),
       action: p.action,
+      isRidingVehicle: p.isRidingVehicle,
+      vehicleId: p.vehicleId,
+      abilityActive: p.abilityActive,
       paused: p.paused,
       finished: p.finished,
       placement: p.placement ?? undefined,
@@ -503,12 +518,14 @@ export class AuthoritativeRoomManager {
             finishCounter: 0,
             peers: new Map(),
           };
+          const initialCenterLane = FIVE_LANE_DISTRICTS.has(room.districtId) ? 2 : 1;
           room.peers.set(userId, {
             ws,
             userId,
             username,
             avatarId,
             characterId: String(p.characterId || 'kai'),
+            modelStyle: 'procedural',
             ready: true,
             isHost: true,
             paused: false,
@@ -521,18 +538,23 @@ export class AuthoritativeRoomManager {
             x: 0,
             y: 0,
             z: 0,
-            lane: 1,
+            rotY: 0,
+            lane: initialCenterLane,
             distance: 0,
             score: 0,
             coins: 0,
             eliminations: 0,
             hitsTaken: 0,
             action: 'idle',
+            isRidingVehicle: false,
+            vehicleId: undefined,
+            abilityActive: false,
             placement: null,
             rewardCoins: 0,
             rewardGems: 0,
             lastTickMs: Date.now(),
             lastAbilityMs: 0,
+            lastInterferenceMs: 0,
             antiCheatStrikes: 0,
           });
           this.activeRooms.set(code, room);
@@ -600,12 +622,14 @@ export class AuthoritativeRoomManager {
           }
 
           this.handlePeerDisconnect(ws, userId, currentRoomCode, true);
+          const joinCenterLane = FIVE_LANE_DISTRICTS.has(room.districtId) ? 2 : 1;
           room.peers.set(userId, {
             ws,
             userId,
             username,
             avatarId,
             characterId: String(p.characterId || 'kai'),
+            modelStyle: 'procedural',
             ready: false,
             isHost: false,
             paused: false,
@@ -618,18 +642,23 @@ export class AuthoritativeRoomManager {
             x: 0,
             y: 0,
             z: 0,
-            lane: 1,
+            rotY: 0,
+            lane: joinCenterLane,
             distance: 0,
             score: 0,
             coins: 0,
             eliminations: 0,
             hitsTaken: 0,
             action: 'idle',
+            isRidingVehicle: false,
+            vehicleId: undefined,
+            abilityActive: false,
             placement: null,
             rewardCoins: 0,
             rewardGems: 0,
             lastTickMs: Date.now(),
             lastAbilityMs: 0,
+            lastInterferenceMs: 0,
             antiCheatStrikes: 0,
           });
           currentRoomCode = code;
@@ -701,9 +730,19 @@ export class AuthoritativeRoomManager {
           room.startedAtMs = Date.now();
           room.finishCounter = 0;
           const now = Date.now();
+          const startCenterLane = FIVE_LANE_DISTRICTS.has(room.districtId) ? 2 : 1;
           for (const rPeer of room.peers.values()) {
             rPeer.finished = false;
             rPeer.paused = false;
+            rPeer.x = 0;
+            rPeer.y = 0;
+            rPeer.z = 0;
+            rPeer.rotY = 0;
+            rPeer.lane = startCenterLane;
+            rPeer.action = 'run';
+            rPeer.isRidingVehicle = false;
+            rPeer.vehicleId = undefined;
+            rPeer.abilityActive = false;
             rPeer.distance = 0;
             rPeer.score = 0;
             rPeer.coins = 0;
@@ -714,11 +753,13 @@ export class AuthoritativeRoomManager {
             rPeer.rewardGems = 0;
             rPeer.lastTickMs = now;
             rPeer.lastAbilityMs = 0;
+            rPeer.lastInterferenceMs = 0;
             rPeer.antiCheatStrikes = 0;
           }
           const state = this.serializeRoom(room);
           this.broadcastRoom(room, 'room:state', state);
           this.broadcastRoom(room, 'room:started', state);
+          this.broadcastRoomTelemetry(room);
           return;
         }
 
@@ -788,10 +829,12 @@ export class AuthoritativeRoomManager {
           const dtSec = Math.max(0.025, Math.min(2.0, (now - peer.lastTickMs) / 1000));
           peer.lastTickMs = now;
 
+          const maxLaneIdx = FIVE_LANE_DISTRICTS.has(room.districtId) ? 4 : 2;
           const rawX = Number(p.x ?? peer.x);
           const rawY = Number(p.y ?? peer.y);
           const rawZ = Number(p.z ?? peer.z);
-          const rawLane = Math.max(0, Math.min(2, Math.round(Number(p.lane ?? peer.lane))));
+          const rawRotY = Number(p.rotY ?? peer.rotY);
+          const rawLane = Math.max(0, Math.min(maxLaneIdx, Math.round(Number(p.lane ?? peer.lane))));
           const rawDistance = Math.max(0, Number(p.distance ?? peer.distance));
           const rawScore = Math.max(0, Number(p.score ?? peer.score));
           const rawAction = String(p.action ?? peer.action);
@@ -816,15 +859,29 @@ export class AuthoritativeRoomManager {
             peer.antiCheatStrikes += 1;
           }
 
-          // Clamp lane X within [-5.2, 5.2], Y within [-10, 35]
-          peer.x = Math.max(-5.2, Math.min(5.2, Number.isFinite(rawX) ? rawX : 0));
+          // Clamp lane X within [-8.0, 8.0] (supports both 3-lane and 5-lane tracks), Y within [-10, 35]
+          peer.x = Math.max(-8.0, Math.min(8.0, Number.isFinite(rawX) ? rawX : 0));
           peer.y = Math.max(-10, Math.min(35, Number.isFinite(rawY) ? rawY : 0));
           peer.z = Number.isFinite(rawZ) ? rawZ : -validatedDist;
+          peer.rotY = Number.isFinite(rawRotY) ? rawRotY : 0;
           peer.lane = rawLane;
           peer.distance = validatedDist;
           peer.score = validatedScore;
           peer.action = rawAction;
           peer.paused = rawPaused;
+
+          if (p.modelStyle && ['procedural', 'xbot', 'robot', 'soldier', 'custom'].includes(String(p.modelStyle))) {
+            peer.modelStyle = String(p.modelStyle) as PlayerModelStyle;
+          }
+          if (p.isRidingVehicle !== undefined) {
+            peer.isRidingVehicle = Boolean(p.isRidingVehicle);
+          }
+          if (p.vehicleId !== undefined) {
+            peer.vehicleId = p.vehicleId ? (String(p.vehicleId) as VehicleId) : undefined;
+          }
+          if (p.abilityActive !== undefined) {
+            peer.abilityActive = Boolean(p.abilityActive);
+          }
 
           if (p.coins !== undefined) {
             const c = Math.max(0, Math.floor(Number(p.coins)));
@@ -843,6 +900,26 @@ export class AuthoritativeRoomManager {
           }
 
           this.broadcastRoomTelemetry(room);
+          return;
+        }
+
+        if (event === 'player:ability_interference' && room.status === 'racing') {
+          if (!room.rules.allowAbilities) return;
+          const now = Date.now();
+          if (now - peer.lastInterferenceMs < 6000) return;
+          peer.lastInterferenceMs = now;
+          const payloadOut = {
+            fromUserId: userId,
+            fromUsername: username,
+            characterId: peer.characterId,
+            kind: String(p.kind || 'emp_disrupt').slice(0, 40),
+            durationSec: Math.max(1.2, Math.min(4.0, Number(p.durationSec || 2.5))),
+          };
+          for (const targetPeer of room.peers.values()) {
+            if (targetPeer.userId !== userId && targetPeer.connected) {
+              sendWs(targetPeer.ws, 'room:interference', payloadOut);
+            }
+          }
           return;
         }
 

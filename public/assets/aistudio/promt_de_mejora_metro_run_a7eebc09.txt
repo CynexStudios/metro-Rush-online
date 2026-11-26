@@ -1,0 +1,314 @@
+hola el juego necesita mas ajustes y es cambiar los bloque  por modelos reales, y los personajes por modelos reales,, cambiar las habilidades de los personajes que sean mas equilibradas y cambiar varias cosas, como por ejemplo algunos detalle que vamos a mejorar que te voy a decir ahora mismo, primero pideme perimiso si es necesario para descargar cosas que necesites para implementar dentro del videojuego si tienes que descargar alguna api para eso haslo y si me pides permiso te lo doy,
+lo primero es el ataque de los jefes, lo primero es que hay que equilibrarlo vi que tienen todos las mismos faces o las mismas 4 faces no puede ser asi, los 3 primero por lo menos tienen que tener entre 2 a 3 faces, los 3 siguientes tiene que tener, aunque sea de 4 a 6 faces y los dos ultimos seran especiales uno tendra 8 faces muy buenas cada una peor que la anterior y el ultimo tendra una barra de vida que solo podra resivir daño cuando se le quite un esqudo que tiene y cuando se le quita el escudo tiene un tiempo corto para que se active de nuevo y solo pierde vida en eso corto tiempo que pierde,
+sedunda face de mejora de los jefes y en este caso es el ataque los ataque aparecen de repente y muy rrepetivos cerrados y casi los mismo, tenemos que cambiar eso y vamos a ponerle un radar a los jugadores como abilidad pasiva a todos lo que pongan que hará el radar que pondrá un carril rápido en un tiempo donde ese radar marca los carriles del ataque del jefe y los jefes segundos antes de hacer el ataque deberá hacer que el carril ppor donde va el ataque brille, pero es algo rápido y dependiendo la fase el tiempo es menor mientras la fase sea mas alta, por ejemplo fase jefe es menor a 3 entonces 2 segundos o fase jefe es menor o igual a fase 4 o 6 1 segundo y asi esos solo son ejemplos para que entiendas lo que digo.
+otra mejora para los jefes es el apartado del despliegue de drones aliados, cuando el jefe despliega drones aliados no se ven en la pantalla y tampoco molestan al jugador tiene que hacerlo para que haga el rato mas difícil, dependiendo el nivel del jefe o sea recuerda que los jefes están por rango y dependiendo la fase del jefe serán mas o menos drones aliados y serán mas agresivo o menos agresivos dependiendo la fase.
+
+el segundo bloque de mejora son las habilidades de los personajes, que tienen que ser notorias, por ejemplo hay un personaje que como pasiva tiene que salta mas alto de los demás pero las activas son las mismas, ósea eso tiene que cambiar no pueden ser las mismas activas para todos y las mismas pasivas tampoco eso tiene que varias, cambia por completo la interfaz de los personajes y todas las interfaces de tienda, garaje, ajustes, online y mas cosas para que todavía sean mejores de los que ya son, el los personajes y el garaje permite ver el veiculo y el personaje aunque no lo poseas y permite que el desbloque de personajes no sea tna fácil y que incluso muchos de ellos esten en la tienda por un presio alto que no sea tan fácil de conseguir claro y que las habilidades no sean tan difíciles de mejorar para que no este roto el juego me entiendes, ponle potenciadores que puedes comprar en la tienda y que puedas equipar uno al personaje.
+
+este bloque mejorara la tienda, tienes que mejorar la tienda por caompleto cambiando la interfaz por una completamente nueva y detallada, y sin ventana grafica a primera vista, ósea serán en cartas lo que la tienda venda y darán poca información del mismo, pero cuando toque un objeto que quieras comprar se abrirá una pantalla 3D o 2D y dependiendo el objeto si es un personaje un vehiculo o un pontenciador, algo que se venda, permite que por la modeda morada podamos comprar la moneda común del juego que no sea tan barata, prque asi seria cualquiera rico, también has cambios en los apartados de la tienda para lso distintos apartado pon un apartado de todo donde puedas dar para arriba y para abajo y ver todo lo que la tienda ofrece o por ejemplo selecciones perosnajes y que te lleve directo a la sección de personajes, vehículos y mas cosas, también usa una api que encuentes en linea para la interfaz de usuario de la tienda porque la que esta se ve ribotica fea orrenda y orrible me entiendes, hay que cambiar eso para que se parezca a una tienda de verdad.
+
+el siguiente bloque es el del online que ahora si se puede jugar, entrar en salar y ver a los demás jugadores que hay en las partidas, pero la interfaz de usuario del online esta muy llena, muy tirada, muy confusa, muy desordenada y con muchas cosas que cambiar, ahora vamos a permitir crear salas mejores como si yo cree una sala usando un servidro de radmin y salgo de esa sala y quiero crear otra otro dia que pueda abrir la misma sala cuando suba el mismo host de radmin o avara el mismo puerto o el mismo servidor, no se si me entendiste en ese aspecto, también que pueda jugar por invitación, supongamos que yo juegue en la misma sala con Joel, y esta vez quiero volver a jugar, entonces que cuando yo habrá la sala o habrá otra sala si Joel esta en el mismo servidor de radmin que yo entonces que en la lobby y en el mismo apartado online le salga mi nombre si estoy en linea, también permite que si estamos en el mismo servidor de radmin, podamos mandarnos solicitusdes de amistas para que se quede guarda y que si el entra al server de radmin y yo también que a cada uno le salga que estamos en linea, eso para ese aspecto.
+para el otro aspecto de este mismo apartado online, la parte de crear cuenta online, eso pues no sirve de mucho asi que tenemos que buscar un servidor, gratis y funcional, que sirva para que el juego este en linea real y que podamos ver mas gente conecta que solo los que están en el mismo server de radmin o cloudflare y ahora mejora el apartado de crear cuenta y la sincronización con la cuenta offline ya que cada vez que entras al juego te manda a soncronizar cada vez que entras por que se yo algo asi es que dice, mas o menos.
+por otro apartado mejorar la parte del P2P ya que falla no funciona muy bien que digamos y el P2P funcionaria muy bien para que cada usuario este online y pueda ser visible para jugar o lo que sea.
+
+para la siguiente sección viene el perfil de usuario y esta parte no es gran cosa, crea avatares predeterminados del juego y que se vendan en la tienda, que se ganen en el pase o por hacer misiones, para que puedas ponerlo al perfil, permite que pueda cambiar el nombre de usuario al apartado offline y que si cambia el nombre deberá esperar 3 días para volver a cambiarlo, el panel de estadísticas meterlo dentro del apartado del perfil de usuario, para que el menú no este tan grande y con cosas que no son necesarias porque no es necesario que este fuera, también incluye mas cosas mejora el apartado visual y la parte del perfil de usuario que es necesario para que no se vea tan feo e igual que en la tienda y también para el aparatado online que se me olvido usa una api para mejorar el paratdo visual y la UI del usuario porque la que esta esta feísima usa api como te dije para que se vea super mejorada y chin que sea la actualización 10.0 peor que parezca de verdad.
+
+para el lobby para este apartado vienen cambios drásticos, mejoras en la interfaz, pero buenas mejoras, quita las mascotas que no son necesarias, esas mascotas no son necesarias en la partidas desaste de ellas mejor pon drones como ayudas que sea capaces que ayudarte en todo la partida o cuando lo llames que tenga un tiempo de llamada y un tiempo de descanso después del llamado, anterior mente creamos como una pantalla para cada modo, pero para esta actualización crearemos una lobby para cada modo, ósea que la lobby que tenemos actualmente será la lobby general donde estarán todos los apartados, pero para acada modo, carrera infinita, que resivira el nombre de normal, modo historia que en esta actualización estará con candado porque para la próxima sufrirá mejoras tan drásticas que parecera un juego nuevo, contrarreloj que resivira cambios mas adelante, parkur extremo, asalto a jefes y modm libre ósea el modo personalizado que resibira grandes cambios mas adelante, todos esos modos tendrás sus propias lobbies nuevas que sea igual que la primera pero adaptado el modo de juego, son todo la basura de la interfaz del lobby normal que será nuetro lobby general, habrá un apartado, y todo eso, usa una api para mejora la UI del lobby y para que sea un lobby completamente nuevo, bien estructurado, bien desarrollado y que de verdad valga la pena, pon una pantalla de carga para empezar el juego con el logo de la compaañira ósea de la mia, XynexDevs Studios, abajo con el coppy right que diga todos los derechos de autor reservados, y una pantalla de carga con el nombre una  imagen del juego de fondo, ósea un banner del juego que con cada actualización crearas uno para cada pantalla de carga, y cuando sea la primera vez que entres tiene dos opciones una pantalla que te pregunte la edad, si has jugado un juego se carrera infinita y todo eso.
+usa mecanismos de cargado para que lea la computadora donde se esta ejecutando el juego y que pueda leer, tanto la tarjeta grafica, como el cpu la ram y esas cosas y en los ajustes poner nuevas opciones y quiitar opciones innecerias para el juego mas adelante mejoraremos eso, y que una vez que ponga eso, le pregunte si quiere crear una cuenta onlieno lo dejara para después.
+
+luego para el apratedo de tutorial vamos a cambia las cosas, vamos a poner obstáculos para enseñar el tutorial para obligas a hacer el tutorial, vamos a cambiar muchos obsaculos por muchas nuevos y mejorados, tambie por modelos reales usando API y muchas cosas mas necesarias para este mismo apartado, que el hud de las letras no se incomodo en la pantalla y en el medio como sale, que sea en una esquinas mas dinamico estructural y mejor desarrollado, con animacioes increíbles para que mejore mejor el apartado de las cosas  que sean necesarias para este mismo tutorial, trata de enseñar todo lo básico del juego, y cuando acabe el tutorial dejado jugando en el modo fácil, sin jefes ni pontenciadores solo que juego la terminación del tutorial eso si mientras mas lejos mas rápido para que asi no se quede jugando infinito, eso parael torotial.
+
+para el apartado de juego vamos a cambiar muchas cosas primero las implementaciones, una nueva hud, o interfaz de usuario, mas mejorada mas dinámica y con mejores animación, con cosas nueva quitadas que no son necesarias que este en la patida, que los puntos cuenten mas lento y que no sea tan fácil llegar a records muchos mas largos y extremos debido al conteo de los puntos, y estos mismos contara de cuerdo a la velocidad y lo lejos que vaya el jugador, abajo el apartado de habilidades eso esta llenando la pantalla no es necesario, las habilidades solo dan una notificación para decir que ya estna actives, si es sierto que tiene que haber una opción en ejustes en el apartado de jugabilida que venga activada por defecto que se llame controles en pantalla que te diga todas las teclas a uso de la partida, y adpatar el hud a los mandos como el juego permite conexión por mando hay que haer que si esta jugando en mando de verdad vea los botones del mando y no del teclado que si una habilidad era a la F pero en el mando es con un botón pues que presente el botón y que detecte si el mando es Xbox, play o Nintendo, y que adapte el hud al tipo de mando, esto es general pero si detecta el mando que de luz verde y si se desconecta que de luz roja con le mensaje se conectado o desconectado el mando, dependiendo la accion que haga con el. otro dato a recalcar es que el juego empieza y se pone rápido muy rápido, eso hay quecambiar el juego tiene que empezar suave e ir poniéndose rápido no, tiene que ser proceduralmente ósea alpaso ir subiendo según abaza, ósea los primeros metros el juego va multiplicando o sumando velocidad medio lente según vaya mas lejos va sumando mas, hasta llegar a un punto entendible donde ya no puede subir mas o se volverá sipersonico y eso no lo queremos, eso tiene que ser arreglado, además muchos opstaculos se ven repetitivos.
+
+hablemos de los mapas tienes que modificar los 10 mapas que hay con apilo crearas reales, literalmente que no sean bloques solamente, que sea modelos de mapas reales ósea animado en modo videojuego pero que ya no sean bloques, a cada mapa creale túneles notorios, notorios los tuéneles que sean de verdad, crea callejones de dos y un carril solamente y que sean como eventos que salga dependiendo la ciudad y cada sierto tiempo que sean aleatorio y diferente, tambie a los mapas modificaloes creales mas eficiios de forma diferente que no sean idénticos crea espacios que parezcan 3D aunque no lo sean ponle animaciones falzas que parezcan reales y mejoralos cada uno tiene que ser mejorados de acuerdo a todos los apartados, recuerdo que dentro del juego quería túneles subterraneso, y no había no me aparecieron asi que quiero que cada mas pa tenga los túneles subterráneos y que sean de tipo evento como los de un solo carril o dos y las ciudades de 5 carriles tienen que ser eliminada y puestas como eventos de las 7 o 6 que teníamos antes, y poner tres nuevas ciudades una llamada ciudado si te caes que será en los racacielos usando plataforma, tirolinas de las ya hau en el juego y haciendo parkur ese será encima de los edificios, uno que sea dentro de una fabrica llamado la creación será como un mapa , y uno que se llame no te  ahogue que sea sobre agua y que nos ataquen cosas que irían en el mar drones, barcos moder y esas cosas asi mas o menos, todo eso.
+
+darle funcionalidad al mouse dentro de las partidas, para que el mouse no sea un objero innutil dentro de las partdias aunque si no es necesario podemos dejarlo haciendo lo que examente hace, le llenado del veiculo tiene que aparecer mas fácil la primera vez ósea que se cargue mas rápido pero mientras avanzas que si se cargue pero no sea tan fácil y que al activar el vehiculo actiave una habilidad diferente para cada personaje que solo se activara cuadno active los veiculos, y los veiculos voladores no tiene que seguir la ruta de tierra, si se activa un vehiculo de aire, tiene que salir despegado hacie arriba y tener que sortear obstáculos actia arriba mientras el vehiculo tenga energía y cuando se le acabe que te lleve abajo y te deje ahí, las cargas del veiculo pueden aparecer y reponerle energía al veiculo pero que cuando este activo aparezcan menos a menudo que cuando no lo tiene, porque si no seria tener un vehiculo infinito, aunque es una mecánica que por ahora podemos usarla de pruebas.
+
+para el modo parcur que tendrá una lobby nueva, hay que hacerle mejoras, ya que cuando te dije que crees un segudno piso y que crees árcur para que suba hacia arriba usando el parcur no me referia a que fuera encima de los vehículos, eso no puede tiene que poder subir a los techos de los edificos y eso, como si encima pudiera haber otra carretera que no hay, además tienes que poner todo el marcha y entrabajo para esa parte ya que en este modo, no es posible usar los vehículos y las habilidades algunas no están disponibles porque es parcur solo las que si se puedan usar las poner porque algunas con muy potenciadas y podría volver el modo mas fácil.
+
+para el modo contra reloj arreglar los tiempos, evitar algunos errores y las mejoras en las interfaces que son para todos los modos por si no especifiqué.
+
+para la pantalla de derrota vas arreglar todos los bugx poner una nueva interfaz mejor detallada, mas dinámicas, con buenas animaciones, y con una interfaz mas amigable porque la interfaz que tiene esta literalmente muy llena, muy rara y no pega muchos has todo esos cambios nuevos.
+
+arrgle todos los errores y si es posible usar api para mejorar el juego usalas sin problemas, buscalas en linea y pidemos todo lo necesaio que tengas que ingrar en el proyecto, no tengo problema en que integres todo lo nuevo en el proyecto, para el .exe del juego ósea el instalador, recuerda mejorar mas todavía y mejor la interfaz de descarga del juego pon una imagen de banner cosas que tenga que ver co el juego y su descarga y todo eso.
+
+recuerda que los idiomas tienen que funcionar que algunas cosas no funcionan, si pongo ingles todo el juego todo el juego tiene que cambiarse a idioma igles y si pongo español o otro que pongas dentro del juego que cambi el idioma del juego según el seleccionado, para el apartado de ajustes graficos como te dije que escanearas la pc para verlos recursos que tien también debes poner algo llamado ajustar segund el equipo, como va a leer el equipo pondrá los ajustes que le convenga a ese equipo.
+
+
+recuerda todas las mejoras que pondremos en el juego se que faltaron algunas pero será para una próxima actualización del mismo, a se me olvida pon misiones diarias y semanales, que las diarias cambien todos los días crea muchas miciones que cambien diriamente y que se generes proceduralmente pon misiones durante 6 semanas o sea un mes y medio y que las mesiones semanales si se acumules o sean que mañana no se borren y vengasn otras dirante esas 6 semanas, crea un patron de tienda que se actualice 6 veces una por semana y que haya unos cosméticos que cambien durante esois cambios y hayga algunos que no, en la tienda, y miciones, el pase ponle una nueva interfaz mejorada, cambia algunas reconpensas nuevas y esas cosas, ten en cuenta que durante las partdias las monedas son abundantes y me volvi rico de ahora ahorita resetea todo lo que sea neceario a todas las cuentas, si tenían el pase y todo lo que han conseguir resetealo, retea la base de datos para que todo el mundo empiece desde cero en esta nueva actualización y usa todoas las apis de paginas gratuitas que necesites no de paga que no tengo money. 
+crea un nombre para esta nueva actualización que será grande y traerá muchos cambios sorpresas, vamos adelante.
+
+
+
+
+# SISTEMA DE INTEGRACIÓN DE INTELIGENCIA ARTIFICIAL PARA GENERACIÓN DE MODELOS 3D
+## Evaluación, implementación e integración de APIs gratuitas para Metro Rush Neon City
+
+### 1. OBJETIVO PRINCIPAL
+
+Necesitamos mejorar considerablemente el apartado gráfico de Metro Rush Neon City mediante la sustitución progresiva de los modelos provisionales, bloques geométricos y personajes básicos por modelos 3D reales, detallados, optimizados y visualmente profesionales.
+
+Para conseguirlo, se deberán investigar, evaluar e integrar herramientas de inteligencia artificial especializadas en generación de modelos tridimensionales.
+
+La prioridad será utilizar servicios gratuitos, modelos de código abierto, créditos gratuitos mensuales y APIs que permitan generar o descargar recursos 3D sin tener que pagar suscripciones.
+
+No queremos depender exclusivamente de modelos geométricos básicos. Necesitamos recursos tridimensionales que aporten profundidad, realismo, personalidad y calidad visual al videojuego.
+
+### 2. HERRAMIENTAS DE GENERACIÓN 3D QUE SE DEBEN EVALUAR E INTEGRAR
+
+Se deberán investigar las siguientes cuatro herramientas. No se debe omitir ninguna.
+
+#### A. TRIPO AI
+**Página oficial:** https://www.tripo3d.ai/
+
+**Qué ofrece gratuitamente:**
+- Proporciona créditos gratuitos cada mes.
+- La cantidad puede variar según promociones y condiciones del servicio, con referencias de aproximadamente 300 a 600 créditos.
+- Estos créditos pueden permitir generar aproximadamente entre 10 y 20 modelos, dependiendo del consumo de cada generación.
+- Permite descargar modelos 3D en formato `.glb`.
+- Permite descargar modelos con texturas gratuitas.
+- No requiere necesariamente introducir una tarjeta bancaria para aprovechar el acceso gratuito descrito.
+- Dispone de una API REST oficial para realizar generaciones de modelos mediante código.
+
+**Implementación prevista:**
+
+Investigar su API REST oficial y determinar cómo utilizarla para generar modelos 3D destinados al videojuego.
+
+Evaluar su utilización para:
+- Personajes principales y secundarios.
+- Enemigos y jefes.
+- Drones aliados y enemigos.
+- Vehículos terrestres y voladores.
+- Edificios y estructuras urbanas.
+- Objetos ambientales.
+- Elementos decorativos.
+- Obstáculos y estructuras especiales.
+
+Los modelos descargados deberán pasar por un proceso de optimización antes de incorporarse al videojuego.
+
+#### B. MESHY AI
+**Página oficial:** https://www.meshy.ai/
+
+**Qué ofrece gratuitamente:**
+- Dispone de un plan gratuito.
+- Ofrece aproximadamente 200 créditos mensuales renovables.
+- Permite descargar directamente modelos 3D en formato `.glb`.
+- Incluye texturas PBR (Physically Based Rendering).
+- Permite realizar reducción de polígonos mediante Polygon Reduction.
+- Esta reducción resulta especialmente importante para optimizar los modelos y permitir que el videojuego funcione correctamente a 60 FPS, incluso en equipos con tarjetas gráficas integradas.
+- También dispone de API para automatizar generaciones.
+
+**Implementación prevista:**
+
+Evaluar su utilización como herramienta complementaria a Tripo AI.
+
+Priorizar sus capacidades para:
+- Generación de personajes.
+- Modelos de vehículos.
+- Edificios y escenarios.
+- Objetos tridimensionales.
+- Texturas PBR.
+- Optimización de modelos mediante reducción de polígonos.
+
+Aprovechar especialmente su sistema de Polygon Reduction para evitar que los modelos incorporados aumenten innecesariamente el consumo de recursos del videojuego.
+
+#### C. HUNYUAN 3D — TENCENT / HUGGING FACE SPACES
+**Espacio público:** https://huggingface.co/spaces/tencent/Hunyuan3D-2
+
+**Qué ofrece gratuitamente:**
+- Es un modelo de inteligencia artificial de código abierto y pesos abiertos (open-weights).
+- Permite utilizar sus capacidades de generación sin pagar por una suscripción al modelo.
+- Puede utilizarse desde espacios públicos de Hugging Face.
+- Permite generar modelos 3D a partir de descripciones de texto o imágenes.
+- Permite obtener archivos 3D descargables, incluido el formato `.glb`.
+- Su utilización en espacios públicos está sujeta a la disponibilidad de GPU y a las colas de procesamiento.
+- No depende de una suscripción mensual de créditos como los servicios comerciales anteriores.
+
+**Implementación prevista:**
+
+Investigar la posibilidad de utilizar Hunyuan3D como alternativa gratuita para generar recursos tridimensionales.
+
+Evaluar especialmente:
+- Conversión de imágenes de referencia a modelos 3D.
+- Generación de objetos a partir de descripciones.
+- Creación de elementos ambientales.
+- Generación de estructuras y edificios.
+- Creación de recursos complementarios para los mapas.
+
+También se deberá investigar si existe una alternativa de ejecución local compatible con el hardware disponible y cuáles son sus requisitos reales.
+
+#### D. TRELLIS — MICROSOFT / HUGGING FACE SPACES
+**Espacio público:** https://huggingface.co/spaces/JeffreyXiang/TRELLIS
+
+**Qué ofrece gratuitamente:**
+- Es otro generador tridimensional de código abierto.
+- Se encuentra disponible públicamente mediante Hugging Face Spaces.
+- Permite generar modelos 3D de alta calidad.
+- Permite subir imágenes de referencia, como fotografías de coches, armas, edificios u otros objetos.
+- Permite generar y exportar modelos tridimensionales en formato `.glb`.
+- Su utilización mediante espacios públicos no requiere una suscripción comercial de créditos.
+- Está sujeto a la disponibilidad de GPU, las colas de procesamiento y las condiciones del espacio utilizado.
+
+**Implementación prevista:**
+
+Investigar su utilización como herramienta adicional para generar modelos de alta calidad.
+
+Evaluar su aplicación en:
+- Vehículos.
+- Personajes.
+- Objetos tridimensionales.
+- Edificios.
+- Elementos de los escenarios.
+- Recursos especiales para los mapas.
+
+Priorizar su capacidad para transformar imágenes de referencia en recursos 3D que puedan incorporarse al videojuego.
+
+### 3. SISTEMA DE EVALUACIÓN Y SELECCIÓN DE LAS HERRAMIENTAS
+
+No se deben integrar las cuatro herramientas indiscriminadamente.
+
+Primero se deberá investigar cada una, comprobar sus condiciones actuales y determinar cuáles ofrecen mejores resultados para las necesidades del proyecto.
+
+La evaluación deberá considerar:
+
+1. Calidad visual de los modelos generados.
+2. Cantidad de polígonos.
+3. Calidad de las texturas.
+4. Compatibilidad con Godot y el formato GLB.
+5. Posibilidad de automatizar las generaciones.
+6. Disponibilidad de API REST.
+7. Cantidad de créditos gratuitos.
+8. Límites de generación.
+9. Posibilidad de ejecución local.
+10. Requisitos de GPU y memoria RAM.
+11. Licencias y derechos de utilización comercial de los modelos.
+12. Costes reales de utilización.
+
+**IMPORTANTE:** Las cantidades de créditos, características gratuitas, disponibilidad de APIs y condiciones de uso pueden cambiar. Antes de implementar cualquier servicio, comprobar su documentación oficial y sus condiciones vigentes. No asumir que un espacio público de Hugging Face dispone de una API REST oficial permanente.
+
+### 4. SISTEMA DE DESCARGA, CONVERSIÓN Y OPTIMIZACIÓN
+
+Todos los modelos generados deberán pasar por un procedimiento de preparación antes de incorporarse al videojuego.
+
+El procedimiento deberá incluir:
+
+- Descarga del modelo.
+- Comprobación de integridad del archivo.
+- Conversión a `.glb` cuando sea necesario.
+- Verificación de materiales y texturas.
+- Reducción de polígonos cuando corresponda.
+- Optimización de texturas.
+- Corrección de escala y orientación.
+- Configuración de materiales PBR.
+- Preparación de colisiones.
+- Configuración de esqueletos y animaciones cuando corresponda.
+- Pruebas de rendimiento dentro del motor.
+
+No se deben incorporar modelos pesados sin optimizarlos previamente.
+
+Se deberá mantener una biblioteca organizada de recursos 3D para evitar duplicaciones y facilitar futuras actualizaciones.
+
+### 5. INTEGRACIÓN EN METRO RUSH NEON CITY
+
+Los modelos generados se utilizarán para sustituir progresivamente los elementos provisionales del videojuego.
+
+Prioridades de sustitución:
+
+**Personajes:**
+- Modelos tridimensionales completos.
+- Diferentes apariencias y proporciones.
+- Esqueletos compatibles con animaciones.
+- Animaciones de carrera, salto, caída, deslizamiento y habilidades.
+- Modelos visualmente diferenciados.
+
+**Vehículos:**
+- Modelos tridimensionales reales.
+- Vehículos terrestres.
+- Vehículos voladores.
+- Animaciones de activación y desactivación.
+- Efectos visuales asociados.
+
+**Enemigos y jefes:**
+- Modelos exclusivos.
+- Diferencias visuales entre rangos.
+- Animaciones de ataque.
+- Animaciones de desplazamiento.
+- Efectos de habilidades y transformaciones.
+
+**Drones:**
+- Modelos aliados y enemigos.
+- Animaciones de vuelo.
+- Sistemas de ataque y asistencia.
+- Efectos visuales.
+
+**Mapas y escenarios:**
+- Edificios tridimensionales.
+- Estructuras urbanas.
+- Fábricas.
+- Túneles.
+- Instalaciones subterráneas.
+- Plataformas.
+- Elementos ambientales.
+- Objetos interactivos.
+
+La intención es abandonar progresivamente la apariencia de escenarios construidos únicamente con bloques y conseguir entornos tridimensionales más elaborados.
+
+### 6. REQUISITOS DE RENDIMIENTO
+
+La calidad visual no debe perjudicar el rendimiento.
+
+El videojuego deberá mantener una arquitectura optimizada que permita utilizar modelos detallados sin provocar caídas excesivas de FPS.
+
+Implementar, cuando corresponda:
+
+- LOD (Level of Detail).
+- Instanciación de objetos repetidos.
+- Occlusion Culling.
+- Frustum Culling.
+- Texture Atlases.
+- Compresión de texturas.
+- Reducción de polígonos.
+- Carga y descarga de recursos según la distancia.
+- Reutilización de recursos.
+- Optimización de materiales y shaders.
+
+Los modelos deberán adaptarse a los recursos detectados en el equipo del jugador.
+
+### 7. AUTORIZACIÓN PARA DESCARGAS E INTEGRACIONES
+
+Antes de comenzar cualquier descarga o instalación que sea necesaria, se deberá identificar qué herramienta, API, dependencia o recurso se pretende incorporar.
+
+Se deberá presentar:
+
+- Nombre del servicio o herramienta.
+- Función dentro del videojuego.
+- Justificación de su utilización.
+- Enlace oficial.
+- Requisitos de instalación.
+- Espacio aproximado necesario.
+- Consumo de RAM y GPU cuando corresponda.
+- Condiciones de uso.
+- Confirmación de que no requiere pagos obligatorios.
+
+Si es necesario descargar herramientas, instalar dependencias, incorporar SDK, configurar APIs o añadir modelos externos, solicitar mi autorización antes de realizar las acciones que lo requieran.
+
+No utilizar servicios de pago, pruebas gratuitas que exijan una futura suscripción ni APIs que generen cargos automáticos.
+
+### 8. RESULTADO ESPERADO
+
+El resultado debe ser un sistema de generación e integración de recursos 3D que permita mejorar Metro Rush Neon City de forma progresiva y profesional.
+
+Las cuatro herramientas que deberán investigarse son:
+
+1. Tripo AI.
+2. Meshy AI.
+3. Hunyuan 3D de Tencent.
+4. TRELLIS de Microsoft.
+
+No se debe omitir ninguna de ellas durante la evaluación.
+
+La prioridad es conseguir modelos 3D de buena calidad, preferiblemente gratuitos, descargables, optimizados y compatibles con el motor del videojuego.
+
+**No quiero una simple investigación teórica:** quiero que se determine cuáles herramientas conviene utilizar, cómo se pueden integrar realmente y cómo se incorporarán sus resultados al proyecto sin romper los sistemas existentes.
+
+El objetivo final es transformar progresivamente la presentación visual de Metro Rush Neon City, sustituyendo los recursos provisionales por modelos tridimensionales profesionales, conservando un rendimiento adecuado y sin generar gastos económicos.

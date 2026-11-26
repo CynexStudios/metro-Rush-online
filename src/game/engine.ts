@@ -6,10 +6,13 @@ import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
 import { audioEngine } from './audio';
 import {
   BOSSES,
+  DEFAULT_FREE_RUN_CONFIG,
   DISTRICTS,
   DRONE_CODEX,
+  getBoosterById,
   getBossById,
   getCharacterById,
+  getCompanionDroneById,
   getDistrictById,
   getStoryChapterByNum,
   getUnlockedBossIds,
@@ -17,34 +20,44 @@ import {
   isBossUnlocked,
   LIVE_EVENTS,
   ORDERED_BOSS_IDS,
+  pickWeightedRandomDistrict,
+  TUTORIAL_TOPICS,
 } from './data';
 import { getEffectiveVehicleStats, getReviveCostForAttempt } from './economy';
 import {
+  ExtraGlbId,
   getCachedGlbForStyle,
   preloadAllExtraGlbModels,
   preloadGlbModel,
 } from './gltfAssets';
-import { createProceduralTextures, ProceduralTexturePack } from './materials';
+import {
+  AtmosphericSkyDome,
+  createAtmosphericSkyDome,
+  createProceduralTextures,
+  ProceduralTexturePack,
+} from './materials';
 import {
   animateCharacterRig,
+  animateRemoteRunnerRig,
   applyBossPhaseVisuals,
   buildBossLaserBeam,
   buildBossModel,
   buildBossProjectile,
   buildBossShockwave,
+  buildBossSupportDrone,
   buildBuildingLOD,
   buildCaptureDroneModel,
   buildCharacterRig,
   buildCityObstacleModel,
   buildCollectibleModel,
-  buildCompanionFoxModel,
+  buildCompanionDroneGroup,
   buildCyberTrainModel,
+  buildDefeatStudioStage,
   buildDistrictLandmark,
   buildEnemyModel,
   buildFighterJetModel,
   buildHangarLobbyGroup,
   buildHelicopterModel,
-  buildHoverBikePickupModel,
   buildHoverCarModel,
   buildParkourModule,
   buildPursuerModel,
@@ -62,16 +75,22 @@ import {
 import { RunTelemetry } from './storage';
 import {
   ActiveRunContext,
+  BossAttackStage,
   BossId,
+  BossSupportDroneRole,
   DistrictDef,
   DistrictId,
   DynamicEventType,
   EnemyClass,
+  FreeRunConfig,
   GameMode,
+  GamepadBrand,
   HudSnapshot,
+  ModeLaunchConfig,
   MultiplayerPlayerTelemetry,
   ParkourAction,
   PCSettings,
+  PlayerModelStyle,
   PlayerSaveData,
   RevivePromptState,
   TimeOfDay,
@@ -212,7 +231,13 @@ type ObstacleKind =
   | 'swingBar'
   | 'balanceBeam'
   | 'highConduit'
-  | 'sectorGate';
+  | 'sectorGate'
+  | 'ventTrap'
+  | 'subwayCar'
+  | 'ceilingLaser'
+  | 'boatHazard'
+  | 'robotArmHazard'
+  | 'cogHazard';
 
 interface ObstacleEntity {
   id: number;
@@ -260,7 +285,17 @@ interface EnemyEntity {
 }
 
 interface CollectibleEntity {
-  kind: 'coin' | 'gem' | 'shield' | 'magnet' | 'slowmo' | 'secret' | 'empCell' | 'talisman';
+  kind:
+    | 'coin'
+    | 'gem'
+    | 'shield'
+    | 'magnet'
+    | 'slowmo'
+    | 'secret'
+    | 'empCell'
+    | 'talisman'
+    | 'battery'
+    | 'timeOrb';
   mesh: THREE.Object3D;
   x: number;
   y: number;
@@ -296,13 +331,31 @@ interface BossHazardEntity {
   hit: boolean;
 }
 
+interface BossSupportDroneEntity {
+  id: number;
+  role: BossSupportDroneRole;
+  mesh: THREE.Group;
+  offsetAngle: number;
+  radius: number;
+  heightOffset: number;
+  fireTimer: number;
+  disabledTimer: number;
+}
+
 interface RemoteRunnerEntity {
   userId: string;
   username: string;
+  characterId: string;
+  modelStyle: PlayerModelStyle;
   mesh: THREE.Group;
   targetX: number;
   targetY: number;
   targetZ: number;
+  action: ParkourAction;
+  rotY: number;
+  isRidingVehicle: boolean;
+  vehicleId: VehicleId;
+  abilityActive: boolean;
   paused: boolean;
   finished: boolean;
 }
@@ -325,6 +378,7 @@ interface ChunkData {
   enemies: EnemyEntity[];
   collectibles: CollectibleEntity[];
   abyssGaps: AbyssGap[];
+  tunnelProps?: THREE.Object3D[];
 }
 
 interface ParticleItem {
@@ -354,6 +408,7 @@ export class MetroRushEngine {
   private onHudUpdate: (hud: HudSnapshot) => void;
   private onRunComplete: (telemetry: RunTelemetry) => void;
   private onConsumableEvent?: (kind: ConsumableEventKind, amount: number) => void;
+  private onMpAbilityInterference?: (payload: { abilityCategory: string; characterId: string }) => void;
 
   private isSoftwareGl = false;
   private renderer!: THREE.WebGLRenderer;
@@ -361,6 +416,8 @@ export class MetroRushEngine {
   private camera!: THREE.PerspectiveCamera;
   private composer: EffectComposer | null = null;
   private bloomPass: UnrealBloomPass | null = null;
+  private skyDome!: AtmosphericSkyDome;
+  private defeatStageGroup!: THREE.Group;
 
   private textures!: ProceduralTexturePack;
   private hemiLight!: THREE.HemisphereLight;
@@ -378,10 +435,13 @@ export class MetroRushEngine {
   private shieldShatterVfx: { group: THREE.Group; timer: number; maxTimer: number }[] = [];
   private sectorGates: { group: THREE.Group; timer: number }[] = [];
   private recentDistrictIds: DistrictId[] = [];
+  private recentObstacleKinds: ObstacleKind[] = [];
+  private recentLaneHistory: number[] = [];
   private pursuerMesh!: THREE.Group;
   private contactShadow!: THREE.Mesh;
   private grappleLine!: THREE.Line;
   private bossMesh!: THREE.Group;
+  private bossSupportDrones: BossSupportDroneEntity[] = [];
   private activeBossId: BossId = 'titan_drone';
 
   private weatherPoints!: THREE.Points;
@@ -477,9 +537,11 @@ export class MetroRushEngine {
   private abilityActiveTimer = 0;
   private hasShield = false;
   private shieldCooldown = 0;
-  private readonly SHIELD_COOLDOWN_MAX = 16.0;
+  private readonly SHIELD_COOLDOWN_MAX = 14.0;
   private magnetTimer = 0;
   private vehicleTimer = 0;
+  private vehicleEnergy = 0;
+  private readonly VEHICLE_MAX_ENERGY = 100;
   private invulnTimer = 0;
   private phaseThroughTimer = 0;
   private lowGravTimer = 0;
@@ -529,15 +591,20 @@ export class MetroRushEngine {
   private liveTalismansHeld = 0;
   private liveReviveTokensHeld = 0;
   private revivePrompt: RevivePromptState | null = null;
-  private reviveCountdownTimer = 10.0;
+  private reviveCountdownTimer = 20.0;
   private randomBossActive = false;
   private randomBossTimer = 0;
   private nextRandomBossDist = 1650;
   private inBossArena = false;
   private storyChapterNum = 1;
   private storyObjectiveText: string | null = null;
+  private storyDialogueSpeaker: string | null = null;
+  private storyDialogueText: string | null = null;
+  private storyDialogueTimer = 0;
   private storyBeatIndex = 0;
   private activeVehicleStats = getEffectiveVehicleStats('hover_bike', 0);
+  private activeModeConfig: ModeLaunchConfig | null = null;
+  private activeFreeRunConfig: FreeRunConfig = { ...DEFAULT_FREE_RUN_CONFIG };
   private activeRunContext: ActiveRunContext = {
     mode: 'endless',
     districtId: 'downtown',
@@ -546,39 +613,63 @@ export class MetroRushEngine {
     storyChapter: null,
   };
 
-  // Dynamic Events & Bosses
+  // Dynamic Events, Time Trial & Bosses
   private nextEventDistance = 420;
   private activeDynamicEvent: DynamicEventType | null = null;
   private dynamicEventTimer = 0;
   private powerOutageActive = false;
   private timeRemaining: number | null = null;
+  private timeTrialBonusGain = 0;
+  private timeTrialGainNonce = 0;
+  private timeTrialBestSec = 0;
+  private timeTrialMilestoneNext = 45;
   private targetDistance: number | null = null;
   private bossHp = 0;
   private bossMaxHp = 16;
   private bossPhase = 1;
   private bossPhaseIndex = 0;
+  private bossTotalPhases = 3;
   private bossPhaseHp = 0;
   private bossPhaseMaxHp = 4;
   private bossPhaseName = '';
+  private bossHasShieldGate = false;
+  private bossShieldHp = 0;
+  private bossShieldMaxHp = 0;
+  private bossVulnerableSec = 0;
   private bossIntroTitle = '';
   private bossIntroQuote = '';
   private bossIntroTimer = 0;
   private bossPhaseTransitionTimer = 0;
   private bossEntranceTimer = 0;
-  private bossEmpSpawnTimer = 4.0;
+  private bossEmpSpawnTimer = 7.4;
   private bossDefeatedId: BossId | null = null;
   private bossDistance: number | null = null;
   private bossAttackTimer = 5.5;
+  private bossTelegraphStage: BossAttackStage | null = null;
   private bossWarningText: string | null = null;
+  private bossRadarWarningLanes: number[] = [];
+  private bossRadarCountdownSec = 0;
+  private bossRadarWarningMaxSec = 1.5;
+  private bossRadarMeshes: THREE.Mesh[] = [];
   private bossHazards: BossHazardEntity[] = [];
   private aerialThreats: AerialThreatEntity[] = [];
   private nextAerialSpawnDist = 360;
   private difficultyStage = 1;
   private diveQueued = false;
   private lastAction: ParkourAction = 'idle';
+  private vehicleFlightHeight = 0;
+  private vehicleActivationCount = 0;
+  private abilityToastText: string | null = null;
+  private abilityToastTimer = 0;
+  private abilityToastNonce = 0;
+  private abilityRestrictedReason: string | null = null;
 
-  // Cyber Companion Fox & Rain Event (Limited, probability/cooldown gated)
-  private companionFox: { group: THREE.Group; mixer: THREE.AnimationMixer | null; dispose: () => void } | null = null;
+  // Callable Companion Drone & Rain Event
+  private companionDrone: { group: THREE.Group; droneId: string; dispose: () => void } | null = null;
+  private companionDroneActiveTimer = 0;
+  private companionDroneCooldown = 0;
+  private companionDroneMaxCooldown = 28;
+  private companionDronePulseTimer = 0;
   private rainEventState: { active: boolean; timer: number; cooldownTimer: number; dropTimer: number } = {
     active: false,
     timer: 0,
@@ -586,16 +677,20 @@ export class MetroRushEngine {
     dropTimer: 0,
   };
 
-  // Interactive Tutorial Mode
+  // Interactive Tutorial Mode (8 Topics + Easy Endless Mode)
   private tutorialStepIndex = 0;
   private tutorialStepCount = 0;
   private tutorialStepText: string | null = null;
   private tutorialStepProgress = 0;
+  private tutorialTopicIndex = 0;
+  private tutorialPaused = false;
+  private tutorialEndlessMode = false;
 
   // Multiplayer Ghosts & Non-Blocking Pause
   private isMultiplayer = false;
   private localMpUserId: string | null = null;
   private mpPausedOverlay = false;
+  private chromaticWarningTimer = 0;
   private remoteRunners = new Map<string, RemoteRunnerEntity>();
   private latestMpPlayers: MultiplayerPlayerTelemetry[] = [];
 
@@ -618,12 +713,19 @@ export class MetroRushEngine {
   private benchmarkResolver: ((avgMs: number) => void) | null = null;
   private benchmarkSamples: number[] = [];
 
-  // Input
+  // Input & Gamepad Detection
   private heldKeys = new Set<string>();
   private justPressed = new Set<string>();
   private mouseOffsetX = 0;
   private mouseOffsetY = 0;
   private prevGamepadButtons: boolean[] = [];
+  private gamepadBrand: GamepadBrand = 'none';
+  private gamepadConnected = false;
+  private gamepadName: string | null = null;
+  private gamepadToastText: string | null = null;
+  private gamepadToastType: 'connected' | 'disconnected' | null = null;
+  private gamepadToastNonce = 0;
+  private gamepadToastTimer = 0;
 
   constructor(
     container: HTMLElement,
@@ -651,12 +753,12 @@ export class MetroRushEngine {
     this.initRendererAndScene();
     this.initSharedAssets();
     this.rebuildPlayerCharacter();
-    this.rebuildCompanionFox();
+    this.rebuildCompanionDrone();
     this.applyTimeOfDayVisuals(this.currentPeriod);
     this.resetWorldForTitle();
     this.bindInputs();
 
-    // Background-preload extra GLBs (Fox, Helmet, IonDrive, CesiumMilkTruck) + Soldier runner
+    // Background-preload extra GLBs + Soldier runner
     preloadAllExtraGlbModels();
     void preloadGlbModel('soldier').catch(() => {});
 
@@ -839,6 +941,14 @@ export class MetroRushEngine {
         }
       }
     }
+    if (this.rimLight) {
+      this.rimLight.intensity =
+        this.settings.lightingQuality === 'cinematic' ? 0.62 : 0.34;
+    }
+    if (this.playerPointLight) {
+      this.playerPointLight.intensity =
+        this.settings.lightingQuality === 'cinematic' ? 1.15 : 0.72;
+    }
     if (this.bloomPass) {
       this.bloomPass.enabled =
         !this.isSoftwareGl &&
@@ -847,6 +957,12 @@ export class MetroRushEngine {
         this.settings.graphicsQuality !== 'very_low';
       this.bloomPass.strength =
         this.settings.graphicsQuality === 'ultra' ? 0.32 : 0.24;
+    }
+    if (this.cloudsMesh) {
+      this.cloudsMesh.visible =
+        !this.district?.isUnderground &&
+        this.settings.volumetrics &&
+        !this.settings.reduceVisualEffects;
     }
   }
 
@@ -959,6 +1075,13 @@ export class MetroRushEngine {
     this.captureDroneMesh = buildCaptureDroneModel('#ef4444');
     this.captureDroneMesh.visible = false;
     this.scene.add(this.captureDroneMesh);
+
+    this.skyDome = createAtmosphericSkyDome();
+    this.scene.add(this.skyDome.mesh);
+
+    this.defeatStageGroup = buildDefeatStudioStage('#ef4444');
+    this.defeatStageGroup.visible = false;
+    this.scene.add(this.defeatStageGroup);
 
     this.rebuildHangarLobby();
     this.rebuildVehicleShowcase();
@@ -1167,7 +1290,7 @@ export class MetroRushEngine {
     const prevVehicle = this.save.selectedVehicleId ?? 'hover_bike';
     const prevPaints = JSON.stringify(this.save.vehiclePaints ?? {});
     const prevOwnedVeh = (this.save.ownedVehicles ?? []).join(',');
-    const prevPet = this.save.equippedPetId ?? null;
+    const prevDrone = this.save.equippedDroneId ?? null;
     const prevDistrict = this.save.selectedDistrictId;
     const prevTexQuality = this.settings.textureQuality;
     const prevRefl = this.settings.reflections;
@@ -1205,8 +1328,8 @@ export class MetroRushEngine {
       this.rebuildPlayerCharacter();
       this.rebuildVehicleShowcase();
       this.rebuildHangarLobby();
-    } else if (prevPet !== (save.equippedPetId ?? null)) {
-      this.rebuildCompanionFox();
+    } else if (prevDrone !== (save.equippedDroneId ?? null)) {
+      this.rebuildCompanionDrone();
     }
 
     if (prevUseCustomBoss !== (save.useCustomBossModels ?? true)) {
@@ -1261,25 +1384,30 @@ export class MetroRushEngine {
     this.playerRig.root.visible =
       this.phase !== 'title' || (this.showcaseMode !== 'garage' && this.showcaseMode !== 'boss');
     this.scene.add(this.playerRig.root);
-    this.rebuildCompanionFox();
+    this.rebuildCompanionDrone();
   }
 
-  private rebuildCompanionFox(): void {
-    if (this.companionFox) {
-      this.scene.remove(this.companionFox.group);
-      this.companionFox.dispose();
-      this.companionFox = null;
+  private rebuildCompanionDrone(): void {
+    if (this.companionDrone) {
+      this.scene.remove(this.companionDrone.group);
+      this.companionDrone.dispose();
+      this.companionDrone = null;
     }
-    if (this.save.equippedPetId !== 'fox_cyber') {
+    const droneId = this.save.equippedDroneId;
+    if (!droneId) {
       return;
     }
+    const droneDef = getCompanionDroneById(droneId);
+    if (!droneDef) return;
+    this.companionDroneMaxCooldown = droneDef.cooldownSec;
     const char = getCharacterById(this.save.selectedCharacterId);
-    const fox = buildCompanionFoxModel(char.colors.accent);
-    fox.group.position.set(-4.8, 0.35, 1.2);
-    fox.group.visible =
-      this.phase === 'playing' || (this.phase === 'title' && this.showcaseMode === 'title');
-    this.scene.add(fox.group);
-    this.companionFox = fox;
+    const built = buildCompanionDroneGroup(droneId, char.colors.accent);
+    built.group.position.set(-1.6, 1.55, 0.5);
+    built.group.visible =
+      (this.phase === 'playing' && this.companionDroneActiveTimer > 0) ||
+      (this.phase === 'title' && this.showcaseMode === 'title');
+    this.scene.add(built.group);
+    this.companionDrone = { group: built.group, droneId, dispose: built.dispose };
   }
 
   private getLaneCount(): 3 | 5 {
@@ -1408,7 +1536,23 @@ export class MetroRushEngine {
     return wave * blend;
   }
 
+  private clearBossSupportDrones(): void {
+    for (const d of this.bossSupportDrones) {
+      this.scene.remove(d.mesh);
+      d.mesh.traverse((obj) => {
+        if ((obj as THREE.Mesh).isMesh) {
+          const m = obj as THREE.Mesh;
+          m.geometry.dispose();
+          if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+          else m.material.dispose();
+        }
+      });
+    }
+    this.bossSupportDrones = [];
+  }
+
   private clearDynamicThreats(): void {
+    this.clearBossSupportDrones();
     for (const a of this.aerialThreats) {
       this.scene.remove(a.mesh);
       a.mesh.traverse((obj) => {
@@ -1434,7 +1578,19 @@ export class MetroRushEngine {
       });
     }
     this.bossHazards = [];
+    this.clearBossRadarWarnings();
     this.bossWarningText = null;
+    this.bossTelegraphStage = null;
+  }
+
+  private clearBossRadarWarnings(): void {
+    for (const m of this.bossRadarMeshes) {
+      this.scene.remove(m);
+      m.geometry.dispose();
+    }
+    this.bossRadarMeshes = [];
+    this.bossRadarWarningLanes = [];
+    this.bossRadarCountdownSec = 0;
   }
 
   public enableMultiplayer(localUserId: string | null): void {
@@ -1444,6 +1600,28 @@ export class MetroRushEngine {
     if (!localUserId) {
       this.clearRemoteRunners();
     }
+  }
+
+  public setMpInterferenceCallback(
+    cb: ((payload: { abilityCategory: string; characterId: string }) => void) | null,
+  ): void {
+    this.onMpAbilityInterference = cb ?? undefined;
+  }
+
+  public applyRemoteInterference(payload: {
+    fromUsername: string;
+    characterId: string;
+    abilityCategory: string;
+  }): void {
+    if (this.phase !== 'playing' || !this.isMultiplayer) return;
+    this.chromaticWarningTimer = 2.0;
+    this.momentum = Math.max(5, this.momentum - 8);
+    if (!this.settings.reduceCameraMotion) {
+      this.cameraShake = Math.max(this.cameraShake, 0.24);
+    }
+    this.showSubtitle(
+      `[INTERFERENCIA MP · ${payload.fromUsername}]: Pulso ${payload.abilityCategory.replace('_', ' ')}`,
+    );
   }
 
   private clearRemoteRunners(): void {
@@ -1478,17 +1656,28 @@ export class MetroRushEngine {
       let rr = this.remoteRunners.get(p.userId);
       const targetWorldZ = -p.distance;
       const targetWorldY = this.getRoadElevationY(targetWorldZ) + p.y;
-      if (!rr) {
-        const mesh = buildRemoteRunnerGhost(p.username, palette[idx % palette.length]);
+      const accentColor = palette[idx % palette.length];
+      if (!rr || rr.characterId !== p.characterId) {
+        if (rr) {
+          this.scene.remove(rr.mesh);
+        }
+        const mesh = buildRemoteRunnerGhost(p.username, accentColor, p.characterId);
         mesh.position.set(p.x, targetWorldY, targetWorldZ);
         this.scene.add(mesh);
         rr = {
           userId: p.userId,
           username: p.username,
+          characterId: p.characterId,
+          modelStyle: p.modelStyle ?? 'procedural',
           mesh,
           targetX: p.x,
           targetY: targetWorldY,
           targetZ: targetWorldZ,
+          action: p.action,
+          rotY: p.rotY ?? 0,
+          isRidingVehicle: Boolean(p.isRidingVehicle),
+          vehicleId: p.vehicleId ?? 'hover_bike',
+          abilityActive: Boolean(p.abilityActive),
           paused: p.paused,
           finished: p.finished,
         };
@@ -1497,6 +1686,11 @@ export class MetroRushEngine {
         rr.targetX = p.x;
         rr.targetY = targetWorldY;
         rr.targetZ = targetWorldZ;
+        rr.action = p.action;
+        rr.rotY = p.rotY ?? 0;
+        rr.isRidingVehicle = Boolean(p.isRidingVehicle);
+        rr.vehicleId = p.vehicleId ?? 'hover_bike';
+        rr.abilityActive = Boolean(p.abilityActive);
         rr.paused = p.paused;
         rr.finished = p.finished;
       }
@@ -1527,6 +1721,11 @@ export class MetroRushEngine {
     score: number;
     action: ParkourAction;
     paused: boolean;
+    modelStyle: PlayerModelStyle;
+    rotY: number;
+    isRidingVehicle: boolean;
+    vehicleId: VehicleId;
+    abilityActive: boolean;
   } {
     return {
       x: Number(this.playerX.toFixed(2)),
@@ -1537,6 +1736,11 @@ export class MetroRushEngine {
       score: Math.floor(this.score),
       action: this.lastAction,
       paused: this.mpPausedOverlay,
+      modelStyle: this.save.modelStyle ?? 'procedural',
+      rotY: 0,
+      isRidingVehicle: this.vehicleTimer > 0,
+      vehicleId: this.save.selectedVehicleId ?? 'hover_bike',
+      abilityActive: this.abilityActiveTimer > 0,
     };
   }
 
@@ -1571,6 +1775,9 @@ export class MetroRushEngine {
           ? 0.78
           : 0.88;
 
+    const skyCol = new THREE.Color(cfg.skyHex).lerp(new THREE.Color(d.colors.skyTop), 0.38);
+    const fogCol = new THREE.Color(cfg.fogHex).lerp(new THREE.Color(d.colors.fog), 0.4);
+
     if (d.isUnderground) {
       this.scene.background = new THREE.Color(d.colors.skyTop);
       this.scene.fog = new THREE.FogExp2(d.colors.fog, fogBase * 1.18 * volMult);
@@ -1578,14 +1785,6 @@ export class MetroRushEngine {
       this.hemiLight.intensity = 0.48;
       this.renderer.toneMappingExposure = 0.9;
     } else {
-      const skyCol = new THREE.Color(cfg.skyHex).lerp(
-        new THREE.Color(d.colors.skyTop),
-        0.38,
-      );
-      const fogCol = new THREE.Color(cfg.fogHex).lerp(
-        new THREE.Color(d.colors.fog),
-        0.4,
-      );
       this.scene.background = skyCol;
       this.scene.fog = new THREE.FogExp2(fogCol, fogBase * volMult);
       this.dirLight.color.set(cfg.sunHex);
@@ -1594,12 +1793,34 @@ export class MetroRushEngine {
       this.renderer.toneMappingExposure = cfg.exposure;
     }
 
+    if (this.skyDome) {
+      this.skyDome.mesh.visible = !d.isUnderground && this.phase !== 'gameover';
+      this.skyDome.uniforms.uTopColor.value.copy(skyCol);
+      this.skyDome.uniforms.uHorizonColor.value.copy(fogCol);
+      this.skyDome.uniforms.uSunColor.value.set(cfg.sunHex);
+      this.skyDome.uniforms.uSunDir.value
+        .set(cfg.sunPos[0], cfg.sunPos[1], cfg.sunPos[2])
+        .normalize();
+      this.skyDome.uniforms.uNeonTint.value.set(d.colors.primaryNeon);
+      this.skyDome.uniforms.uCloudDensity.value = this.settings.volumetrics
+        ? this.weather === 'clear'
+          ? 0.35
+          : 0.68
+        : 0.0;
+      const isNight =
+        safePeriod === 'night' || safePeriod === 'midnight' || safePeriod === 'dusk';
+      this.skyDome.uniforms.uNightFactor.value = isNight ? 1.0 : safePeriod === 'dawn' ? 0.45 : 0.08;
+      this.skyDome.uniforms.uStormFactor.value =
+        this.weather === 'storm' ? 1.0 : this.weather === 'rain' || this.weather === 'cyberfog' ? 0.45 : 0.0;
+      this.skyDome.uniforms.uExposure.value = cfg.exposure;
+    }
+
     if (this.textures) {
       this.textures.buildingMat.emissiveIntensity = 0.46 * cfg.emissiveMult;
       this.textures.neonTrimMat.emissiveIntensity = 0.62 * cfg.emissiveMult;
       this.textures.secTrimMat.emissiveIntensity = 0.62 * cfg.emissiveMult;
     }
-    this.cloudsMesh.visible = !d.isUnderground && this.settings.volumetrics;
+    this.cloudsMesh.visible = !d.isUnderground && this.settings.volumetrics && !this.settings.reduceVisualEffects;
   }
 
   private applyDistrictTheme(d: DistrictDef, spawnGate = false): void {
@@ -1618,13 +1839,24 @@ export class MetroRushEngine {
       );
     }
 
-    if (this.settings.randomWeather) {
-      const weathers: WeatherType[] = ['clear', 'rain', 'cyberfog', 'storm', 'sunset'];
-      this.weather = d.isUnderground
-        ? 'cyberfog'
-        : weathers[Math.floor(Math.random() * weathers.length)];
+    if (this.mode === 'freerun') {
+      if (this.activeFreeRunConfig.randomWeather && !d.isUnderground) {
+        const weathers: WeatherType[] = ['clear', 'rain', 'cyberfog', 'storm', 'sunset'];
+        this.weather = weathers[Math.floor(Math.random() * weathers.length)];
+      } else {
+        this.weather = d.isUnderground ? 'cyberfog' : this.activeFreeRunConfig.weather;
+      }
     } else {
-      this.weather = this.settings.dynamicWeather ? d.defaultWeather : 'clear';
+      const weathers: WeatherType[] = ['clear', 'rain', 'cyberfog', 'storm', 'sunset'];
+      if (this.settings.randomWeather || this.settings.dynamicWeather) {
+        this.weather = d.isUnderground
+          ? 'cyberfog'
+          : Math.random() < 0.55
+            ? d.defaultWeather
+            : weathers[Math.floor(Math.random() * weathers.length)];
+      } else {
+        this.weather = 'clear';
+      }
     }
     const targetPeriod: TimePeriod = this.resolveTimePeriod(
       this.settings.timeOfDay,
@@ -1732,6 +1964,11 @@ export class MetroRushEngine {
     if (this.hangarGroup) {
       this.hangarGroup.visible = this.showcaseMode !== 'city';
     }
+    if (this.defeatStageGroup) this.defeatStageGroup.visible = false;
+    this.weatherPoints.visible = this.weather !== 'clear' && !this.settings.reduceVisualEffects;
+    this.skyTrafficMesh.visible = true;
+    this.contactShadow.visible = true;
+
     this.playerRig.root.position.set(0, 0.14, 0);
     this.playerRig.root.rotation.set(0, Math.PI, 0);
     this.playerRig.root.visible =
@@ -1744,11 +1981,35 @@ export class MetroRushEngine {
     this.bossMesh.visible = this.showcaseMode === 'boss';
   }
 
+  private spawnBossSupportDrones(count: number, bossDef: ReturnType<typeof getBossById>): void {
+    this.clearBossSupportDrones();
+    const roles: BossSupportDroneRole[] = ['scout', 'bomber', 'shield', 'relay'];
+    const clampedCount = Math.max(1, Math.min(4, count));
+    for (let i = 0; i < clampedCount; i++) {
+      const role = roles[i % roles.length];
+      const mesh = buildBossSupportDrone(role, bossDef.primaryColor, bossDef.secondaryColor);
+      mesh.position.copy(this.bossMesh.position);
+      this.scene.add(mesh);
+      this.bossSupportDrones.push({
+        id: this.obstacleSeq++,
+        role,
+        mesh,
+        offsetAngle: (i * Math.PI * 2) / clampedCount,
+        radius: 3.4 + (i % 2) * 1.1,
+        heightOffset: i % 2 === 0 ? 0.6 : -0.45,
+        fireTimer: 2.4 + i * 1.15,
+        disabledTimer: 0,
+      });
+    }
+    audioEngine.playBossDroneSpawn();
+  }
+
   private beginBossEncounter(bossId: BossId, isAmbush: boolean): void {
     const bossDef = getBossById(bossId);
     this.swapBossModel(bossId);
     this.inBossArena = true;
     this.clearNearbyHazards(130);
+    this.clearBossRadarWarnings();
 
     this.bossPhaseIndex = 0;
     this.bossPhase = 1;
@@ -1756,11 +2017,21 @@ export class MetroRushEngine {
     const totalHp = phasesCfg.reduce((acc, p) => acc + p.hpUnits, 0);
     const p1 = phasesCfg[0];
 
+    this.bossTotalPhases = phasesCfg.length;
     this.bossMaxHp = totalHp;
     this.bossHp = totalHp;
     this.bossPhaseMaxHp = p1.hpUnits;
     this.bossPhaseHp = p1.hpUnits;
     this.bossPhaseName = p1.name;
+    this.bossHasShieldGate = Boolean(bossDef.hasShieldGate && (p1.shieldMaxHp ?? 0) > 0);
+    this.bossShieldMaxHp = p1.shieldMaxHp ?? 0;
+    this.bossShieldHp = this.bossShieldMaxHp;
+    this.bossVulnerableSec = 0;
+    const shieldSphere = this.bossMesh.userData.shieldSphere as THREE.Mesh | undefined;
+    if (shieldSphere) {
+      shieldSphere.visible = this.bossHasShieldGate && this.bossShieldHp > 0;
+    }
+
     this.bossIntroTitle = `${bossDef.name} — ${bossDef.introTitle}`;
     this.bossIntroQuote = bossDef.introQuote;
     this.bossIntroTimer = 3.2;
@@ -1768,11 +2039,13 @@ export class MetroRushEngine {
     this.bossEntranceTimer = 3.2;
     this.bossEmpSpawnTimer = p1.empSpawnSec;
     this.bossAttackTimer = p1.attackCooldownSec + 3.2;
+    this.bossTelegraphStage = 'prep';
     this.bossDistance = this.getBossCombatDistance(bossId);
     this.bossWarningText = null;
     this.bossMesh.position.set(0, this.getRoadElevationY(this.playerZ - 58) + 4.8, this.playerZ - 58);
     this.bossMesh.visible = true;
     applyBossPhaseVisuals(this.bossMesh, bossDef, 0);
+    this.spawnBossSupportDrones(p1.supportDroneCount ?? 1, bossDef);
 
     audioEngine.setBossPhase(1);
     audioEngine.setMusicMode('boss');
@@ -1791,6 +2064,10 @@ export class MetroRushEngine {
   }
 
   public restartRun(): void {
+    if (this.activeModeConfig) {
+      this.startRunWithConfig(this.activeModeConfig);
+      return;
+    }
     const ctx = this.activeRunContext;
     this.startRun(
       ctx.mode,
@@ -1801,12 +2078,71 @@ export class MetroRushEngine {
     );
   }
 
+  public startRunWithConfig(config: ModeLaunchConfig): void {
+    this.activeModeConfig = { ...config };
+    if (config.freeRunConfig) {
+      this.activeFreeRunConfig = { ...config.freeRunConfig };
+    }
+    const unlocked = this.save.unlockedDistricts ?? ['downtown'];
+    const useRandom =
+      config.randomCity ||
+      (config.mode === 'freerun' && this.activeFreeRunConfig.randomCity);
+    let chosenDistrict: DistrictId = config.districtId ?? this.save.selectedDistrictId;
+    if (useRandom) {
+      chosenDistrict = pickWeightedRandomDistrict(unlocked, this.district.id);
+    } else if (config.mode === 'freerun') {
+      chosenDistrict = this.activeFreeRunConfig.districtId ?? chosenDistrict;
+    }
+    this.startRun(
+      config.mode,
+      chosenDistrict,
+      config.eventId ?? null,
+      config.bossId ?? undefined,
+      config.storyChapter ?? undefined,
+      config.difficulty,
+    );
+  }
+
+  public setTutorialTopic(index: number): void {
+    this.tutorialTopicIndex = Math.max(0, Math.min(TUTORIAL_TOPICS.length - 1, index));
+    this.emitHud(this.lastAction);
+  }
+
+  public advanceTutorialTopic(delta = 1): void {
+    const next = this.tutorialTopicIndex + delta;
+    if (next >= TUTORIAL_TOPICS.length) {
+      if (delta >= 50 || this.tutorialEndlessMode) {
+        audioEngine.playVictory();
+        this.finishRun(true);
+        return;
+      }
+      this.tutorialEndlessMode = true;
+      this.tutorialPaused = false;
+      this.tutorialStepText = 'Modo Práctica Infinita Fácil — sin jefes ni presión';
+      this.showBanner('PRÁCTICA INFINITA DESBLOQUEADA');
+      this.showSubtitle('Todos los módulos dominados. Practica libremente o pulsa Finalizar.');
+      audioEngine.playTutorialChime();
+      this.emitHud(this.lastAction);
+      return;
+    }
+    this.tutorialTopicIndex = Math.max(0, next);
+    audioEngine.playTutorialChime();
+    this.emitHud(this.lastAction);
+  }
+
+  public toggleTutorialPause(): void {
+    if (this.mode !== 'tutorial') return;
+    this.tutorialPaused = !this.tutorialPaused;
+    this.emitHud(this.lastAction);
+  }
+
   public startRun(
     mode: GameMode,
     districtId: DistrictId,
     eventId: string | null = null,
     bossOverride?: BossId,
     storyChapterOverride?: number,
+    difficultyOverride?: PCSettings['difficulty'],
   ): void {
     audioEngine.unlock();
     audioEngine.setBossPhase(1);
@@ -1819,10 +2155,15 @@ export class MetroRushEngine {
     this.activeEventId = eventId;
     this.phase = 'playing';
     this.mpPausedOverlay = false;
+    this.chromaticWarningTimer = 0;
     this.clearDynamicThreats();
     this.clearTransientVfx();
     if (this.hangarGroup) this.hangarGroup.visible = false;
     if (this.captureDroneMesh) this.captureDroneMesh.visible = false;
+    if (this.defeatStageGroup) this.defeatStageGroup.visible = false;
+    this.weatherPoints.visible = this.weather !== 'clear' && !this.settings.reduceVisualEffects;
+    this.skyTrafficMesh.visible = true;
+    this.contactShadow.visible = true;
 
     const chapterNum = storyChapterOverride ?? this.save.storyChapter ?? 1;
     const chapterDef = getStoryChapterByNum(chapterNum);
@@ -1834,6 +2175,8 @@ export class MetroRushEngine {
           : districtId;
     const distDef = getDistrictById(effectiveDistrictId);
     this.recentDistrictIds = [distDef.id];
+    this.recentObstacleKinds = [];
+    this.recentLaneHistory = [];
     this.applyDistrictTheme(distDef, false);
     this.clearChunks();
 
@@ -1846,14 +2189,18 @@ export class MetroRushEngine {
     };
 
     const char = getCharacterById(this.save.selectedCharacterId);
+    const booster = getBoosterById(this.save.equippedBoosterId);
     const speedSkill = this.save.skillLevels['momentum_mastery'] ?? 0;
+    const effectiveDiff =
+      difficultyOverride ??
+      (mode === 'freerun' ? this.activeFreeRunConfig.difficulty : this.settings.difficulty);
     const diffMult =
       mode === 'tutorial'
         ? 0.82
-        : this.settings.difficulty === 'easy'
+        : effectiveDiff === 'easy'
           ? 0.88
-          : this.settings.difficulty === 'hard'
-            ? 1.15
+          : effectiveDiff === 'hard'
+            ? 1.14
             : 1.0;
 
     const vid = this.save.selectedVehicleId ?? 'hover_bike';
@@ -1863,14 +2210,17 @@ export class MetroRushEngine {
     this.revivesUsedRun = 0;
     this.talismanUsedRun = false;
     this.revivePrompt = null;
-    this.reviveCountdownTimer = 10.0;
+    this.reviveCountdownTimer = 20.0;
     this.liveTalismansHeld = this.save.talismans ?? 0;
     this.liveReviveTokensHeld = this.save.reviveTokens ?? 0;
 
     this.playerRig.root.visible = true;
     if (this.vehicleShowcase) this.vehicleShowcase.group.visible = false;
-    if (this.companionFox) {
-      this.companionFox.group.visible = this.save.equippedPetId === 'fox_cyber';
+    this.companionDroneActiveTimer = 0;
+    this.companionDroneCooldown = 0;
+    this.companionDronePulseTimer = 0;
+    if (this.companionDrone) {
+      this.companionDrone.group.visible = false;
     }
 
     this.playerX = 0;
@@ -1905,11 +2255,21 @@ export class MetroRushEngine {
     this.cameraShake = 0;
     this.floodSlowTimer = 0;
     this.diveQueued = false;
+    this.vehicleFlightHeight = 0;
+    this.vehicleActivationCount = 0;
+    this.abilityToastText = null;
+    this.abilityToastTimer = 0;
+    this.abilityRestrictedReason =
+      mode === 'parkour' && !char.activeAllowedInParkour
+        ? (char.parkourRestrictionReason ?? 'Habilidad restringida en Parkour Extremo')
+        : null;
 
+    const boosterSpeedMult = 1 + (booster?.speedBonusPct ?? 0) / 100;
     this.baseSpeed =
       (22.5 + char.stats.speed * 0.65 + speedSkill * 0.95) *
       this.district.speedBonus *
-      diffMult;
+      diffMult *
+      boosterSpeedMult;
     if (mode === 'freerun') this.baseSpeed *= 0.88;
     if (mode === 'timetrial' || mode === 'bosschase') this.baseSpeed *= 1.08;
     this.forwardSpeed = this.baseSpeed;
@@ -1925,13 +2285,17 @@ export class MetroRushEngine {
     this.abilityCharge = 100;
     this.abilityActiveTimer = 0;
     // Valkyrie Passive: Blindaje Reactivo (starts every run with active Shield!)
-    this.hasShield = char.id === 'valkyrie';
+    this.hasShield =
+      char.id === 'valkyrie' ||
+      (mode === 'freerun' && this.activeFreeRunConfig.specialRule === 'shield_blitz');
     this.shieldCooldown = 0;
     this.magnetTimer = 0;
     this.vehicleTimer = 0;
+    this.vehicleEnergy = char.id === 'valkor' ? 25 : 0;
     this.invulnTimer = 0;
     this.phaseThroughTimer = 0;
-    this.lowGravTimer = 0;
+    this.lowGravTimer =
+      mode === 'freerun' && this.activeFreeRunConfig.specialRule === 'low_gravity' ? 9999 : 0;
 
     this.combo = 1;
     this.maxCombo = 1;
@@ -1957,7 +2321,12 @@ export class MetroRushEngine {
     this.fiveLaneDistanceRun = 0;
     this.highlights = [];
 
-    this.nextEventDistance = 420;
+    this.nextEventDistance =
+      mode === 'freerun' && this.activeFreeRunConfig.eventFrequency === 'off'
+        ? 999999
+        : mode === 'freerun' && this.activeFreeRunConfig.eventFrequency === 'high'
+          ? 240
+          : 420;
     this.nextAerialSpawnDist = 420;
     this.activeDynamicEvent = null;
     this.dynamicEventTimer = 0;
@@ -1970,7 +2339,13 @@ export class MetroRushEngine {
       dropTimer: 0,
     };
 
-    // Interactive Tutorial State
+    // Interactive Tutorial State (8 Topics + Easy Endless Practice)
+    this.tutorialTopicIndex = Math.max(
+      0,
+      Math.min(TUTORIAL_TOPICS.length - 1, this.save.tutorialStepSaved ?? 0),
+    );
+    this.tutorialPaused = false;
+    this.tutorialEndlessMode = false;
     this.tutorialStepIndex = 0;
     this.tutorialStepCount = 0;
     this.tutorialStepProgress = 0;
@@ -1987,7 +2362,10 @@ export class MetroRushEngine {
     this.randomBossActive = false;
     this.randomBossTimer = 0;
     this.inBossArena = false;
-    this.nextRandomBossDist = 1650 + Math.random() * 450;
+    this.nextRandomBossDist =
+      mode === 'freerun' && !this.activeFreeRunConfig.bossesEnabled
+        ? 999999
+        : 1650 + Math.random() * 450;
 
     const evt = eventId ? LIVE_EVENTS.find((e) => e.id === eventId) : null;
     const candidateBossId =
@@ -2008,12 +2386,18 @@ export class MetroRushEngine {
       this.beginBossEncounter(chosenBossId, false);
     } else {
       this.swapBossModel(chosenBossId);
+      const bDef = getBossById(chosenBossId);
       this.bossHp = 0;
       this.bossPhase = 1;
       this.bossPhaseIndex = 0;
+      this.bossTotalPhases = bDef.phasesConfig.length;
       this.bossPhaseHp = 0;
       this.bossPhaseMaxHp = 3;
       this.bossPhaseName = '';
+      this.bossHasShieldGate = false;
+      this.bossShieldHp = 0;
+      this.bossShieldMaxHp = 0;
+      this.bossVulnerableSec = 0;
       this.bossIntroTitle = '';
       this.bossIntroQuote = '';
       this.bossIntroTimer = 0;
@@ -2025,15 +2409,28 @@ export class MetroRushEngine {
 
     this.storyChapterNum = chapterDef.chapter;
     this.storyObjectiveText = mode === 'story' ? chapterDef.objectiveLabel : null;
+    this.storyDialogueSpeaker =
+      mode === 'story' && chapterDef.dialogueBeats[0]
+        ? chapterDef.dialogueBeats[0].speaker
+        : null;
+    this.storyDialogueText =
+      mode === 'story' && chapterDef.dialogueBeats[0]
+        ? chapterDef.dialogueBeats[0].text
+        : null;
+    this.storyDialogueTimer = mode === 'story' ? 5.5 : 0;
     this.storyBeatIndex = 0;
 
-    this.timeRemaining = mode === 'timetrial' ? 68 : null;
+    this.timeTrialBonusGain = 0;
+    this.timeTrialGainNonce = 0;
+    this.timeTrialBestSec = this.save.timeTrialBestByCity?.[distDef.id] ?? 0;
+    this.timeTrialMilestoneNext = 45;
+    this.timeRemaining = mode === 'timetrial' ? 45 : null;
     this.targetDistance = evt
       ? evt.targetDistance
       : mode === 'story'
         ? chapterDef.targetDistance
         : mode === 'timetrial'
-          ? 1400
+          ? null
           : mode === 'parkour'
             ? 1400
             : null;
@@ -2041,17 +2438,21 @@ export class MetroRushEngine {
     if (mode !== 'bosschase') {
       this.showBanner(
         mode === 'tutorial'
-          ? 'TUTORIAL INTERACTIVO — ENTRENAMIENTO PARKOUR'
-          : mode === 'story'
-            ? `CAPÍTULO ${chapterDef.chapter}: ${chapterDef.title.toUpperCase()}`
-            : mode === 'parkour'
-              ? `PARKOUR EXTREMO 2 PISOS · ${this.district.name.toUpperCase()}`
-              : evt
-                ? `${evt.title.toUpperCase()} · ${evt.modifierTag}`
-                : `${this.district.name.toUpperCase()} · ${this.district.subtitle}`,
+          ? 'ACADEMIA NEON — 8 MÓDULOS TÁCTICOS'
+          : mode === 'timetrial'
+            ? `CONTRARRELOJ SUPERVIVENCIA · ${this.district.name.toUpperCase()}`
+            : mode === 'story'
+              ? `CAPÍTULO ${chapterDef.chapter}: ${chapterDef.title.toUpperCase()}`
+              : mode === 'parkour'
+                ? `PARKOUR EXTREMO 2 PISOS · ${this.district.name.toUpperCase()}`
+                : evt
+                  ? `${evt.title.toUpperCase()} · ${evt.modifierTag}`
+                  : `${this.district.name.toUpperCase()} · ${this.district.subtitle}`,
       );
       if (mode === 'tutorial') {
-        this.showSubtitle('Sigue cada paso en pantalla para dominar el parkour en Neon City.');
+        this.showSubtitle('Domina los 8 módulos interactivos y continúa en Práctica Infinita.');
+      } else if (mode === 'timetrial') {
+        this.showSubtitle('¡Empiezas con 45s! Recoge Orbes Crono verdes (+4.5s) y supera tu marca.');
       } else if (mode === 'story' && chapterDef.dialogueBeats[0]) {
         this.showSubtitle(
           `[${chapterDef.dialogueBeats[0].speaker}]: ${chapterDef.dialogueBeats[0].text}`,
@@ -2102,6 +2503,7 @@ export class MetroRushEngine {
     this.bossIntroTimer = 0;
     this.bossPhaseTransitionTimer = 0;
     this.mpPausedOverlay = false;
+    this.chromaticWarningTimer = 0;
     this.clearDynamicThreats();
     this.clearTransientVfx();
     this.clearRemoteRunners();
@@ -2110,6 +2512,10 @@ export class MetroRushEngine {
     this.isSlowMo = false;
     this.powerOutageActive = false;
     if (this.captureDroneMesh) this.captureDroneMesh.visible = false;
+    if (this.defeatStageGroup) this.defeatStageGroup.visible = false;
+    this.weatherPoints.visible = this.weather !== 'clear' && !this.settings.reduceVisualEffects;
+    this.skyTrafficMesh.visible = true;
+    this.contactShadow.visible = true;
     audioEngine.setBossPhase(1);
     audioEngine.setMusicMode('lobby');
     audioEngine.setMusicParams({ slowMo: false, intensity: 0.28, danger: 0 });
@@ -2238,13 +2644,19 @@ export class MetroRushEngine {
     walkR.position.set(walkCenter, 0.17, -CHUNK_LEN / 2);
     group.add(walkL, walkR);
 
-    // Animated Ocean / Harbor Strip
-    if ((this.district.id === 'beach' || this.district.id === 'cyber_port') && this.textures.waterMat) {
+    // Animated Ocean / Harbor Strip (Beach right coast, Dont Drown both sides)
+    if ((this.district.id === 'beach' || this.district.id === 'dont_drown') && this.textures.waterMat) {
       const oceanR = new THREE.Mesh(this.oceanGeo, this.textures.waterMat);
       oceanR.position.set(walkCenter + 26, -0.7 + this.getRoadElevationY(zStart - CHUNK_LEN / 2), -CHUNK_LEN / 2);
       group.add(oceanR);
+      if (this.district.id === 'dont_drown') {
+        const oceanL = new THREE.Mesh(this.oceanGeo, this.textures.waterMat);
+        oceanL.position.set(-(walkCenter + 26), -0.7 + this.getRoadElevationY(zStart - CHUNK_LEN / 2), -CHUNK_LEN / 2);
+        group.add(oceanL);
+      }
     }
 
+    const tunnelProps: THREE.Object3D[] = [];
     // Enclosed Subterranean Metro Tunnel Vault for Underground district
     if (this.district.isUnderground) {
       const tunnelSeg = buildUndergroundTunnelSegment(
@@ -2253,6 +2665,11 @@ export class MetroRushEngine {
         this.getTunnelRadius(),
       );
       tunnelSeg.position.set(0, this.getRoadElevationY(zStart - CHUNK_LEN / 2), 0);
+      tunnelSeg.traverse((obj) => {
+        if (obj.name === 'ventFan' || obj.name === 'emergBeacon') {
+          tunnelProps.push(obj);
+        }
+      });
       group.add(tunnelSeg);
     }
 
@@ -2286,6 +2703,19 @@ export class MetroRushEngine {
         const bd = 14;
         const bx = side * (bOffset + bw * 0.5);
 
+        let glbVariant: ExtraGlbId | undefined;
+        if (!this.district.isUnderground && this.settings.modelQuality !== 'low') {
+          if (this.district.id === 'the_creation' || this.district.id === 'industrial') {
+            glbVariant = (s + (side > 0 ? 1 : 0)) % 2 === 0 ? 'kenney_building_industrial' : 'kenney_hangar';
+          } else if (this.district.id === 'skyfall_towers' || this.district.id === 'skyline' || this.district.id === 'future') {
+            glbVariant = (s + (side > 0 ? 1 : 0)) % 2 === 0 ? 'kenney_skyscraper_a' : 'kenney_skyscraper_b';
+          } else if (this.district.id === 'dont_drown') {
+            glbVariant = (s + (side > 0 ? 1 : 0)) % 2 === 0 ? 'kenney_hangar' : 'kenney_building_commercial';
+          } else {
+            glbVariant = (s + (side > 0 ? 1 : 0)) % 2 === 0 ? 'kenney_building_commercial' : 'kenney_skyscraper_a';
+          }
+        }
+
         const lod = buildBuildingLOD(
           this.unitBoxGeo,
           bw,
@@ -2294,6 +2724,7 @@ export class MetroRushEngine {
           this.textures,
           side,
           lodSwitch,
+          glbVariant,
         );
         lod.position.set(bx, bGroundY, bz);
         group.add(lod);
@@ -2322,7 +2753,7 @@ export class MetroRushEngine {
     if (
       this.district.id === 'future' ||
       this.district.id === 'oldcity' ||
-      this.district.id === 'crimson_metropolis'
+      this.district.id === 'skyfall_towers'
     ) {
       for (let a = 0; a < 2; a++) {
         const az = -a * 28 - 14;
@@ -2336,7 +2767,7 @@ export class MetroRushEngine {
         archGlow.position.set(0, ay + 6.2, az);
         group.add(archGlow);
       }
-    } else if ((this.district.id === 'downtown' || this.district.id === 'obsidian_citadel') && chunkIdx % 2 === 0) {
+    } else if ((this.district.id === 'downtown' || this.district.id === 'the_creation') && chunkIdx % 2 === 0) {
       const vy = this.getRoadElevationY(zStart - 26);
       const viaduct = new THREE.Mesh(this.unitBoxGeo, this.textures.darkMetalMat);
       viaduct.scale.set(roadW + 10.5, 1.3, 4.2);
@@ -2404,6 +2835,7 @@ export class MetroRushEngine {
       enemies,
       collectibles,
       abyssGaps,
+      tunnelProps,
     });
   }
 
@@ -2931,7 +3363,7 @@ export class MetroRushEngine {
         const isMoving =
           this.activeDynamicEvent === 'express_train' || Math.random() < 0.44;
         const isCargo =
-          (this.district.id === 'industrial' || this.district.id === 'cyber_port') &&
+          (this.district.id === 'industrial' || this.district.id === 'the_creation' || this.district.id === 'dont_drown') &&
           !isMoving;
         const tx = this.getLaneX(trainLane);
         const tzLocal = -30;
@@ -3119,39 +3551,21 @@ export class MetroRushEngine {
         this.spawnCityHazard(0, -28, zStart, group, obstacles, reservations);
         this.spawnBarrier('lowBarrier', centerLane, -28, zStart, group, obstacles, reservations);
 
-        if (Math.random() < 0.52) {
-          const vid = this.save.selectedVehicleId ?? 'hover_bike';
-          const vDef = getVehicleById(vid);
-          const vPaint = this.save.vehiclePaints?.[vid] || vDef.defaultPaint;
+        if (Math.random() < 0.72) {
           const bLane = laneCount - 1;
           const bX = this.getLaneX(bLane);
-          const bGy = this.getRoadElevationY(zStart - 44);
-          const bikePickup = buildHoverBikePickupModel(
-            this.district.colors.primaryNeon,
-            vid,
-            vPaint,
+          const bWorldZ = zStart - 44;
+          const bGy = this.getRoadElevationY(bWorldZ);
+          this.spawnCollectible(
+            'battery',
+            bX,
+            bGy + 1.1,
+            bWorldZ,
+            group,
+            collectibles,
+            obstacles,
+            enemies,
           );
-          bikePickup.position.set(bX, bGy + 1.15, -44);
-          group.add(bikePickup);
-          obstacles.push({
-            id: this.obstacleSeq++,
-            kind: 'hoverBikePickup',
-            mesh: bikePickup,
-            lane: bLane,
-            baseX: bX,
-            baseY: 1.15,
-            groundY: bGy,
-            x: bX,
-            y: bGy + 1.15,
-            z: zStart - 44,
-            width: 1.8,
-            height: 1.8,
-            length: 2.0,
-            speedZ: 0,
-            phase: 0,
-            hit: false,
-            interacted: false,
-          });
           reservations.push({
             lane: bLane,
             zMin: -46,
@@ -3250,7 +3664,7 @@ export class MetroRushEngine {
         const carX = this.getLaneX(carLane);
         const carGy = this.getRoadElevationY(zStart - 28);
         const useMilkTruck =
-          (this.district.id === 'downtown' || this.district.id === 'oldcity' || this.district.id === 'beach' || this.district.id === 'cyber_port') &&
+          (this.district.id === 'downtown' || this.district.id === 'oldcity' || this.district.id === 'beach' || this.district.id === 'dont_drown') &&
           Math.random() < 0.45;
 
         if (useMilkTruck) {
@@ -3344,22 +3758,27 @@ export class MetroRushEngine {
         if (this.isLaneZoneClear(reservations, pLane, -28, 1.5, 2.0)) {
           const roll = Math.random();
           const talismanChance =
-            this.activeDynamicEvent === 'talisman_signal' ? 0.34 : 0.07;
-          // Reduce shield availability ~50%, and suppress while already shielded or on cooldown
-          const shieldCutoff =
-            this.hasShield || this.shieldCooldown > 0
-              ? talismanChance + 0.04
-              : talismanChance + 0.13;
-          const kind =
+            this.activeDynamicEvent === 'talisman_signal' ? 0.24 : 0.04;
+          const powerupMult =
+            this.mode === 'freerun' && this.activeFreeRunConfig.powerupFrequency === 'scarce'
+              ? 0.45
+              : this.mode === 'freerun' && this.activeFreeRunConfig.powerupFrequency === 'high'
+                ? 1.35
+                : 0.72;
+          // Reduced shield rate + suppressed while already active or on cooldown
+          const shieldAllowed = !this.hasShield && this.shieldCooldown <= 0;
+          const kind: CollectibleEntity['kind'] =
             roll < talismanChance
               ? 'talisman'
-              : roll < shieldCutoff
-                ? 'shield'
-                : roll < 0.56
-                  ? 'magnet'
-                  : roll < 0.82
-                    ? 'slowmo'
-                    : 'secret';
+              : roll < talismanChance + 0.28 * powerupMult
+                ? 'battery'
+                : shieldAllowed && roll < talismanChance + 0.4 * powerupMult
+                  ? 'shield'
+                  : roll < 0.62
+                    ? 'magnet'
+                    : roll < 0.84
+                      ? 'slowmo'
+                      : 'secret';
           const pWorldZ = zStart - 28;
           const pGy = this.getRoadElevationY(pWorldZ);
           this.spawnCollectible(
@@ -3382,6 +3801,42 @@ export class MetroRushEngine {
             impassableGround: false,
           });
         }
+      }
+    }
+
+    // Time Trial Survival Mode: Guarantee periodic Time Orbs (+4.5s) on clear lanes (§5)
+    if (this.mode === 'timetrial' && chunkIdx % 2 === 0) {
+      const orbLane = (chunkIdx + 1) % laneCount;
+      const orbLocalZ = -19;
+      if (this.isLaneZoneClear(reservations, orbLane, orbLocalZ, 1.6, 1.6)) {
+        const orbWorldZ = zStart + orbLocalZ;
+        this.spawnCollectible(
+          'timeOrb',
+          this.getLaneX(orbLane),
+          this.getRoadElevationY(orbWorldZ) + 1.15,
+          orbWorldZ,
+          group,
+          collectibles,
+          obstacles,
+          enemies,
+        );
+      }
+    } else if (Math.random() < 0.34) {
+      // Regular Battery spawn on safe free lane to fuel vehicle activation (§11)
+      const batLane = (chunkIdx + 2) % laneCount;
+      const batLocalZ = -16;
+      if (this.isLaneZoneClear(reservations, batLane, batLocalZ, 1.4, 1.4)) {
+        const batWorldZ = zStart + batLocalZ;
+        this.spawnCollectible(
+          'battery',
+          this.getLaneX(batLane),
+          this.getRoadElevationY(batWorldZ) + 1.05,
+          batWorldZ,
+          group,
+          collectibles,
+          obstacles,
+          enemies,
+        );
       }
     }
 
@@ -3480,60 +3935,33 @@ export class MetroRushEngine {
     reservations: TrackReservation[],
   ): void {
     const d = this.district.id;
-    const roll = Math.random();
-    let kind: ObstacleKind = 'lowBarrier';
+    let pool: ObstacleKind[];
 
-    if (d === 'industrial' || d === 'cyber_port') {
-      kind =
-        roll < 0.28
-          ? 'containerStack'
-          : roll < 0.56
-            ? 'steamPipe'
-            : roll < 0.8
-              ? 'turbineHazard'
-              : 'maintBot';
-    } else if (d === 'underground' || d === 'obsidian_citadel') {
-      kind =
-        roll < 0.34
-          ? 'laserGrid'
-          : roll < 0.66
-            ? 'blastDoor'
-            : 'maintBot';
-    } else if (d === 'future' || d === 'crimson_metropolis') {
-      kind =
-        roll < 0.34
-          ? 'laserGrid'
-          : roll < 0.66
-            ? 'electricFloor'
-            : 'movingBarrier';
+    if (d === 'dont_drown') {
+      pool = ['boatHazard', 'floodZone', 'movingBarrier', 'turbineHazard', 'highGate'];
+    } else if (d === 'the_creation') {
+      pool = ['robotArmHazard', 'cogHazard', 'laserGrid', 'blastDoor', 'maintBot'];
+    } else if (d === 'industrial') {
+      pool = ['containerStack', 'steamPipe', 'cogHazard', 'robotArmHazard', 'turbineHazard'];
+    } else if (d === 'underground') {
+      pool = ['ventTrap', 'subwayCar', 'ceilingLaser', 'laserGrid', 'blastDoor', 'maintBot'];
+    } else if (d === 'future' || d === 'skyfall_towers') {
+      pool = ['laserGrid', 'electricFloor', 'movingBarrier', 'ceilingLaser', 'highGate'];
     } else if (d === 'beach') {
-      kind =
-        roll < 0.35
-          ? 'floodZone'
-          : roll < 0.6
-            ? 'milkTruck'
-            : roll < 0.82
-              ? 'movingBarrier'
-              : 'lowBarrier';
+      pool = ['floodZone', 'milkTruck', 'movingBarrier', 'lowBarrier', 'highGate'];
     } else if (d === 'oldcity') {
-      kind =
-        roll < 0.32
-          ? 'scaffolding'
-          : roll < 0.6
-            ? 'rubble'
-            : roll < 0.8
-              ? 'milkTruck'
-              : 'lowBarrier';
+      pool = ['scaffolding', 'rubble', 'milkTruck', 'lowBarrier', 'highGate'];
     } else {
-      kind =
-        roll < 0.32
-          ? 'lowBarrier'
-          : roll < 0.62
-            ? 'highGate'
-            : roll < 0.82
-              ? 'milkTruck'
-              : 'movingBarrier';
+      pool = ['lowBarrier', 'highGate', 'milkTruck', 'movingBarrier', 'laserGrid'];
     }
+
+    // Anti-repeat ring buffer (§10): filter out last 2 spawned kinds when possible
+    const recentSet = new Set(this.recentObstacleKinds.slice(-2));
+    const filtered = pool.filter((k) => !recentSet.has(k));
+    const choices = filtered.length > 0 ? filtered : pool;
+    const kind = choices[Math.floor(Math.random() * choices.length)] ?? 'lowBarrier';
+    this.recentObstacleKinds.push(kind);
+    if (this.recentObstacleKinds.length > 4) this.recentObstacleKinds.shift();
 
     if (kind === 'lowBarrier' || kind === 'highGate') {
       this.spawnBarrier(kind, lane, zLocal, zStart, group, obstacles, reservations);
@@ -3601,6 +4029,12 @@ export class MetroRushEngine {
       rubble: { w: 1.9, h: 0.95, l: 1.4 },
       maintBot: { w: 1.3, h: 1.35, l: 1.2 },
       turbineHazard: { w: 2.3, h: 2.5, l: 0.7 },
+      ventTrap: { w: 2.5, h: 0.85, l: 2.4 },
+      subwayCar: { w: 2.5, h: 2.45, l: 5.8 },
+      ceilingLaser: { w: 2.5, h: 2.6, l: 0.8 },
+      boatHazard: { w: 2.35, h: 1.5, l: 4.1 },
+      robotArmHazard: { w: 2.3, h: 2.3, l: 1.5 },
+      cogHazard: { w: 2.35, h: 2.3, l: 0.9 },
     };
     const dim = dims[kind] ?? { w: 2.2, h: 1.2, l: 1.0 };
 
@@ -3626,8 +4060,11 @@ export class MetroRushEngine {
     });
 
     const isSlideUnder =
-      kind === 'steamPipe' || kind === 'scaffolding' || kind === 'turbineHazard';
-    const isWalkRoof = kind === 'containerStack';
+      kind === 'steamPipe' ||
+      kind === 'scaffolding' ||
+      kind === 'turbineHazard' ||
+      kind === 'ceilingLaser';
+    const isWalkRoof = kind === 'containerStack' || kind === 'subwayCar';
     if (kind === 'movingBarrier') {
       for (let l = 0; l < laneCount; l++) {
         reservations.push({
@@ -4009,11 +4446,54 @@ export class MetroRushEngine {
     window.addEventListener('resize', this.onResize);
   }
 
+  private detectGamepadBrand(id: string): GamepadBrand {
+    const lower = id.toLowerCase();
+    if (lower.includes('xbox') || lower.includes('xinput') || lower.includes('045e')) return 'xbox';
+    if (lower.includes('dualshock') || lower.includes('dualsense') || lower.includes('playstation') || lower.includes('sony') || lower.includes('054c')) return 'playstation';
+    if (lower.includes('nintendo') || lower.includes('switch') || lower.includes('joy-con') || lower.includes('pro controller') || lower.includes('057e')) return 'nintendo';
+    return 'generic';
+  }
+
   private pollGamepad(): void {
-    if (!this.settings.gamepadEnabled) return;
     const pads = navigator.getGamepads?.();
-    if (!pads || !pads[0]) return;
-    const pad = pads[0];
+    const pad = pads ? Array.from(pads).find((p): p is Gamepad => Boolean(p && p.connected)) : undefined;
+
+    if (!pad) {
+      if (this.gamepadConnected) {
+        this.gamepadConnected = false;
+        this.gamepadToastText = `Mando desconectado${this.gamepadName ? ` (${this.gamepadName})` : ''}`;
+        this.gamepadToastType = 'disconnected';
+        this.gamepadToastNonce++;
+        this.gamepadToastTimer = 3.2;
+        this.gamepadBrand = 'none';
+        this.gamepadName = null;
+        this.prevGamepadButtons = [];
+        this.emitHud(this.lastAction);
+      }
+      return;
+    }
+
+    if (!this.gamepadConnected) {
+      const brand = this.detectGamepadBrand(pad.id || '');
+      const brandLabel =
+        brand === 'xbox'
+          ? 'Xbox'
+          : brand === 'playstation'
+            ? 'PlayStation'
+            : brand === 'nintendo'
+              ? 'Nintendo Switch'
+              : 'Genérico';
+      this.gamepadConnected = true;
+      this.gamepadBrand = brand;
+      this.gamepadName = pad.id ? pad.id.slice(0, 42) : brandLabel;
+      this.gamepadToastText = `Mando ${brandLabel} conectado`;
+      this.gamepadToastType = 'connected';
+      this.gamepadToastNonce++;
+      this.gamepadToastTimer = 3.2;
+      this.emitHud(this.lastAction);
+    }
+
+    if (!this.settings.gamepadEnabled) return;
     const btns = pad.buttons.map((b) => b.pressed);
     const justBtn = (idx: number) => btns[idx] && !this.prevGamepadButtons[idx];
 
@@ -4021,6 +4501,12 @@ export class MetroRushEngine {
     if (justBtn(1)) this.justPressed.add(this.settings.keybindings.slide);
     if (justBtn(2)) this.justPressed.add(this.settings.keybindings.interact);
     if (justBtn(3)) this.justPressed.add(this.settings.keybindings.ability);
+    if (justBtn(8) || justBtn(12)) {
+      this.justPressed.add(this.settings.keybindings.activateVehicle || 'KeyV');
+    }
+    if (justBtn(9) || justBtn(13)) {
+      this.justPressed.add(this.settings.keybindings.callDrone || 'KeyG');
+    }
     if (justBtn(14) || (pad.axes[0] < -0.65 && !this.prevGamepadButtons[98])) {
       this.justPressed.add(this.settings.keybindings.left);
     }
@@ -4206,10 +4692,15 @@ export class MetroRushEngine {
   private updateDefeatScene(dt: number): void {
     this.elapsedTotal += dt;
     const hoverY = this.playerY + 2.75 + Math.sin(this.elapsedTotal * 3.4) * 0.14;
+    if (this.defeatStageGroup) {
+      this.defeatStageGroup.visible = true;
+      this.defeatStageGroup.position.set(this.playerX, this.playerY, this.playerZ);
+    }
+    const anchorX = this.playerX - 1.35;
     if (this.captureDroneMesh) {
       this.captureDroneMesh.visible = true;
       this.captureDroneMesh.position.set(
-        THREE.MathUtils.damp(this.captureDroneMesh.position.x, this.playerX, 6, dt),
+        THREE.MathUtils.damp(this.captureDroneMesh.position.x, anchorX, 6, dt),
         THREE.MathUtils.damp(this.captureDroneMesh.position.y, hoverY, 6, dt),
         THREE.MathUtils.damp(this.captureDroneMesh.position.z, this.playerZ, 6, dt),
       );
@@ -4220,30 +4711,30 @@ export class MetroRushEngine {
       }
     }
 
-    // Struggling suspended runner gripped beneath Capture Drone (§4)
+    // Struggling suspended runner gripped beneath Capture Drone left-center (§13)
     this.playerRig.root.position.set(
-      this.playerX,
+      anchorX,
       hoverY - 2.15 + Math.sin(this.elapsedTotal * 6.5) * 0.05,
       this.playerZ,
     );
     this.playerRig.root.rotation.y = THREE.MathUtils.damp(
       this.playerRig.root.rotation.y,
-      Math.PI * 0.15,
+      Math.PI * 0.16,
       4,
       dt,
     );
     animateCharacterRig(this.playerRig, 'captureStruggle', this.elapsedTotal, 0, 0, dt);
 
-    // Smooth cinematic camera orbit framing the 3D Capture Drone on the left/center
-    const orbitAngle = Math.sin(this.elapsedTotal * 0.45) * 0.45 + 0.35;
-    const camX = this.playerX + Math.sin(orbitAngle) * 5.2 - 1.25;
-    const camY = hoverY - 0.15 + Math.cos(this.elapsedTotal * 0.6) * 0.25;
-    const camZ = this.playerZ + Math.cos(orbitAngle) * 5.2;
+    // Smooth cinematic camera framing on isolated studio plinth
+    const orbitAngle = Math.sin(this.elapsedTotal * 0.45) * 0.35 + 0.28;
+    const camX = this.playerX + Math.sin(orbitAngle) * 5.0;
+    const camY = hoverY - 0.1 + Math.cos(this.elapsedTotal * 0.6) * 0.2;
+    const camZ = this.playerZ + Math.cos(orbitAngle) * 5.4;
     this.camera.position.x = THREE.MathUtils.damp(this.camera.position.x, camX, 4.5, dt);
     this.camera.position.y = THREE.MathUtils.damp(this.camera.position.y, camY, 4.5, dt);
     this.camera.position.z = THREE.MathUtils.damp(this.camera.position.z, camZ, 4.5, dt);
-    this.camera.lookAt(this.playerX - 0.85, hoverY - 1.0, this.playerZ);
-    this.playerPointLight.position.set(this.playerX, hoverY + 0.8, this.playerZ + 1.5);
+    this.camera.lookAt(anchorX + 0.65, hoverY - 1.0, this.playerZ);
+    this.playerPointLight.position.set(anchorX, hoverY + 1.0, this.playerZ + 1.8);
   }
 
   private updateTitleScene(dt: number): void {
@@ -4253,17 +4744,25 @@ export class MetroRushEngine {
       const turntable = this.hangarGroup.getObjectByName('hangarTurntable');
       if (turntable) turntable.rotation.y += dt * 0.28;
     }
-    if (this.companionFox) {
-      const petEquipped = this.save.equippedPetId === 'fox_cyber';
-      this.companionFox.group.visible = petEquipped && this.showcaseMode === 'title';
-      if (petEquipped) {
-        this.companionFox.group.position.set(
-          -1.85,
-          0.02 + Math.abs(Math.sin(this.elapsedTotal * 3.5)) * 0.04,
-          0.6,
+    if (this.gamepadToastTimer > 0) {
+      this.gamepadToastTimer = Math.max(0, this.gamepadToastTimer - dt);
+      if (this.gamepadToastTimer <= 0) {
+        this.gamepadToastText = null;
+        this.gamepadToastType = null;
+      }
+    }
+    if (this.companionDrone) {
+      const droneEquipped = Boolean(this.save.equippedDroneId);
+      this.companionDrone.group.visible = droneEquipped && this.showcaseMode === 'title';
+      if (droneEquipped) {
+        this.companionDrone.group.position.set(
+          -1.55,
+          1.55 + Math.sin(this.elapsedTotal * 3.2) * 0.12,
+          0.55,
         );
-        this.companionFox.group.rotation.y = Math.PI * 0.85;
-        this.companionFox.mixer?.update(dt * 0.5);
+        this.companionDrone.group.rotation.y = Math.PI * 0.85 + Math.sin(this.elapsedTotal * 1.4) * 0.15;
+        const halo = this.companionDrone.group.getObjectByName('droneHalo');
+        if (halo) halo.rotation.z += dt * 3.5;
       }
     }
     if (this.showcaseMode === 'garage') {
@@ -4354,9 +4853,15 @@ export class MetroRushEngine {
       rr.mesh.position.x = THREE.MathUtils.damp(rr.mesh.position.x, rr.targetX, 12, dt);
       rr.mesh.position.y = THREE.MathUtils.damp(rr.mesh.position.y, rr.targetY, 12, dt);
       rr.mesh.position.z = THREE.MathUtils.damp(rr.mesh.position.z, rr.targetZ, 12, dt);
-      if (!rr.paused) {
-        rr.mesh.position.y += Math.abs(Math.sin(this.elapsedTotal * 12)) * 0.08;
-      }
+      animateRemoteRunnerRig(
+        rr.mesh,
+        rr.paused ? 'idle' : rr.action,
+        this.elapsedTotal,
+        0.65,
+        rr.isRidingVehicle,
+        rr.rotY,
+        dt,
+      );
     }
   }
 
@@ -4424,12 +4929,34 @@ export class MetroRushEngine {
     this.elapsedTotal += dt;
     this.updateRemoteRunners(dt);
 
+    if (this.mode === 'tutorial' && this.tutorialPaused) {
+      const topic = TUTORIAL_TOPICS[this.tutorialTopicIndex] ?? TUTORIAL_TOPICS[0];
+      this.lastAction = topic.demoAction;
+      animateCharacterRig(
+        this.playerRig,
+        topic.demoAction,
+        this.elapsedTotal,
+        0.45,
+        0,
+        dt,
+        0,
+        false,
+      );
+      this.hudEmitAccum += dt;
+      if (this.hudEmitAccum >= 0.05) {
+        this.hudEmitAccum = 0;
+        this.emitHud(topic.demoAction);
+      }
+      return;
+    }
+
     // Non-blocking individual Multiplayer Pause: local runner freezes while world/opponents keep racing
     if (this.mpPausedOverlay) {
       this.lastAction = 'idle';
       animateCharacterRig(this.playerRig, 'idle', this.elapsedTotal, 0, 0, dt);
-      if (this.companionFox) {
-        this.companionFox.mixer?.update(dt * 0.4);
+      if (this.companionDrone && this.companionDrone.group.visible) {
+        const halo = this.companionDrone.group.getObjectByName('droneHalo');
+        if (halo) halo.rotation.z += dt * 3;
       }
       this.hudEmitAccum += dt;
       if (this.hudEmitAccum >= 0.05) {
@@ -4442,6 +4969,7 @@ export class MetroRushEngine {
     this.runDurationSec += dt;
     const kb = this.settings.keybindings;
     const char = getCharacterById(this.save.selectedCharacterId);
+    const booster = getBoosterById(this.save.equippedBoosterId);
     const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
     const ridingVehicle = this.vehicleTimer > 0;
     const canDoubleJumpInForm = !ridingVehicle || Boolean(vDef.isShip);
@@ -4606,6 +5134,59 @@ export class MetroRushEngine {
       }
     }
 
+    if (this.abilityToastTimer > 0) {
+      this.abilityToastTimer = Math.max(0, this.abilityToastTimer - dt);
+      if (this.abilityToastTimer <= 0) this.abilityToastText = null;
+    }
+    if (this.gamepadToastTimer > 0) {
+      this.gamepadToastTimer = Math.max(0, this.gamepadToastTimer - dt);
+      if (this.gamepadToastTimer <= 0) {
+        this.gamepadToastText = null;
+        this.gamepadToastType = null;
+      }
+    }
+    if (this.companionDroneCooldown > 0) {
+      this.companionDroneCooldown = Math.max(0, this.companionDroneCooldown - dt);
+    }
+    if (this.companionDroneActiveTimer > 0) {
+      this.companionDroneActiveTimer = Math.max(0, this.companionDroneActiveTimer - dt);
+      const eqDrone = getCompanionDroneById(this.save.equippedDroneId);
+      if (eqDrone) {
+        this.companionDronePulseTimer -= dt;
+        if (this.companionDronePulseTimer <= 0) {
+          this.companionDronePulseTimer = 1.6;
+          if (eqDrone.role === 'magnet_shield') {
+            this.magnetTimer = Math.max(this.magnetTimer, 2.2);
+            if (!this.hasShield && this.shieldCooldown <= 3.0) {
+              this.hasShield = true;
+              this.shieldCooldown = 0;
+            }
+          } else if (eqDrone.role === 'emp_breaker') {
+            for (const c of this.chunks) {
+              for (const dr of c.enemies) {
+                if (!dr.disabled && Math.abs(dr.z - this.playerZ) < 18) {
+                  dr.disabled = true;
+                  dr.mesh.visible = false;
+                  this.dronesEvadedRun++;
+                  this.spawnParticles(dr.x, dr.y + 0.5, dr.z, 10, '#22d3ee', 5);
+                }
+              }
+            }
+          } else if (eqDrone.role === 'coin_pulse') {
+            this.coinsRun += 12;
+            this.score += 120 * this.combo;
+            this.spawnParticles(this.playerX - 1.1, this.playerY + 1.8, this.playerZ, 8, '#facc15', 3.5);
+          } else if (eqDrone.role === 'aerial_guardian') {
+            this.lowGravTimer = Math.max(this.lowGravTimer, 1.8);
+            this.abilityCharge = Math.min(100, this.abilityCharge + 8);
+          }
+        }
+      }
+      if (this.companionDroneActiveTimer <= 0 && this.companionDrone) {
+        this.companionDrone.group.visible = false;
+      }
+    }
+
     if (this.abilityActiveTimer > 0) {
       this.abilityActiveTimer -= dt;
     } else {
@@ -4613,9 +5194,10 @@ export class MetroRushEngine {
       // Kai Passive: +22% faster recharge while airborne or wall-running
       const kaiAirBonus =
         char.id === 'kai' && (!this.grounded || this.wallRunTimer > 0) ? 1.22 : 1.0;
+      const boosterRechargeMult = 1 + (booster?.abilityRechargeBonusPct ?? 0) / 100;
       this.abilityCharge = Math.min(
         100,
-        this.abilityCharge + (100 / cd) * kaiAirBonus * dt,
+        this.abilityCharge + (100 / cd) * kaiAirBonus * boosterRechargeMult * dt,
       );
     }
 
@@ -4632,7 +5214,7 @@ export class MetroRushEngine {
       } else if (this.distance < 190) {
         this.tutorialHint = 'Pulsa [Espacio] en el aire para Doble Salto · [S] para Slide Boost';
       } else if (this.distance < 290) {
-        this.tutorialHint = 'Mantén [C] para Slow-Mo · Pulsa [F] para tu Habilidad Especial';
+        this.tutorialHint = 'Mantén [C] para Slow-Mo · Pulsa [F] para Habilidad · [G] Dron';
       } else {
         this.tutorialHint = null;
       }
@@ -4640,12 +5222,118 @@ export class MetroRushEngine {
       this.tutorialHint = null;
     }
 
-    if (this.consumePress(kb.ability) && this.abilityCharge >= 99.5) {
-      this.triggerCharacterAbility(char.id);
-      this.advanceTutorialStep('power');
+    if (this.storyDialogueTimer > 0) {
+      this.storyDialogueTimer -= dt;
+      if (this.storyDialogueTimer <= 0) {
+        this.storyDialogueSpeaker = null;
+        this.storyDialogueText = null;
+      }
+    }
+    if (this.chromaticWarningTimer > 0) {
+      this.chromaticWarningTimer = Math.max(0, this.chromaticWarningTimer - dt);
     }
 
-    // 4. Speed, Progressive Difficulty Stage (1..4) & Rebalanced Sprint Boost (§8)
+    if (this.consumePress(kb.ability)) {
+      if (this.mode === 'parkour' && !char.activeAllowedInParkour) {
+        const reason = char.parkourRestrictionReason ?? 'Habilidad bloqueada en Parkour Extremo';
+        this.abilityRestrictedReason = reason;
+        this.abilityToastText = reason;
+        this.abilityToastTimer = 2.4;
+        this.abilityToastNonce++;
+        this.showSubtitle(reason);
+      } else if (this.abilityCharge >= 99.5) {
+        this.triggerCharacterAbility(char.id);
+        this.abilityToastText = `${char.name}: ${char.abilityName}`;
+        this.abilityToastTimer = 2.4;
+        this.abilityToastNonce++;
+        this.advanceTutorialStep('power');
+      }
+    }
+
+    // Callable Companion Drone Activation [G]
+    if (this.consumePress(kb.callDrone || 'KeyG')) {
+      const eqDrone = getCompanionDroneById(this.save.equippedDroneId);
+      if (eqDrone && this.companionDroneActiveTimer <= 0 && this.companionDroneCooldown <= 0) {
+        this.companionDroneActiveTimer = eqDrone.activeDurationSec;
+        this.companionDroneCooldown = eqDrone.cooldownSec;
+        this.companionDroneMaxCooldown = eqDrone.cooldownSec;
+        this.companionDronePulseTimer = 0.2;
+        if (this.companionDrone) {
+          this.companionDrone.group.visible = true;
+        }
+        audioEngine.playAbility(1.18);
+        this.showStunt(`DRON ${eqDrone.name.toUpperCase()} ACTIVO!`, 2);
+        this.abilityToastText = `Dron: ${eqDrone.name} (${eqDrone.activeDurationSec}s)`;
+        this.abilityToastTimer = 2.4;
+        this.abilityToastNonce++;
+        if (this.mode === 'tutorial' && this.tutorialTopicIndex === 7) {
+          this.advanceTutorialTopic(1);
+        }
+      }
+    }
+
+    // Battery-Powered Manual Vehicle Deployment (§11 + Per-Character Vehicle Ability)
+    if (
+      this.consumePress(kb.activateVehicle || 'KeyV') &&
+      this.vehicleEnergy >= this.VEHICLE_MAX_ENERGY &&
+      !ridingVehicle
+    ) {
+      this.vehicleEnergy = 0;
+      this.vehicleTimer = this.activeVehicleStats.boostDuration;
+      this.vehiclesCount++;
+      this.vehicleActivationCount++;
+      this.isSlowMo = false;
+      this.boostActive = false;
+      this.wallRunTimer = 0;
+      this.wallRunSide = 0;
+      this.ziplineTimer = 0;
+      this.grappleTimer = 0;
+      this.climbTimer = 0;
+
+      // Apply character's signature vehicle ability on deploy
+      if (char.vehicleAbilityKind === 'aegis_ram') {
+        this.hasShield = true;
+      } else if (char.vehicleAbilityKind === 'mag_surge') {
+        this.magnetTimer = Math.max(this.magnetTimer, 7.5);
+      } else if (char.vehicleAbilityKind === 'aero_lift') {
+        this.lowGravTimer = Math.max(this.lowGravTimer, 4.5);
+        this.velY = Math.max(this.velY, 10.5);
+      } else if (char.vehicleAbilityKind === 'phase_rush' || char.vehicleAbilityKind === 'chrono_warp') {
+        this.phaseThroughTimer = Math.max(this.phaseThroughTimer, 3.0);
+        this.invulnTimer = Math.max(this.invulnTimer, 2.5);
+      } else if (
+        char.vehicleAbilityKind === 'overcharge_emp' ||
+        char.vehicleAbilityKind === 'flame_ram' ||
+        char.vehicleAbilityKind === 'void_rail_cut' ||
+        char.vehicleAbilityKind === 'overdrive_barrage'
+      ) {
+        this.clearNearbyHazards(22);
+        this.invulnTimer = Math.max(this.invulnTimer, 2.2);
+      }
+
+      const isBomber = vDef.id === 'plasma_bomber';
+      if (isBomber) {
+        this.clearNearbyHazards(22);
+        const blast = buildShieldShatterEffect('#f43f5e');
+        blast.position.set(this.playerX, this.playerY + 1.0, this.playerZ - 2);
+        this.scene.add(blast);
+        this.shieldShatterVfx.push({ group: blast, timer: 0.72, maxTimer: 0.72 });
+        if (!this.settings.reduceCameraMotion) this.cameraShake = 0.45;
+      }
+      if (vDef.isShip) {
+        this.velY = Math.max(this.velY, 9.5);
+        this.grounded = false;
+      }
+      audioEngine.playVehicleActivate(isBomber);
+      this.highlights.push(`${vDef.name} (${char.vehicleAbilityName}) a ${Math.floor(this.distance)}m`);
+      this.showStunt(
+        isBomber ? 'NOVA DETONATOR — RUTA DESPEJADA!' : `${vDef.name.toUpperCase()} · ${char.vehicleAbilityName.toUpperCase()}!`,
+        3,
+      );
+      this.spawnParticles(this.playerX, this.playerY + 1.0, this.playerZ, 18, vDef.accentColor, 6);
+    }
+
+    // 4. Stepped Speed Plateau Curve (§10: prevents uncontrollable speed after 2800m)
     const nextStage =
       this.distance >= 1800
         ? 4
@@ -4689,20 +5377,30 @@ export class MetroRushEngine {
       }
     }
 
-    const difficultyRamp =
+    const steppedRamp =
       this.mode === 'tutorial'
-        ? 0
-        : Math.min(18, this.distance / 210) + (this.difficultyStage - 1) * 1.65;
-    let targetSpeed = this.baseSpeed + difficultyRamp;
+        ? this.tutorialEndlessMode
+          ? Math.min(6.5, this.distance / 280)
+          : 0
+        : this.distance >= 2800
+          ? 14.5
+          : this.distance >= 1800
+            ? 12.6
+            : this.distance >= 1000
+              ? 9.8
+              : this.distance >= 450
+                ? 6.4
+                : (this.distance / 450) * 5.2;
+    let targetSpeed = this.baseSpeed + steppedRamp;
     if (sprinting) targetSpeed *= 1.24;
     if (ridingVehicle) targetSpeed *= 1.2 + this.activeVehicleStats.speed * 0.032;
-    // Blaze Passive: +15% faster slide boost
-    if (this.slideTimer > 0) targetSpeed *= char.id === 'blaze' ? 1.3 : 1.15;
+    // Blaze Passive: +22% agile slide boost
+    if (this.slideTimer > 0) targetSpeed *= char.id === 'blaze' ? 1.28 : 1.15;
     // Mika Passive: +35% faster zipline & grapple traversal
     if (char.id === 'mika' && (this.ziplineTimer > 0 || this.grappleTimer > 0)) {
       targetSpeed *= 1.35;
     }
-    if (char.id === 'blaze' && this.abilityActiveTimer > 0) targetSpeed *= 1.42;
+    if (char.id === 'blaze' && this.abilityActiveTimer > 0) targetSpeed *= 1.32;
     if (this.stumbleTimer > 0) targetSpeed *= 0.65;
     if (this.floodSlowTimer > 0 && !sprinting) targetSpeed *= 0.78;
     if (this.activeDynamicEvent === 'coin_surge') targetSpeed *= 1.06;
@@ -4746,6 +5444,8 @@ export class MetroRushEngine {
       if (goLeft) {
         if (this.targetLane > 0) {
           this.targetLane--;
+          this.recentLaneHistory.push(this.targetLane);
+          if (this.recentLaneHistory.length > 8) this.recentLaneHistory.shift();
           audioEngine.playLaneSwitch();
           this.advanceTutorialStep('lane');
         } else {
@@ -4755,6 +5455,8 @@ export class MetroRushEngine {
       if (goRight) {
         if (this.targetLane < maxLane) {
           this.targetLane++;
+          this.recentLaneHistory.push(this.targetLane);
+          if (this.recentLaneHistory.length > 8) this.recentLaneHistory.shift();
           audioEngine.playLaneSwitch();
           this.advanceTutorialStep('lane');
         } else {
@@ -4792,7 +5494,9 @@ export class MetroRushEngine {
     }
 
     const jumpThrust =
-      (13.2 + char.stats.jump * 0.25) * (1 + jumpSkill * 0.05);
+      (13.2 + char.stats.jump * 0.25) *
+      (1 + jumpSkill * 0.05) *
+      (1 + (booster?.jumpBonusPct ?? 0) / 100);
 
     if (this.jumpBufferTimer > 0) {
       if (this.coyoteTimer > 0 || this.wallRunTimer > 0 || this.ziplineTimer > 0 || this.swingBarTimer > 0) {
@@ -4925,6 +5629,21 @@ export class MetroRushEngine {
       if (char.id === 'mika' && prevGrap > 0 && this.grappleTimer <= 0) {
         this.invulnTimer = Math.max(this.invulnTimer, 1.5);
       }
+    } else if (ridingVehicle && vDef.isShip) {
+      this.grappleLine.visible = false;
+      const roadY = this.getRoadElevationY(this.playerZ);
+      const cruiseY = roadY + 3.15 + Math.sin(this.elapsedTotal * 3.2) * 0.22;
+      if (this.velY > 0.5) {
+        this.velY -= 26 * gravScale * simDt;
+        this.playerY += this.velY * simDt;
+      } else {
+        this.velY = 0;
+        this.playerY = THREE.MathUtils.damp(this.playerY, cruiseY, 5.5, simDt);
+      }
+      if (this.playerY < roadY + 0.5) {
+        this.playerY = roadY + 0.5;
+      }
+      this.grounded = false;
     } else {
       this.grappleLine.visible = false;
       this.velY -= 36 * gravScale * simDt;
@@ -4957,7 +5676,12 @@ export class MetroRushEngine {
       }
     }
 
-    // 9. Animate Character Rig & Cyber-Companion Fox
+    this.vehicleFlightHeight =
+      ridingVehicle && vDef.isShip
+        ? Math.max(0, Number((this.playerY - this.getRoadElevationY(this.playerZ)).toFixed(1)))
+        : 0;
+
+    // 9. Animate Character Rig & Callable Companion Drone
     let action: ParkourAction = 'run';
     if (this.stumbleTimer > 0) action = 'stumble';
     else if (ridingVehicle) action = 'vehicle';
@@ -4993,21 +5717,29 @@ export class MetroRushEngine {
       laneTilt,
       dt,
       1 - this.doubleJumpFlipTimer,
+      Boolean(vDef.isShip),
     );
 
-    if (this.companionFox) {
-      const petEquipped = this.save.equippedPetId === 'fox_cyber';
-      this.companionFox.group.visible = petEquipped;
-      if (petEquipped) {
-        const foxZ = this.playerZ + 1.3;
-        const foxGy = this.getRoadElevationY(foxZ);
-        this.companionFox.group.position.set(
-          -this.getWallOffset() + 0.35,
-          foxGy + 0.35 + Math.abs(Math.sin(this.elapsedTotal * 7)) * 0.08,
-          foxZ,
+    if (this.companionDrone) {
+      const droneActive = Boolean(this.save.equippedDroneId) && this.companionDroneActiveTimer > 0;
+      this.companionDrone.group.visible = droneActive;
+      if (droneActive) {
+        const hoverX = THREE.MathUtils.damp(
+          this.companionDrone.group.position.x,
+          this.playerX - 1.35,
+          8,
+          dt,
         );
-        this.companionFox.group.rotation.y = Math.PI;
-        this.companionFox.mixer?.update(simDt);
+        const hoverY = THREE.MathUtils.damp(
+          this.companionDrone.group.position.y,
+          this.playerY + 1.85 + Math.sin(this.elapsedTotal * 5.2) * 0.16,
+          8,
+          dt,
+        );
+        this.companionDrone.group.position.set(hoverX, hoverY, this.playerZ - 0.55);
+        this.companionDrone.group.rotation.y = Math.sin(this.elapsedTotal * 2.1) * 0.18;
+        const halo = this.companionDrone.group.getObjectByName('droneHalo');
+        if (halo) halo.rotation.z += dt * 5.2;
       }
     }
 
@@ -5045,16 +5777,19 @@ export class MetroRushEngine {
     const shakeScale = this.settings.reduceCameraMotion ? 0 : this.cameraShake;
     const shakeX = (Math.random() - 0.5) * shakeScale;
     const shakeY = (Math.random() - 0.5) * shakeScale;
-    const camDist = 6.4 * (this.settings.cameraDistance || 1.0);
+    const camDist = 8.4 * (this.settings.cameraDistance || 1.0);
     const camSpeed = 10 * (this.settings.cameraSpeed || 1.0);
 
     const camTargetX = this.playerX * 0.72 + this.mouseOffsetX + shakeX;
-    const camTargetY =
+    let camTargetY =
       this.playerY +
-      (this.slideTimer > 0 ? 2.6 : 3.5) +
+      (this.slideTimer > 0 ? 3.1 : 4.45) +
       this.mouseOffsetY +
       shakeY;
-    const camTargetZ = this.playerZ + (ridingVehicle ? camDist + 1.2 : camDist);
+    if (this.district.isUnderground) {
+      camTargetY = Math.min(camTargetY, this.getRoadElevationY(this.playerZ) + 9.2);
+    }
+    const camTargetZ = this.playerZ + (ridingVehicle ? camDist + 1.4 : camDist);
 
     this.camera.position.x = THREE.MathUtils.damp(
       this.camera.position.x,
@@ -5071,8 +5806,8 @@ export class MetroRushEngine {
     this.camera.position.z = camTargetZ;
     this.camera.lookAt(
       this.playerX * 0.85,
-      this.playerY + 1.35,
-      this.playerZ - 12,
+      this.playerY + 1.55,
+      this.playerZ - 14,
     );
 
     // 11. Entities, Dynamic Obstacles, Enemies & Collisions
@@ -5549,6 +6284,7 @@ export class MetroRushEngine {
   }
 
   private tryEnterWallRun(side: -1 | 1): void {
+    if (this.vehicleTimer > 0) return;
     const skillLvl = this.save.skillLevels['aerial_thrusters'] ?? 0;
     for (const c of this.chunks) {
       for (const ob of c.obstacles) {
@@ -5560,6 +6296,9 @@ export class MetroRushEngine {
             this.wallRunSide = side;
             this.wallRunTimer = 1.45 + skillLvl * 0.35;
             this.wallRunsCount++;
+            if (this.save.selectedCharacterId === 'kai') {
+              this.abilityCharge = Math.min(100, this.abilityCharge + 15);
+            }
             this.showStunt('WALL RUN!', 2);
             audioEngine.playGrapple();
             return;
@@ -5571,6 +6310,7 @@ export class MetroRushEngine {
 
   private updateContextualParkour(interactPressed: boolean): void {
     this.contextPrompt = null;
+    if (this.vehicleTimer > 0) return;
     for (const c of this.chunks) {
       for (const ob of c.obstacles) {
         if (ob.kind === 'jumpPad' && !ob.interacted) {
@@ -5699,6 +6439,7 @@ export class MetroRushEngine {
           }
         } else if (ob.kind === 'climbRamp') {
           if (
+            this.vehicleTimer <= 0 &&
             Math.abs(this.playerX - ob.x) < ob.width * 0.58 &&
             Math.abs(this.playerZ - ob.z) < ob.length * 0.5
           ) {
@@ -5733,22 +6474,33 @@ export class MetroRushEngine {
     this.spawnParticles(this.playerX, this.playerY + 1.2, this.playerZ, 26, char.colors.accent, 8.0);
     this.spawnParticles(this.playerX, this.playerY + 0.5, this.playerZ, 12, '#ffffff', 5.0);
 
+    if (this.isMultiplayer) {
+      this.onMpAbilityInterference?.({
+        abilityCategory: char.abilityCategory,
+        characterId: char.id,
+      });
+    }
+
     switch (charId) {
       case 'kai':
-        this.abilityActiveTimer = 5.0;
-        this.invulnTimer = 3.5;
-        this.velY = 9;
-        this.showStunt('SALTO FANTASMA!', 3);
+        this.abilityActiveTimer = 4.2;
+        this.phaseThroughTimer = 4.2;
+        this.invulnTimer = Math.max(this.invulnTimer, 2.2);
+        this.velY = Math.max(this.velY, 8.5);
+        this.showStunt('DESFASE ESPECTRAL!', 3);
         break;
       case 'nova':
-        this.abilityActiveTimer = 4.0;
-        this.invulnTimer = Math.max(this.invulnTimer, 1.2);
-        this.slowMoEnergy = Math.min(100, this.slowMoEnergy + 50);
+        this.abilityActiveTimer = 4.5;
+        this.invulnTimer = Math.max(this.invulnTimer, 1.5);
+        this.vehicleEnergy = Math.min(this.VEHICLE_MAX_ENERGY, this.vehicleEnergy + 18);
+        for (const d of this.bossSupportDrones) {
+          d.disabledTimer = Math.max(d.disabledTimer, 4.5);
+        }
         for (const c of this.chunks) {
           for (const ob of c.obstacles) {
             if (
               Math.abs(ob.z - this.playerZ) < 38 &&
-              (ob.kind === 'lowBarrier' || ob.kind === 'laserGrid' || ob.kind === 'electricFloor')
+              (ob.kind === 'lowBarrier' || ob.kind === 'laserGrid' || ob.kind === 'electricFloor' || ob.kind === 'ceilingLaser')
             ) {
               ob.hit = true;
               ob.mesh.visible = false;
@@ -5764,30 +6516,106 @@ export class MetroRushEngine {
             }
           }
         }
-        this.showStunt('HACKEO DE RED!', 3);
+        this.showStunt('SECUESTRO DE RED +18% VEHÍCULO!', 3);
         break;
       case 'blaze':
-        this.abilityActiveTimer = 5.5;
-        this.hasShield = true;
-        this.invulnTimer = 5.5;
-        this.showStunt('SOBREMARCHA NITRO!', 3);
+        this.abilityActiveTimer = 3.6;
+        this.invulnTimer = Math.max(this.invulnTimer, 2.0);
+        for (const h of this.bossHazards) {
+          if (Math.abs(h.x - this.playerX) < 2.2) {
+            h.hit = true;
+            h.mesh.visible = false;
+          }
+        }
+        for (const c of this.chunks) {
+          let burned = 0;
+          for (const ob of c.obstacles) {
+            if (
+              burned < 5 &&
+              ob.z < this.playerZ &&
+              ob.z > this.playerZ - 40 &&
+              Math.abs(ob.x - this.playerX) < 2.1 &&
+              !this.isStructuralParkourKind(ob.kind)
+            ) {
+              ob.hit = true;
+              ob.mesh.visible = false;
+              burned++;
+              this.spawnParticles(ob.x, ob.groundY + 1.0, ob.z, 10, '#f97316', 5);
+            }
+          }
+        }
+        this.showStunt('CAÑÓN TÉRMICO!', 3);
         break;
       case 'zero':
-        this.abilityActiveTimer = 6.0;
-        this.phaseThroughTimer = 6.0;
-        this.showStunt('DESFASE TEMPORAL!', 3);
+        this.abilityActiveTimer = 4.5;
+        this.phaseThroughTimer = Math.max(this.phaseThroughTimer, 4.5);
+        for (const h of this.bossHazards) {
+          h.speedZ *= 0.55;
+        }
+        this.showStunt('ANCLA CRONOMÉTRICA!', 3);
         break;
       case 'mika':
-        this.abilityActiveTimer = 4.0;
-        this.velY = 16;
+        this.abilityActiveTimer = 5.5;
+        this.lowGravTimer = Math.max(this.lowGravTimer, 5.5);
+        this.velY = 15.5;
         this.grounded = false;
         this.jumpsUsed = 0;
-        this.showStunt('GANCHO CELESTE!', 3);
+        this.doubleJumpCooldown = 0;
+        this.showStunt('CORRIENTE ASCENDENTE!', 3);
         break;
       case 'valkyrie':
-        this.abilityActiveTimer = 3.0;
+        this.abilityActiveTimer = 5.0;
         this.hasShield = true;
+        this.invulnTimer = Math.max(this.invulnTimer, 2.5);
         if (!this.settings.reduceCameraMotion) this.cameraShake = 0.45;
+        for (const h of this.bossHazards) {
+          h.hit = true;
+          h.mesh.visible = false;
+        }
+        for (const d of this.bossSupportDrones) {
+          d.disabledTimer = Math.max(d.disabledTimer, 3.0);
+        }
+        for (const c of this.chunks) {
+          for (const ob of c.obstacles) {
+            if (
+              ob.z < this.playerZ &&
+              ob.z > this.playerZ - 42 &&
+              !this.isStructuralParkourKind(ob.kind)
+            ) {
+              ob.hit = true;
+              ob.mesh.visible = false;
+            }
+          }
+          for (const dr of c.enemies) {
+            if (dr.z < this.playerZ && dr.z > this.playerZ - 42 && !dr.disabled) {
+              dr.disabled = true;
+              dr.mesh.visible = false;
+              this.dronesEvadedRun++;
+            }
+          }
+        }
+        this.showStunt('CÚPULA AEGIS!', 3);
+        break;
+      case 'cipher':
+        this.abilityActiveTimer = 6.0;
+        this.magnetTimer = Math.max(this.magnetTimer, 8.0);
+        for (const c of this.chunks) {
+          for (const ob of c.obstacles) {
+            if (
+              (ob.kind === 'laserGrid' || ob.kind === 'electricFloor' || ob.kind === 'ceilingLaser') &&
+              Math.abs(ob.z - this.playerZ) < 28
+            ) {
+              ob.hit = true;
+              ob.mesh.visible = false;
+              this.vehicleEnergy = Math.min(this.VEHICLE_MAX_ENERGY, this.vehicleEnergy + 12);
+            }
+          }
+        }
+        this.showStunt('SIFÓN ELECTROMAGNÉTICO!', 3);
+        break;
+      case 'kage':
+        this.abilityActiveTimer = 3.8;
+        this.lowGravTimer = Math.max(this.lowGravTimer, 3.8);
         for (const h of this.bossHazards) {
           h.hit = true;
           h.mesh.visible = false;
@@ -5796,41 +6624,40 @@ export class MetroRushEngine {
           for (const ob of c.obstacles) {
             if (
               ob.z < this.playerZ &&
-              ob.z > this.playerZ - 45 &&
-              ob.kind !== 'wallLeft' &&
-              ob.kind !== 'wallRight' &&
-              ob.kind !== 'retractBridge' &&
-              ob.kind !== 'skyBridge' &&
-              ob.kind !== 'climbRamp' &&
-              ob.kind !== 'floor2Deck' &&
-              ob.kind !== 'swingBar' &&
-              ob.kind !== 'jumpPad' &&
-              ob.kind !== 'balanceBeam' &&
-              ob.kind !== 'sectorGate'
+              ob.z > this.playerZ - 32 &&
+              !this.isStructuralParkourKind(ob.kind)
             ) {
               ob.hit = true;
               ob.mesh.visible = false;
             }
           }
-          for (const dr of c.enemies) {
-            if (dr.z < this.playerZ && dr.z > this.playerZ - 45 && !dr.disabled) {
-              dr.disabled = true;
-              dr.mesh.visible = false;
-              this.dronesEvadedRun++;
+        }
+        this.showStunt('CORTE DEL VACÍO!', 3);
+        break;
+      case 'valkor':
+        this.abilityActiveTimer = 5.0;
+        this.invulnTimer = Math.max(this.invulnTimer, 2.8);
+        this.vehicleEnergy = Math.min(this.VEHICLE_MAX_ENERGY, this.vehicleEnergy + 25);
+        for (const d of this.bossSupportDrones) {
+          d.disabledTimer = Math.max(d.disabledTimer, 4.0);
+        }
+        for (const h of this.bossHazards) {
+          h.hit = true;
+          h.mesh.visible = false;
+        }
+        for (const c of this.chunks) {
+          for (const ob of c.obstacles) {
+            if (
+              Math.abs(ob.z - this.playerZ) < 28 &&
+              !this.isStructuralParkourKind(ob.kind)
+            ) {
+              ob.hit = true;
+              ob.mesh.visible = false;
+              this.spawnParticles(ob.x, ob.groundY + 1.0, ob.z, 8, '#fbbf24', 5);
             }
           }
         }
-        this.showStunt('ONDA SÍSMICA!', 3);
-        break;
-      case 'cipher':
-        this.abilityActiveTimer = 8.0;
-        this.magnetTimer = 8.0;
-        this.showStunt('PULSO MAGNÉTICO!', 3);
-        break;
-      case 'kage':
-        this.abilityActiveTimer = 7.0;
-        this.lowGravTimer = 7.0;
-        this.showStunt('INVERSIÓN LUNAR!', 3);
+        this.showStunt('TORMENTA OVERDRIVE!', 4);
         break;
     }
   }
@@ -5860,8 +6687,15 @@ export class MetroRushEngine {
     impactZ: number,
     primaryEntityId?: number,
   ): void {
+    const shieldSkill = this.save.skillLevels['shield_matrix'] ?? 0;
+    const booster = getBoosterById(this.save.equippedBoosterId);
+    const boosterShieldFactor = 1 - (booster?.shieldCooldownReductionPct ?? 0) / 100;
     this.hasShield = false;
-    this.shieldCooldown = this.SHIELD_COOLDOWN_MAX;
+    // Balanced non-zero cooldown even in Free Run (min 6.5s .. 14.0s)
+    this.shieldCooldown = Math.max(
+      6.5,
+      (this.SHIELD_COOLDOWN_MAX - shieldSkill * 1.1) * boosterShieldFactor,
+    );
     this.invulnTimer = 1.6;
     this.shieldBreaksRun += 1;
     this.hitstopTimer = 0.055;
@@ -5873,7 +6707,6 @@ export class MetroRushEngine {
     this.scene.add(shatterGroup);
     this.shieldShatterVfx.push({ group: shatterGroup, timer: 0.72, maxTimer: 0.72 });
 
-    const shieldSkill = this.save.skillLevels['shield_matrix'] ?? 0;
     const blastRadius = 14 + shieldSkill * 1.25;
     const radiusSq = blastRadius * blastRadius;
     const destroyedIds = new Set<number>();
@@ -5954,8 +6787,7 @@ export class MetroRushEngine {
     if (!activeFight || this.bossHp <= 0) return;
 
     const bossDef = getBossById(this.activeBossId);
-    this.bossHp = Math.max(0, this.bossHp - 1);
-    this.bossPhaseHp = Math.max(0, this.bossPhaseHp - 1);
+    const curCfg = bossDef.phasesConfig[Math.min(bossDef.phasesConfig.length - 1, this.bossPhaseIndex)];
     audioEngine.playEmpHit();
     if (!this.settings.reduceCameraMotion) this.cameraShake = 0.45;
     this.spawnParticles(
@@ -5967,41 +6799,70 @@ export class MetroRushEngine {
       8,
     );
 
+    if (this.bossHasShieldGate && this.bossShieldHp > 0) {
+      this.bossShieldHp = Math.max(0, this.bossShieldHp - 1);
+      if (this.bossShieldHp <= 0) {
+        this.bossVulnerableSec = curCfg?.shieldWindowSec ?? 7.5;
+        const shieldSphere = this.bossMesh.userData.shieldSphere as THREE.Mesh | undefined;
+        if (shieldSphere) shieldSphere.visible = false;
+        this.showBanner(`ESCUDO DE ${bossDef.name.toUpperCase()} ROTO — ¡VENTANA ABIERTA!`);
+        this.showStunt('ESCUDO ROTO +350', 3);
+      } else {
+        this.showBanner(`ESCUDO OMEGA (${this.bossShieldHp}/${this.bossShieldMaxHp})`);
+        this.showStunt('IMPACTO AL ESCUDO +200', 2);
+      }
+      this.score += 200;
+      return;
+    }
+
+    this.bossHp = Math.max(0, this.bossHp - 1);
+    this.bossPhaseHp = Math.max(0, this.bossPhaseHp - 1);
+
     if (this.bossPhaseHp <= 0) {
       this.bossPhasesClearedRun += 1;
 
-      if (this.bossPhaseIndex < 3) {
+      if (this.bossPhaseIndex < bossDef.phasesConfig.length - 1) {
         this.bossPhaseIndex += 1;
         this.bossPhase = this.bossPhaseIndex + 1;
         const nextCfg = bossDef.phasesConfig[this.bossPhaseIndex];
         this.bossPhaseMaxHp = nextCfg.hpUnits;
         this.bossPhaseHp = nextCfg.hpUnits;
         this.bossPhaseName = nextCfg.name;
+        this.bossHasShieldGate = Boolean(bossDef.hasShieldGate && (nextCfg.shieldMaxHp ?? 0) > 0);
+        this.bossShieldMaxHp = nextCfg.shieldMaxHp ?? 0;
+        this.bossShieldHp = this.bossShieldMaxHp;
+        this.bossVulnerableSec = 0;
+        const shieldSphere = this.bossMesh.userData.shieldSphere as THREE.Mesh | undefined;
+        if (shieldSphere) shieldSphere.visible = this.bossHasShieldGate && this.bossShieldHp > 0;
+
         this.bossPhaseTransitionTimer = 1.9;
         this.bossAttackTimer = nextCfg.attackCooldownSec + 1.9;
         this.bossEmpSpawnTimer = nextCfg.empSpawnSec;
         this.celebrateTimer = 0.65;
-        this.objectiveToastText = `FASE ${this.bossPhase}/4: ${nextCfg.name}`;
+        this.objectiveToastText = `FASE ${this.bossPhase}/${this.bossTotalPhases}: ${nextCfg.name}`;
         this.objectiveToastTimer = 2.6;
+        this.clearBossRadarWarnings();
 
         for (const h of this.bossHazards) {
           h.hit = true;
           h.mesh.visible = false;
         }
         applyBossPhaseVisuals(this.bossMesh, bossDef, this.bossPhaseIndex);
+        this.spawnBossSupportDrones(nextCfg.supportDroneCount ?? this.bossPhase, bossDef);
         audioEngine.setBossPhase(this.bossPhase);
         audioEngine.playBossPhaseTransition(this.bossPhase);
-        this.showBanner(`FASE ${this.bossPhase}/4 · ${nextCfg.name.toUpperCase()}`);
+        this.showBanner(`FASE ${this.bossPhase}/${this.bossTotalPhases} · ${nextCfg.name.toUpperCase()}`);
         this.showSubtitle(nextCfg.description);
         this.showStunt(`FASE ${this.bossPhase} DESBLOQUEADA!`, 3);
         return;
       }
 
-      // Phase 4 HP reached 0 -> True Boss Defeat!
+      // Final phase HP reached 0 -> True Boss Defeat!
       this.bossHp = 0;
       this.bossPhaseHp = 0;
       this.inBossArena = false;
       this.bossWarningText = null;
+      this.clearBossRadarWarnings();
       this.celebrateTimer = 0.9;
       this.spawnParticles(
         this.bossMesh.position.x,
@@ -6027,7 +6888,7 @@ export class MetroRushEngine {
         this.gemsRun += 8;
         this.score += 2400;
         audioEngine.setBossPhase(1);
-        this.highlights.unshift(`Emboscada de ${bossDef.name} (4 Fases) superada`);
+        this.highlights.unshift(`Emboscada de ${bossDef.name} (${this.bossTotalPhases} Fases) superada`);
         this.showBanner(`${bossDef.name.toUpperCase()} DERROTADO +340M +8G`);
         audioEngine.playVictory();
         return;
@@ -6038,25 +6899,34 @@ export class MetroRushEngine {
       const bonusGems = Math.round(bossDef.rewardGems * 1.35);
       this.coinsRun += bonusCoins;
       this.gemsRun += bonusGems;
-      this.highlights.unshift(`Jefe ${bossDef.name} derrotado en 4 fases`);
+      this.highlights.unshift(`Jefe ${bossDef.name} derrotado en ${this.bossTotalPhases} fases`);
       this.showBanner(`${bossDef.name} DESTRUIDO +${bonusCoins} MONEDAS +${bonusGems} GEMAS`);
       audioEngine.playVictory();
       this.finishRun(true);
       return;
     }
 
-    this.showBanner(`IMPACTO EMP · FASE ${this.bossPhase}/4 (${this.bossPhaseHp}/${this.bossPhaseMaxHp})`);
+    this.showBanner(`IMPACTO EMP · FASE ${this.bossPhase}/${this.bossTotalPhases} (${this.bossPhaseHp}/${this.bossPhaseMaxHp})`);
     this.showStunt('SOBRECARGA EMP +500', 3);
   }
 
   private updateEntitiesAndCollisions(simDt: number, magSkill: number): void {
     const char = getCharacterById(this.save.selectedCharacterId);
+    const booster = getBoosterById(this.save.equippedBoosterId);
+    const eqDrone = this.companionDroneActiveTimer > 0 ? getCompanionDroneById(this.save.equippedDroneId) : null;
+    const droneMagBonus = eqDrone
+      ? eqDrone.role === 'coin_pulse'
+        ? 6.0
+        : eqDrone.role === 'magnet_shield'
+          ? 4.0
+          : 2.2
+      : 0;
     const playerBottom = this.playerY;
     const playerTop = this.playerY + (this.slideTimer > 0 ? 0.72 : 1.72);
     // Cipher Passive: +1.4m base magnet radius
     const cipherBonus = char.id === 'cipher' ? 1.4 : 0;
     const magnetRadius =
-      (this.magnetTimer > 0 ? 9.0 : 1.8) + cipherBonus + magSkill * 0.65;
+      (this.magnetTimer > 0 ? 9.0 : 1.8) + cipherBonus + magSkill * 0.65 + droneMagBonus;
     const evt = this.activeEventId
       ? LIVE_EVENTS.find((e) => e.id === this.activeEventId)
       : null;
@@ -6091,8 +6961,10 @@ export class MetroRushEngine {
           col.collected = true;
           col.mesh.visible = false;
           if (col.kind === 'coin') {
-            const coinBonus = Math.round(
-              (this.activeDynamicEvent === 'coin_surge' ? 2 : 1) * bossArenaMult,
+            const boosterCoinMult = 1 + (booster?.coinBonusPct ?? 0) / 100;
+            const coinBonus = Math.max(
+              1,
+              Math.round((this.activeDynamicEvent === 'coin_surge' ? 2 : 1) * bossArenaMult * boosterCoinMult),
             );
             this.coinsRun += coinBonus;
             this.score += 25 * this.combo * coinBonus;
@@ -6124,8 +6996,34 @@ export class MetroRushEngine {
             this.showStunt('SECRETO DESCUBIERTO +3 GEMAS', 3);
           } else if (col.kind === 'empCell') {
             audioEngine.playEmpCollect();
+            if (char.id === 'nova') {
+              this.coinsRun += 18;
+              this.abilityCharge = Math.min(100, this.abilityCharge + 18);
+            }
             this.damageBossFromEmp();
             if (this.phase !== 'playing') return;
+          } else if (col.kind === 'battery') {
+            const baseGain = char.id === 'nova' ? 40 : 34;
+            const boosterMult = 1 + (booster?.vehicleChargeBonusPct ?? 0) / 100;
+            const activeMult = this.vehicleTimer > 0 ? 0.45 : 1.0;
+            const gain = Math.max(8, Math.round(baseGain * boosterMult * activeMult));
+            this.vehicleEnergy = Math.min(this.VEHICLE_MAX_ENERGY, this.vehicleEnergy + gain);
+            const fullReady = this.vehicleEnergy >= this.VEHICLE_MAX_ENERGY;
+            audioEngine.playBatteryPickup(fullReady);
+            this.spawnParticles(col.x, col.y, col.z, 12, '#38bdf8', 4.5);
+            this.showStunt(
+              fullReady && this.vehicleTimer <= 0 ? 'VEHÍCULO LISTO [V]!' : `BATERÍA +${gain}%`,
+              1,
+            );
+          } else if (col.kind === 'timeOrb') {
+            if (this.timeRemaining !== null) {
+              this.timeRemaining += 4.5;
+              this.timeTrialBonusGain = 4.5;
+              this.timeTrialGainNonce += 1;
+            }
+            audioEngine.playTimeOrbGain();
+            this.spawnParticles(col.x, col.y, col.z, 14, '#34d399', 5.0);
+            this.showStunt('ORBE CRONO +4.5s!', 2);
           } else if (col.kind === 'shield') {
             if (this.shieldCooldown > 0 && !this.hasShield) {
               this.shieldCooldown = Math.max(0, this.shieldCooldown - 6);
@@ -6235,6 +7133,13 @@ export class MetroRushEngine {
         }
       }
 
+      if (c.tunnelProps) {
+        for (const prop of c.tunnelProps) {
+          if (prop.name === 'ventFan') prop.rotation.y += simDt * 8.5;
+          else if (prop.name === 'emergBeacon') prop.rotation.y += simDt * 4.8;
+        }
+      }
+
       // Dynamic & Static Obstacles
       const barrierClamp = this.getRoadWidth() * 0.41;
       for (const ob of c.obstacles) {
@@ -6247,7 +7152,8 @@ export class MetroRushEngine {
             if (
               ob.kind === 'train' ||
               ob.kind === 'cargoTrain' ||
-              ob.kind === 'movingTrain'
+              ob.kind === 'movingTrain' ||
+              ob.kind === 'subwayCar'
             ) {
               this.trainsPassedRun += 1;
             }
@@ -6282,31 +7188,18 @@ export class MetroRushEngine {
           const leaf = ob.mesh.getObjectByName('doorLeaf');
           if (leaf) leaf.position.y = 1.3 + doorOpen * 1.9;
           ob.y = ob.groundY + 1.3 + doorOpen * 1.9;
-        } else if (ob.kind === 'turbineHazard') {
+        } else if (ob.kind === 'turbineHazard' || ob.kind === 'ventTrap' || ob.kind === 'cogHazard') {
           const spin = ob.mesh.getObjectByName('spinner');
-          if (spin) spin.rotation.z += simDt * 6.5;
-        }
-
-        if (ob.kind === 'hoverBikePickup') {
-          ob.mesh.rotation.y += simDt * 2.5;
-          if (
-            Math.abs(this.playerX - ob.x) < 1.35 &&
-            Math.abs(this.playerZ - ob.z) < 1.5 &&
-            Math.abs(this.playerY - ob.y) < 1.8
-          ) {
-            ob.hit = true;
-            ob.mesh.visible = false;
-            const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
-            this.vehicleTimer = this.activeVehicleStats.boostDuration;
-            this.vehiclesCount++;
-            this.isSlowMo = false;
-            this.boostActive = false;
-            this.highlights.push(`${vDef.name} pilotado a ${Math.floor(this.distance)}m`);
-            this.showStunt(`${vDef.name.toUpperCase()} ACTIVADO!`, 3);
-            audioEngine.playAbility(1.1);
-            this.spawnParticles(ob.x, ob.y, ob.z, 16, vDef.accentColor, 5.5);
+          if (spin) {
+            if (ob.kind === 'ventTrap') spin.rotation.y += simDt * 9.5;
+            else spin.rotation.z += simDt * 6.5;
           }
-          continue;
+        } else if (ob.kind === 'robotArmHazard') {
+          ob.phase += simDt * 2.4;
+          ob.mesh.rotation.y = Math.sin(ob.phase) * 0.28;
+        } else if (ob.kind === 'boatHazard') {
+          ob.phase += simDt * 3.0;
+          ob.mesh.position.y = ob.groundY + Math.sin(ob.phase) * 0.14;
         }
 
         if (this.isStructuralParkourKind(ob.kind)) {
@@ -6331,7 +7224,8 @@ export class MetroRushEngine {
           ob.kind === 'highGate' ||
           ob.kind === 'steamPipe' ||
           ob.kind === 'scaffolding' ||
-          ob.kind === 'turbineHazard'
+          ob.kind === 'turbineHazard' ||
+          ob.kind === 'ceilingLaser'
         ) {
           obBottom = ob.groundY + 1.12;
           obTop = ob.groundY + 2.8;
@@ -6394,11 +7288,15 @@ export class MetroRushEngine {
             ? 'Impacto contra tren de Neon Metro'
             : ob.kind === 'milkTruck' || ob.kind === 'hoverCar'
               ? 'Impacto contra tráfico urbano'
-              : ob.kind === 'laserGrid' || ob.kind === 'electricFloor'
-                ? 'Sobrecarga en trampa eléctrica'
-                : ob.kind === 'blastDoor'
-                  ? 'Compuerta blindada cerrada'
-                  : 'Colisión con obstáculo urbano';
+              : ob.kind === 'boatHazard'
+                ? 'Impacto contra lancha interceptor marítima'
+                : ob.kind === 'robotArmHazard' || ob.kind === 'cogHazard'
+                  ? 'Colisión con maquinaria industrial de La Creación'
+                  : ob.kind === 'laserGrid' || ob.kind === 'electricFloor'
+                    ? 'Sobrecarga en trampa eléctrica'
+                    : ob.kind === 'blastDoor'
+                      ? 'Compuerta blindada cerrada'
+                      : 'Colisión con obstáculo urbano';
         this.handleFatalOrStumbleCrash(causeLabel);
         return;
       }
@@ -6466,11 +7364,11 @@ export class MetroRushEngine {
       return;
     }
 
-    // 2. Progressive Revive Token Prompt with live 10.0s countdown (§5)
+    // 2. Progressive Revive Token Prompt with live 20.0s countdown (§13)
     const nextCost = getReviveCostForAttempt(this.revivesUsedRun);
     this.phase = 'reviving';
     this.heldKeys.clear();
-    this.reviveCountdownTimer = 10.0;
+    this.reviveCountdownTimer = 20.0;
     this.hudEmitReviveAccum = 0;
     this.revivePrompt = {
       defeatCause: cause,
@@ -6478,7 +7376,7 @@ export class MetroRushEngine {
       attemptNumber: this.revivesUsedRun + 1,
       availableTokens: this.liveReviveTokensHeld,
       canAfford: this.liveReviveTokensHeld >= nextCost,
-      remainingSeconds: 10.0,
+      remainingSeconds: 20.0,
     };
     this.emitHud('stumble');
   }
@@ -6520,9 +7418,17 @@ export class MetroRushEngine {
   private updateModeLogic(dt: number, simDt: number): void {
     if (this.mode === 'timetrial' && this.timeRemaining !== null) {
       this.timeRemaining -= dt;
+      if (this.runDurationSec >= this.timeTrialMilestoneNext) {
+        this.timeTrialMilestoneNext += 45;
+        this.gemsRun += 2;
+        this.objectiveToastText = `HITO CONTRARRELOJ ${Math.floor(this.runDurationSec)}s · +2 GEMAS`;
+        this.objectiveToastTimer = 2.6;
+        audioEngine.playGem();
+      }
       if (this.timeRemaining <= 0) {
         this.timeRemaining = 0;
-        this.finishRun(false, 'Tiempo agotado en Contrarreloj');
+        const beatBest = this.runDurationSec > this.timeTrialBestSec;
+        this.finishRun(beatBest, beatBest ? undefined : 'Tiempo agotado en Contrarreloj');
         return;
       }
     }
@@ -6536,6 +7442,9 @@ export class MetroRushEngine {
         progress >= ch.dialogueBeats[this.storyBeatIndex].progressRatio
       ) {
         const beat = ch.dialogueBeats[this.storyBeatIndex];
+        this.storyDialogueSpeaker = beat.speaker;
+        this.storyDialogueText = beat.text;
+        this.storyDialogueTimer = 5.5;
         this.showSubtitle(`[${beat.speaker}]: ${beat.text}`);
         this.storyBeatIndex++;
       }
@@ -6565,7 +7474,7 @@ export class MetroRushEngine {
 
     if (activeBossEncounter && this.bossHp > 0) {
       const bossDef = getBossById(this.activeBossId);
-      const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(3, this.bossPhaseIndex))];
+      const phaseCfg = bossDef.phasesConfig[Math.max(0, Math.min(bossDef.phasesConfig.length - 1, this.bossPhaseIndex))];
       const laneCount = this.getLaneCount();
 
       if (this.randomBossActive) {
@@ -6575,6 +7484,8 @@ export class MetroRushEngine {
           this.inBossArena = false;
           this.bossMesh.visible = false;
           this.bossWarningText = null;
+          this.clearBossRadarWarnings();
+          this.clearBossSupportDrones();
           audioEngine.setBossPhase(1);
           this.showBanner('JEFE RETIRADO — RUTA DESPEJADA');
           return;
@@ -6592,6 +7503,17 @@ export class MetroRushEngine {
       }
       if (this.bossEntranceTimer > 0) {
         this.bossEntranceTimer = Math.max(0, this.bossEntranceTimer - simDt);
+      }
+
+      // Shield Gate vulnerability timer (e.g. omega_core)
+      if (this.bossHasShieldGate && this.bossShieldHp <= 0 && this.bossVulnerableSec > 0) {
+        this.bossVulnerableSec = Math.max(0, this.bossVulnerableSec - simDt);
+        if (this.bossVulnerableSec <= 0) {
+          this.bossShieldHp = this.bossShieldMaxHp;
+          const shieldSphere = this.bossMesh.userData.shieldSphere as THREE.Mesh | undefined;
+          if (shieldSphere) shieldSphere.visible = true;
+          this.showBanner(`ESCUDO DE ${bossDef.name.toUpperCase()} REGENERADO!`);
+        }
       }
 
       const targetDist = this.getBossCombatDistance(this.activeBossId);
@@ -6620,12 +7542,40 @@ export class MetroRushEngine {
           : Math.sin(this.elapsedTotal * 2) * 0.25;
       this.animateBossMesh(simDt, this.bossPhase);
 
+      // Update Boss Support Drones (§2.3: 1..4 role drones orbiting boss)
+      for (const sd of this.bossSupportDrones) {
+        if (sd.disabledTimer > 0) {
+          sd.disabledTimer = Math.max(0, sd.disabledTimer - simDt);
+          sd.mesh.scale.setScalar(0.75);
+        } else {
+          sd.mesh.scale.setScalar(1.0);
+          sd.offsetAngle += simDt * (1.2 + this.bossPhase * 0.25);
+          const sr = sd.mesh.getObjectByName('spinnerRing');
+          if (sr) sr.rotation.z += simDt * 7;
+          sd.fireTimer -= simDt;
+          if (
+            sd.fireTimer <= 0 &&
+            this.bossIntroTimer <= 0 &&
+            this.bossPhaseTransitionTimer <= 0 &&
+            sd.role === 'bomber'
+          ) {
+            sd.fireTimer = Math.max(3.2, 5.2 - this.bossPhase * 0.45);
+            this.spawnBossHazard('projectile', this.targetLane);
+          }
+        }
+        sd.mesh.position.set(
+          this.bossMesh.position.x + Math.cos(sd.offsetAngle) * sd.radius,
+          hoverY + sd.heightOffset + Math.sin(this.elapsedTotal * 4 + sd.offsetAngle) * 0.28,
+          this.bossMesh.position.z + Math.sin(sd.offsetAngle) * 2.2,
+        );
+      }
+
       // Pause attacks during dramatic Intro or Phase Transition beats (§2 & §15)
       if (this.bossIntroTimer <= 0 && this.bossPhaseTransitionTimer <= 0) {
         // Guaranteed periodic EMP spawn inside clean Boss Arena
         this.bossEmpSpawnTimer -= simDt;
         if (this.bossEmpSpawnTimer <= 0 && this.chunks.length > 0) {
-          this.bossEmpSpawnTimer = phaseCfg?.empSpawnSec ?? 4.2;
+          this.bossEmpSpawnTimer = phaseCfg?.empSpawnSec ?? 7.4;
           const empZ = this.playerZ - (36 + Math.random() * 14);
           const targetChunk = this.chunks.find(
             (ch) => empZ <= ch.zStart && empZ >= ch.zStart - CHUNK_LEN,
@@ -6647,10 +7597,51 @@ export class MetroRushEngine {
 
         const prevAtk = this.bossAttackTimer;
         this.bossAttackTimer -= simDt;
-        if (this.bossAttackTimer <= 1.15 && this.bossAttackTimer > 0) {
-          if (prevAtk > 1.15) {
-            audioEngine.playBossTelegraph();
+        const cooldownTotal = Math.max(
+          1.6,
+          (phaseCfg?.attackCooldownSec ?? 2.8) - this.bossPhase * 0.08,
+        );
+        const warnDur = Math.max(1.1, phaseCfg?.warningDurationSec ?? 1.5);
+        this.bossRadarWarningMaxSec = warnDur;
+
+        // 5-Stage Boss Attack Telegraph + Radar Lane Warnings
+        if (this.bossAttackTimer > warnDur) {
+          this.bossTelegraphStage =
+            this.bossAttackTimer > cooldownTotal - 0.55 ? 'recovery' : 'prep';
+          if (this.bossRadarMeshes.length > 0) {
+            this.clearBossRadarWarnings();
           }
+        } else if (this.bossAttackTimer > 0.25) {
+          this.bossTelegraphStage = 'danger';
+          if (prevAtk > warnDur) {
+            audioEngine.playBossTelegraph();
+            audioEngine.playBossTelegraphDanger();
+          }
+          if (this.bossRadarMeshes.length === 0) {
+            const primary = this.targetLane;
+            const nextLane = (primary + 1) % laneCount;
+            const lanesToWarn = this.bossPhase >= 3 ? [primary, nextLane] : [primary];
+            this.bossRadarWarningLanes = lanesToWarn;
+            for (const ln of lanesToWarn) {
+              const stripGeo = new THREE.PlaneGeometry(2.3, 44);
+              const strip = new THREE.Mesh(stripGeo, this.textures.radarWarningMat);
+              strip.rotation.x = -Math.PI / 2;
+              const laneX = this.getLaneX(ln);
+              const laneZ = this.playerZ - 22;
+              strip.position.set(laneX, this.getRoadElevationY(laneZ) + 0.08, laneZ);
+              this.scene.add(strip);
+              this.bossRadarMeshes.push(strip);
+            }
+          }
+          this.bossRadarCountdownSec = Number(Math.max(0, this.bossAttackTimer).toFixed(1));
+          for (let ri = 0; ri < this.bossRadarMeshes.length; ri++) {
+            const rm = this.bossRadarMeshes[ri];
+            const ln = this.bossRadarWarningLanes[ri] ?? this.targetLane;
+            const rz = this.playerZ - 22;
+            rm.position.set(this.getLaneX(ln), this.getRoadElevationY(rz) + 0.08, rz);
+          }
+          this.textures.radarWarningMat.opacity = 0.42 + Math.abs(Math.sin(this.elapsedTotal * 14)) * 0.48;
+
           const warnMap: Record<BossId, string> = {
             titan_drone: '¡PROYECTILES Y BARRIDO LÁSER — CAMBIA DE CARRIL!',
             iron_hunter: '¡ONDA EXPANSIVA SÍSMICA — SALTA!',
@@ -6663,14 +7654,17 @@ export class MetroRushEngine {
           };
           this.bossWarningText = warnMap[this.activeBossId] ?? '¡JEFE ATACANDO!';
           this.contextPrompt = 'RECOGE CELDAS EMP CIAN PARA DAÑAR AL JEFE';
+        } else if (this.bossAttackTimer > 0) {
+          this.bossTelegraphStage = 'execute';
+          this.bossRadarCountdownSec = Number(Math.max(0, this.bossAttackTimer).toFixed(1));
         }
 
         if (this.bossAttackTimer <= 0) {
+          this.bossTelegraphStage = 'impact';
           this.bossWarningText = null;
-          this.bossAttackTimer = Math.max(
-            1.75,
-            (phaseCfg?.attackCooldownSec ?? 3.6) - this.bossPhase * 0.12,
-          );
+          const warnedPrimary = this.bossRadarWarningLanes[0] ?? this.targetLane;
+          this.clearBossRadarWarnings();
+          this.bossAttackTimer = cooldownTotal;
           if (this.bossDistance !== null) {
             this.bossDistance = Math.max(2, this.bossDistance - 2.6);
             if (this.forwardSpeed > 28 || this.vehicleTimer > 0) {
@@ -6678,18 +7672,18 @@ export class MetroRushEngine {
             }
           }
 
-          // Boss-specific telegraphed 4-phase choreography using active phase patterns
-          const nextLane = (this.targetLane + 1) % laneCount;
-          const farLane = (this.targetLane + 2) % laneCount;
-          const altLane = (this.targetLane + laneCount - 1) % laneCount;
+          // Boss-specific telegraphed multi-phase choreography using active phase patterns
+          const nextLane = (warnedPrimary + 1) % laneCount;
+          const farLane = (warnedPrimary + 2) % laneCount;
+          const altLane = (warnedPrimary + laneCount - 1) % laneCount;
 
           if (this.activeBossId === 'iron_hunter') {
-            this.spawnBossHazard(this.bossPhase === 2 ? 'projectile' : 'shockwave', this.targetLane);
+            this.spawnBossHazard(this.bossPhase === 2 ? 'projectile' : 'shockwave', warnedPrimary);
             if (this.bossPhase !== 2) audioEngine.playBossShockwave();
             if (this.bossPhase >= 3) this.spawnBossHazard('projectile', nextLane);
             if (this.bossPhase >= 4) this.spawnBossHazard('laneStrike', farLane);
           } else if (this.activeBossId === 'overseer') {
-            this.spawnBossHazard('laser', this.targetLane);
+            this.spawnBossHazard('laser', warnedPrimary);
             if (this.bossPhase >= 2) this.spawnBossHazard('projectile', nextLane);
             if (this.bossPhase >= 3) {
               this.spawnBossHazard('shockwave', this.getCenterLane());
@@ -6697,7 +7691,7 @@ export class MetroRushEngine {
             }
             if (this.bossPhase >= 4) this.spawnBossHazard('laser', altLane);
           } else if (this.activeBossId === 'neon_wraith') {
-            this.spawnBossHazard('laneStrike', this.targetLane);
+            this.spawnBossHazard('laneStrike', warnedPrimary);
             if (this.bossPhase >= 2) this.spawnBossHazard('laneStrike', nextLane);
             if (this.bossPhase >= 3) {
               this.spawnBossHazard('shockwave', this.getCenterLane());
@@ -6705,15 +7699,15 @@ export class MetroRushEngine {
             }
             if (this.bossPhase >= 4) this.spawnBossHazard('projectile', altLane);
           } else if (this.activeBossId === 'cryo_leviathan') {
-            this.spawnBossHazard('projectile', this.targetLane);
+            this.spawnBossHazard('projectile', warnedPrimary);
             if (this.bossPhase >= 2) this.spawnBossHazard('projectile', altLane);
             if (this.bossPhase >= 3) {
               this.spawnBossHazard('shockwave', this.getCenterLane());
               audioEngine.playBossShockwave();
             }
-            if (this.bossPhase >= 4) this.spawnBossHazard('laser', this.targetLane);
+            if (this.bossPhase >= 4) this.spawnBossHazard('laser', warnedPrimary);
           } else if (this.activeBossId === 'volt_archon') {
-            this.spawnBossHazard('laser', this.targetLane);
+            this.spawnBossHazard('laser', warnedPrimary);
             if (this.bossPhase >= 2) {
               this.spawnBossHazard('projectile', nextLane);
               this.spawnBossHazard('projectile', altLane);
@@ -6723,16 +7717,17 @@ export class MetroRushEngine {
               audioEngine.playBossShockwave();
             }
           } else if (this.activeBossId === 'omega_core') {
-            this.spawnBossHazard('laser', this.targetLane);
+            this.spawnBossHazard('laser', warnedPrimary);
             this.spawnBossHazard('projectile', nextLane);
             if (this.bossPhase >= 2) {
               this.spawnBossHazard('shockwave', this.getCenterLane());
               audioEngine.playBossShockwave();
             }
             if (this.bossPhase >= 4) this.spawnBossHazard('laneStrike', farLane);
+            if (this.bossPhase >= 6) this.spawnBossHazard('projectile', altLane);
           } else {
             // titan_drone & the_sentinel
-            this.spawnBossHazard('projectile', this.targetLane);
+            this.spawnBossHazard('projectile', warnedPrimary);
             if (this.bossPhase >= 2) {
               this.spawnBossHazard(this.bossPhase >= 4 ? 'shockwave' : 'laser', farLane);
               if (this.bossPhase >= 4) audioEngine.playBossShockwave();
@@ -6775,10 +7770,25 @@ export class MetroRushEngine {
     audioEngine.setMusicMode(victory ? 'victory' : 'defeat');
     audioEngine.setMusicParams({ slowMo: false, intensity: 0.25, danger: 0 });
 
-    if (!victory && this.captureDroneMesh) {
-      this.captureDroneMesh.position.set(this.playerX, this.playerY + 2.8, this.playerZ);
-      this.captureDroneMesh.visible = true;
-      audioEngine.playCaptureDroneGrab();
+    if (!victory) {
+      for (const c of this.chunks) c.group.visible = false;
+      if (this.hangarGroup) this.hangarGroup.visible = false;
+      if (this.skyDome) this.skyDome.mesh.visible = false;
+      this.cloudsMesh.visible = false;
+      this.skyTrafficMesh.visible = false;
+      this.weatherPoints.visible = false;
+      this.bossMesh.visible = false;
+      this.pursuerMesh.visible = false;
+      this.contactShadow.visible = false;
+      if (this.defeatStageGroup) {
+        this.defeatStageGroup.visible = true;
+        this.defeatStageGroup.position.set(this.playerX, this.playerY, this.playerZ);
+      }
+      if (this.captureDroneMesh) {
+        this.captureDroneMesh.position.set(this.playerX - 1.35, this.playerY + 2.8, this.playerZ);
+        this.captureDroneMesh.visible = true;
+        audioEngine.playCaptureDroneGrab();
+      }
     } else if (this.captureDroneMesh) {
       this.captureDroneMesh.visible = false;
     }
@@ -6893,8 +7903,17 @@ export class MetroRushEngine {
   }
 
   private updateWeatherAndSkyTraffic(dt: number): void {
+    if (this.skyDome) {
+      this.skyDome.uniforms.uTime.value = this.elapsedTotal;
+      this.skyDome.mesh.position.set(this.playerX, 0, this.playerZ - 35);
+      this.skyDome.mesh.visible =
+        !this.district.isUnderground && this.phase !== 'gameover';
+    }
+
     this.weatherPoints.visible =
-      this.weather !== 'clear' && !this.settings.reduceVisualEffects;
+      this.phase !== 'gameover' &&
+      this.weather !== 'clear' &&
+      !this.settings.reduceVisualEffects;
     if (this.weatherPoints.visible) {
       this.weatherPoints.position.set(this.playerX, 0, this.playerZ - 18);
       const posAttr = this.weatherPoints.geometry.attributes
@@ -6909,18 +7928,20 @@ export class MetroRushEngine {
       posAttr.needsUpdate = true;
     }
 
-    for (let i = 0; i < this.skyTrafficData.length; i++) {
-      const car = this.skyTrafficData[i];
-      car.z += car.speed * dt;
-      if (car.z > this.playerZ + 40) car.z = this.playerZ - 190;
-      if (car.z < this.playerZ - 210) car.z = this.playerZ + 30;
-      _vec3A.set(car.x, car.y, car.z);
-      _quat.identity();
-      _scaleVec.set(1, 1, 1);
-      _mat4.compose(_vec3A, _quat, _scaleVec);
-      this.skyTrafficMesh.setMatrixAt(i, _mat4);
+    if (this.skyTrafficMesh.visible) {
+      for (let i = 0; i < this.skyTrafficData.length; i++) {
+        const car = this.skyTrafficData[i];
+        car.z += car.speed * dt;
+        if (car.z > this.playerZ + 40) car.z = this.playerZ - 190;
+        if (car.z < this.playerZ - 210) car.z = this.playerZ + 30;
+        _vec3A.set(car.x, car.y, car.z);
+        _quat.identity();
+        _scaleVec.set(1, 1, 1);
+        _mat4.compose(_vec3A, _quat, _scaleVec);
+        this.skyTrafficMesh.setMatrixAt(i, _mat4);
+      }
+      this.skyTrafficMesh.instanceMatrix.needsUpdate = true;
     }
-    this.skyTrafficMesh.instanceMatrix.needsUpdate = true;
 
     if (this.cloudsMesh.visible) {
       for (let i = 0; i < this.cloudData.length; i++) {
@@ -6946,6 +7967,7 @@ export class MetroRushEngine {
         ? getBossById(this.activeBossId)
         : null;
     const vDef = getVehicleById(this.save.selectedVehicleId ?? 'hover_bike');
+    const eqDrone = getCompanionDroneById(this.save.equippedDroneId);
     const ridingVehicle = this.vehicleTimer > 0;
     const canDoubleJumpInForm = !ridingVehicle || Boolean(vDef.isShip);
     const memInfo = (
@@ -6978,6 +8000,9 @@ export class MetroRushEngine {
       vehicleAbilityLocked: ridingVehicle,
       abilityCharge: Math.floor(this.abilityCharge),
       abilityActive: this.abilityActiveTimer > 0,
+      abilityRestrictedReason: this.abilityRestrictedReason,
+      abilityToastText: this.abilityToastText,
+      abilityToastNonce: this.abilityToastNonce,
       hasShield: this.hasShield,
       shieldCooldown: Number(this.shieldCooldown.toFixed(1)),
       shieldMaxCooldown: this.SHIELD_COOLDOWN_MAX,
@@ -6995,8 +8020,19 @@ export class MetroRushEngine {
       magnetTimer: this.magnetTimer,
       isRidingVehicle: ridingVehicle,
       vehicleIsShip: Boolean(vDef.isShip),
+      vehicleFlightHeight: this.vehicleFlightHeight,
       vehicleTimer: this.vehicleTimer,
+      vehicleEnergy: Math.floor(this.vehicleEnergy),
+      vehicleMaxEnergy: this.VEHICLE_MAX_ENERGY,
+      vehicleReady: this.vehicleEnergy >= this.VEHICLE_MAX_ENERGY && !ridingVehicle,
+      vehicleActivationCount: this.vehicleActivationCount,
       selectedVehicleId: this.save.selectedVehicleId ?? 'hover_bike',
+      companionDroneId: eqDrone ? eqDrone.id : null,
+      companionDroneName: eqDrone ? eqDrone.name : null,
+      companionDroneActive: this.companionDroneActiveTimer > 0,
+      companionDroneTimeLeft: Number(this.companionDroneActiveTimer.toFixed(1)),
+      companionDroneCooldown: Number(this.companionDroneCooldown.toFixed(1)),
+      companionDroneMaxCooldown: this.companionDroneMaxCooldown,
       talismansHeld: this.liveTalismansHeld,
       reviveTokensHeld: this.liveReviveTokensHeld,
       talismanUsedRun: this.talismanUsedRun,
@@ -7012,11 +8048,14 @@ export class MetroRushEngine {
       randomBossActive: this.randomBossActive,
       storyChapter: this.storyChapterNum,
       storyObjectiveText: this.storyObjectiveText,
+      storyDialogueSpeaker: this.storyDialogueSpeaker,
+      storyDialogueText: this.storyDialogueText,
       parkourFloor: this.onFloor2 ? 2 : 1,
       parkourChain: this.parkourChainsRun,
       action,
       contextPrompt: this.contextPrompt,
       tutorialHint: this.tutorialHint,
+      tutorialEndlessMode: this.tutorialEndlessMode,
       subtitleText: this.subtitleText,
       activeEventBanner: evt ? evt.title : null,
       activeDynamicEvent: this.activeDynamicEvent,
@@ -7027,15 +8066,29 @@ export class MetroRushEngine {
       bossHp: this.bossHp,
       bossMaxHp: this.bossMaxHp,
       bossPhase: this.bossPhase,
+      bossTotalPhases: bossDef ? bossDef.phasesConfig.length : this.bossTotalPhases,
       bossPhaseName: bossDef ? this.bossPhaseName : null,
       bossPhaseHp: this.bossPhaseHp,
       bossPhaseMaxHp: this.bossPhaseMaxHp,
+      bossHasShieldGate: this.bossHasShieldGate,
+      bossShieldHp: this.bossShieldHp,
+      bossShieldMaxHp: this.bossShieldMaxHp,
+      bossVulnerableSec: Number(this.bossVulnerableSec.toFixed(1)),
+      bossSupportDronesCount: this.bossSupportDrones.length,
+      bossTelegraphStage: this.bossTelegraphStage,
+      bossRadarWarningLanes: [...this.bossRadarWarningLanes],
+      bossRadarCountdownSec: this.bossRadarCountdownSec,
+      bossRadarWarningMaxSec: this.bossRadarWarningMaxSec,
       bossIntroActive: Boolean(bossDef && this.bossIntroTimer > 0),
       bossIntroTitle: bossDef && this.bossIntroTimer > 0 ? this.bossIntroTitle : null,
       bossIntroSubtitle: bossDef && this.bossIntroTimer > 0 ? this.bossIntroQuote : null,
       bossTransitionActive: Boolean(bossDef && this.bossPhaseTransitionTimer > 0),
       bossDistance: this.bossDistance,
       timeRemaining: this.timeRemaining,
+      timeTrialBonusGain: this.timeTrialBonusGain,
+      timeTrialGainNonce: this.timeTrialGainNonce,
+      timeTrialPersonalBestSec: this.timeTrialBestSec,
+      timeTrialMilestoneNextSec: this.timeTrialMilestoneNext,
       targetDistance: this.targetDistance,
       activeBanner: this.activeBanner,
       lastStuntText: this.lastStuntText,
@@ -7051,6 +8104,7 @@ export class MetroRushEngine {
       shieldBreaksRun: this.shieldBreaksRun,
       doubleJumpsRun: this.doubleJumpsRun,
       activeRunContext: { ...this.activeRunContext },
+      activeModeConfig: this.activeModeConfig ? { ...this.activeModeConfig } : null,
       fps: this.currentFps,
       frameTimeMs: this.avgFrameTimeMs,
       drawCalls: this.renderer.info.render.calls,
@@ -7060,11 +8114,20 @@ export class MetroRushEngine {
       tutorialStep: this.mode === 'tutorial' ? this.tutorialStepText : null,
       tutorialProgress:
         this.mode === 'tutorial'
-          ? `${Math.round(this.tutorialStepProgress * 100)}%`
+          ? `${Math.round(((this.tutorialTopicIndex + 1) / TUTORIAL_TOPICS.length) * 100)}%`
           : null,
+      tutorialTopicIndex: this.tutorialTopicIndex,
+      tutorialTotalTopics: TUTORIAL_TOPICS.length,
+      tutorialPaused: this.tutorialPaused,
       bossWarningText: this.bossWarningText,
       rainEventActive: this.rainEventState.active,
       difficultyStage: this.difficultyStage,
+      gamepadBrand: this.gamepadBrand,
+      gamepadConnected: this.gamepadConnected,
+      gamepadName: this.gamepadName,
+      gamepadToastText: this.gamepadToastText,
+      gamepadToastType: this.gamepadToastType,
+      gamepadToastNonce: this.gamepadToastNonce,
       isMultiplayer: this.isMultiplayer,
       mpPlayers: this.latestMpPlayers,
     });
@@ -7085,7 +8148,16 @@ export class MetroRushEngine {
     this.clearDynamicThreats();
     this.clearTransientVfx();
     this.clearRemoteRunners();
-    this.companionFox?.dispose();
+    this.skyDome?.dispose();
+    this.defeatStageGroup?.traverse((obj) => {
+      if ((obj as THREE.Mesh).isMesh) {
+        const m = obj as THREE.Mesh;
+        m.geometry.dispose();
+        if (Array.isArray(m.material)) m.material.forEach((x) => x.dispose());
+        else m.material.dispose();
+      }
+    });
+    this.companionDrone?.dispose();
     this.playerRig?.dispose();
     this.vehicleShowcase?.dispose();
     if (this.hangarGroup) {

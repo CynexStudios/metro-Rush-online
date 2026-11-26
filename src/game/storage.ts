@@ -1,9 +1,11 @@
 import {
   ACHIEVEMENTS,
+  BATTLE_PASS_MAX_TIER,
   COSMETICS,
+  DEFAULT_FREE_RUN_CONFIG,
   DEFAULT_LEADERBOARD,
+  getAllActiveMissions,
   getBossById,
-  getDistrictById,
   LIVE_EVENTS,
   MISSIONS,
   normalizeDistrictId,
@@ -16,6 +18,7 @@ import {
   BossId,
   ControlProfile,
   DistrictId,
+  FriendEntry,
   GameMode,
   GraphicsQuality,
   KeyBindings,
@@ -23,19 +26,22 @@ import {
   PCSettings,
   PlayerSaveData,
   RunSummary,
+  SavedLanRoom,
   VehicleId,
 } from './types';
 
-export const SAVE_VERSION = 4;
-const SAVE_KEY = 'metro_rush_neon_city_save_v4';
-const BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v4';
+export const SAVE_VERSION = 6;
+const SAVE_KEY = 'metro_rush_neon_city_save_v6';
+const BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v6';
+const V5_SAVE_KEY = 'metro_rush_neon_city_save_v5';
+const V4_SAVE_KEY = 'metro_rush_neon_city_save_v4';
 const V3_SAVE_KEY = 'metro_rush_neon_city_save_v3';
-const V3_BACKUP_SAVE_KEY = 'metro_rush_neon_city_save_backup_v3';
 const V2_SAVE_KEY = 'metro_rush_neon_city_save_v2';
 const LEGACY_SAVE_KEY = 'metro_rush_neon_city_save_v1';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEEK_MS = 7 * DAY_MS;
+export const NAME_CHANGE_COOLDOWN_MS = 3 * DAY_MS;
 
 export const CONTROL_PROFILES: Record<ControlProfile, KeyBindings> = {
   default: {
@@ -46,6 +52,8 @@ export const CONTROL_PROFILES: Record<ControlProfile, KeyBindings> = {
     sprint: 'ShiftLeft',
     interact: 'KeyE',
     ability: 'KeyF',
+    activateVehicle: 'KeyV',
+    callDrone: 'KeyG',
     slowMo: 'KeyC',
     pause: 'Escape',
   },
@@ -57,6 +65,8 @@ export const CONTROL_PROFILES: Record<ControlProfile, KeyBindings> = {
     sprint: 'ShiftLeft',
     interact: 'Space',
     ability: 'KeyE',
+    activateVehicle: 'KeyR',
+    callDrone: 'KeyG',
     slowMo: 'KeyQ',
     pause: 'Escape',
   },
@@ -68,6 +78,8 @@ export const CONTROL_PROFILES: Record<ControlProfile, KeyBindings> = {
     sprint: 'ShiftRight',
     interact: 'Enter',
     ability: 'KeyK',
+    activateVehicle: 'KeyJ',
+    callDrone: 'KeyH',
     slowMo: 'KeyL',
     pause: 'Escape',
   },
@@ -79,10 +91,23 @@ export const CONTROL_PROFILES: Record<ControlProfile, KeyBindings> = {
     sprint: 'ShiftLeft',
     interact: 'KeyE',
     ability: 'KeyF',
+    activateVehicle: 'KeyV',
+    callDrone: 'KeyG',
     slowMo: 'KeyC',
     pause: 'Escape',
   },
 };
+
+export function findConflictingKeyBinding(
+  bindings: KeyBindings,
+  action: keyof KeyBindings,
+  code: string,
+): keyof KeyBindings | null {
+  for (const [k, v] of Object.entries(bindings) as Array<[keyof KeyBindings, string]>) {
+    if (k !== action && v === code) return k;
+  }
+  return null;
+}
 
 export const DEFAULT_SETTINGS: PCSettings = {
   language: 'es',
@@ -149,6 +174,7 @@ export const DEFAULT_SETTINGS: PCSettings = {
   cameraSpeed: 1.0,
   fovBase: 68,
   showIndicators: true,
+  showOnScreenControls: true,
   showTutorialHints: true,
   subtitles: true,
   visualHelpers: true,
@@ -284,15 +310,21 @@ export function createInitialSave(): PlayerSaveData {
   return {
     saveVersion: SAVE_VERSION,
     playerName: 'RUNNER_01',
-    avatarId: 'kai',
-    modelStyle: 'procedural',
+    lastNameChangeAt: 0,
+    onboardingCompleted: false,
+    playerAgeGroup: undefined,
+    runnerExperience: undefined,
+    avatarId: 'av_runner_core',
+    ownedAvatars: ['av_runner_core'],
+    equippedAvatarId: 'av_runner_core',
+    modelStyle: 'cesium_man',
     level: 1,
     xp: 0,
-    coins: 900,
-    gems: 25,
-    tickets: 2,
+    coins: 450,
+    gems: 15,
+    tickets: 1,
     reviveTokens: 2,
-    talismans: 1,
+    talismans: 0,
     selectedCharacterId: 'kai',
     selectedDistrictId: 'downtown',
     selectedMode: 'endless',
@@ -315,6 +347,10 @@ export function createInitialSave(): PlayerSaveData {
       hair: 'hair_default',
       trail: 'trail_cyan',
     },
+    ownedDrones: ['drone_aegis_mk1'],
+    equippedDroneId: 'drone_aegis_mk1',
+    ownedBoosters: [],
+    equippedBoosterId: null,
     ownedVehicles: ['hover_bike'],
     selectedVehicleId: 'hover_bike',
     vehicleUpgrades: {
@@ -323,6 +359,7 @@ export function createInitialSave(): PlayerSaveData {
       quantum_glider: 0,
       titan_rammer: 0,
       star_viper: 0,
+      plasma_bomber: 0,
     },
     vehiclePaints: {
       hover_bike: VEHICLES[0].defaultPaint,
@@ -330,6 +367,7 @@ export function createInitialSave(): PlayerSaveData {
       quantum_glider: VEHICLES[2].defaultPaint,
       titan_rammer: VEHICLES[3].defaultPaint,
       star_viper: VEHICLES[4].defaultPaint,
+      plasma_bomber: VEHICLES[5]?.defaultPaint ?? '#f43f5e',
     },
     skillLevels: {
       momentum_mastery: 0,
@@ -344,16 +382,21 @@ export function createInitialSave(): PlayerSaveData {
     completedMissions: [],
     dailyResetAt: now + DAY_MS,
     weeklyResetAt: now + WEEK_MS,
+    seasonStartAtMs: now,
     completedEvents: [],
     defeatedBosses: [],
     customBossMeta: {},
-    ownedPets: ['fox_cyber'],
-    equippedPetId: 'fox_cyber',
     unlockedAchievements: [],
     storyChapter: 1,
     tutorialCompleted: false,
+    tutorialStepSaved: 0,
+    timeTrialBestByCity: {},
+    freeRunConfig: { ...DEFAULT_FREE_RUN_CONFIG },
+    lastLaunchedModeConfig: null,
+    savedLanRooms: [],
+    friends: [],
     battlePass: {
-      season: 3,
+      season: 8,
       level: 1,
       xp: 0,
       premiumUnlocked: false,
@@ -411,6 +454,32 @@ export function createInitialSave(): PlayerSaveData {
 
 export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerSaveData {
   const base = createInitialSave();
+
+  // Clean v8.0.0 seasonal progression reset when upgrading from legacy v1..v5 saves
+  if (typeof parsed.saveVersion === 'number' && parsed.saveVersion < SAVE_VERSION) {
+    return {
+      ...base,
+      playerName:
+        typeof parsed.playerName === 'string' && parsed.playerName.trim().length > 0
+          ? parsed.playerName.trim().slice(0, 18)
+          : base.playerName,
+      settings: {
+        ...base.settings,
+        ...(parsed.settings ?? {}),
+        showOnScreenControls: parsed.settings?.showOnScreenControls ?? true,
+        keybindings: {
+          ...base.settings.keybindings,
+          ...(parsed.settings?.keybindings ?? {}),
+          callDrone: parsed.settings?.keybindings?.callDrone || base.settings.keybindings.callDrone,
+          activateVehicle:
+            parsed.settings?.keybindings?.activateVehicle ||
+            base.settings.keybindings.activateVehicle,
+        },
+      },
+      savedLanRooms: Array.isArray(parsed.savedLanRooms) ? parsed.savedLanRooms : [],
+      friends: Array.isArray(parsed.friends) ? parsed.friends : [],
+    };
+  }
 
   const migratedDistricts = Array.from(
     new Set([
@@ -475,10 +544,14 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     typeof parsed.dailyResetAt === 'number' && parsed.dailyResetAt > 0
       ? parsed.dailyResetAt
       : now + DAY_MS;
-  let weeklyResetAt =
+  const weeklyResetAt =
     typeof parsed.weeklyResetAt === 'number' && parsed.weeklyResetAt > 0
       ? parsed.weeklyResetAt
       : now + WEEK_MS;
+  const seasonStartAtMs =
+    typeof parsed.seasonStartAtMs === 'number' && parsed.seasonStartAtMs > 0
+      ? parsed.seasonStartAtMs
+      : now;
 
   const missionProgress: Record<string, number> = {
     ...(parsed.missionProgress ?? {}),
@@ -486,6 +559,7 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
   let completedMissions = [...(parsed.completedMissions ?? [])];
   let claimableMissions = [...(parsed.claimableMissions ?? [])];
 
+  // Daily missions reset each day across the 42-day cycle; weekly missions ACCUMULATE over 6 weeks
   if (now >= dailyResetAt) {
     dailyResetAt = now + DAY_MS;
     for (const m of MISSIONS) {
@@ -496,18 +570,16 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
       }
     }
   }
-  if (now >= weeklyResetAt) {
-    weeklyResetAt = now + WEEK_MS;
-    for (const m of MISSIONS) {
-      if (m.category === 'weekly') {
-        missionProgress[m.id] = 0;
-        completedMissions = completedMissions.filter((id) => id !== m.id);
-        claimableMissions = claimableMissions.filter((id) => id !== m.id);
-      }
-    }
-  }
 
-  return {
+  const ownedDrones = Array.from(
+    new Set(['drone_aegis_mk1', ...(parsed.ownedDrones ?? [])]),
+  );
+  const ownedAvatars = Array.from(
+    new Set(['av_runner_core', ...(parsed.ownedAvatars ?? [])]),
+  );
+  const ownedBoosters = Array.from(new Set(parsed.ownedBoosters ?? []));
+
+  const cleanSave: PlayerSaveData = {
     ...base,
     ...parsed,
     saveVersion: SAVE_VERSION,
@@ -522,16 +594,27 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     unlockedDistricts: migratedDistricts,
     defeatedBosses: parsed.defeatedBosses ?? [],
     customBossMeta: parsed.customBossMeta ?? {},
-    ownedPets:
-      Array.isArray(parsed.ownedPets) && parsed.ownedPets.length > 0
-        ? Array.from(new Set(['fox_cyber', ...parsed.ownedPets]))
-        : ['fox_cyber'],
-    equippedPetId:
-      parsed.equippedPetId === null
+    ownedDrones,
+    equippedDroneId:
+      parsed.equippedDroneId === null
         ? null
-        : typeof parsed.equippedPetId === 'string'
-          ? parsed.equippedPetId
-          : 'fox_cyber',
+        : parsed.equippedDroneId && ownedDrones.includes(parsed.equippedDroneId)
+          ? parsed.equippedDroneId
+          : 'drone_aegis_mk1',
+    ownedBoosters,
+    equippedBoosterId:
+      parsed.equippedBoosterId && ownedBoosters.includes(parsed.equippedBoosterId)
+        ? parsed.equippedBoosterId
+        : null,
+    ownedAvatars,
+    equippedAvatarId:
+      parsed.equippedAvatarId && ownedAvatars.includes(parsed.equippedAvatarId)
+        ? parsed.equippedAvatarId
+        : 'av_runner_core',
+    avatarId:
+      parsed.equippedAvatarId && ownedAvatars.includes(parsed.equippedAvatarId)
+        ? parsed.equippedAvatarId
+        : parsed.avatarId || 'av_runner_core',
     ownedVehicles,
     selectedVehicleId,
     vehicleUpgrades: {
@@ -552,13 +635,24 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     completedMissions,
     dailyResetAt,
     weeklyResetAt,
+    seasonStartAtMs,
+    savedLanRooms: Array.isArray(parsed.savedLanRooms) ? parsed.savedLanRooms.slice(0, 12) : [],
+    friends: Array.isArray(parsed.friends) ? parsed.friends.slice(0, 40) : [],
     battlePass: {
       ...base.battlePass,
       ...(parsed.battlePass ?? {}),
-      level: Math.max(1, Math.min(40, parsed.battlePass?.level ?? 1)),
+      season: 8,
+      level: Math.max(1, Math.min(BATTLE_PASS_MAX_TIER, parsed.battlePass?.level ?? 1)),
       claimedFreeTiers: parsed.battlePass?.claimedFreeTiers ?? [],
       claimedPremiumTiers: parsed.battlePass?.claimedPremiumTiers ?? [],
     },
+    timeTrialBestByCity: { ...(parsed.timeTrialBestByCity ?? {}) },
+    freeRunConfig: {
+      ...DEFAULT_FREE_RUN_CONFIG,
+      ...(parsed.freeRunConfig ?? {}),
+      districtId: normalizeDistrictId(parsed.freeRunConfig?.districtId ?? 'downtown'),
+    },
+    tutorialStepSaved: Math.max(0, Math.min(8, Math.floor(parsed.tutorialStepSaved ?? 0))),
     transactions: Array.isArray(parsed.transactions) ? parsed.transactions.slice(0, 40) : [],
     upgradeHistory: Array.isArray(parsed.upgradeHistory)
       ? parsed.upgradeHistory.slice(0, 40)
@@ -578,27 +672,27 @@ export function sanitizeAndMigrateSave(parsed: Partial<PlayerSaveData>): PlayerS
     settings: {
       ...base.settings,
       ...(parsed.settings ?? {}),
+      showOnScreenControls: parsed.settings?.showOnScreenControls ?? true,
       timeOfDay: normalizedTime,
       keybindings: {
         ...base.settings.keybindings,
         ...(parsed.settings?.keybindings ?? {}),
+        callDrone:
+          parsed.settings?.keybindings?.callDrone || base.settings.keybindings.callDrone,
+        activateVehicle:
+          parsed.settings?.keybindings?.activateVehicle ||
+          base.settings.keybindings.activateVehicle,
       },
     },
     completedEvents: parsed.completedEvents ?? [],
     leaderboard: normalizedLeaderboard,
   };
+  return cleanSave;
 }
 
 export function loadSaveData(): PlayerSaveData {
-  const candidates = [
-    SAVE_KEY,
-    BACKUP_SAVE_KEY,
-    V3_SAVE_KEY,
-    V3_BACKUP_SAVE_KEY,
-    V2_SAVE_KEY,
-    LEGACY_SAVE_KEY,
-  ];
-  for (const key of candidates) {
+  const v6Candidates = [SAVE_KEY, BACKUP_SAVE_KEY];
+  for (const key of v6Candidates) {
     try {
       const raw = localStorage.getItem(key);
       if (!raw) continue;
@@ -608,10 +702,28 @@ export function loadSaveData(): PlayerSaveData {
       persistSaveData(clean);
       return clean;
     } catch {
-      // Corrupt primary/legacy slot -> automatically falls through to backup
+      // fall through
     }
   }
-  return createInitialSave();
+
+  // Upgrade from older save slot: preserve settings/name only, reset economy & pass cleanly for v8.0.0
+  const legacyKeys = [V5_SAVE_KEY, V4_SAVE_KEY, V3_SAVE_KEY, V2_SAVE_KEY, LEGACY_SAVE_KEY];
+  for (const key of legacyKeys) {
+    try {
+      const raw = localStorage.getItem(key);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw) as Partial<PlayerSaveData>;
+      if (!parsed || typeof parsed !== 'object') continue;
+      const resetClean = sanitizeAndMigrateSave({ ...parsed, saveVersion: 5 });
+      persistSaveData(resetClean);
+      return resetClean;
+    } catch {
+      // ignore
+    }
+  }
+  const initial = createInitialSave();
+  persistSaveData(initial);
+  return initial;
 }
 
 export function persistSaveData(save: PlayerSaveData): void {
@@ -679,13 +791,94 @@ export function resetLocalProgressionClean(save: PlayerSaveData): PlayerSaveData
   const next: PlayerSaveData = {
     ...fresh,
     playerName: save.playerName,
-    avatarId: save.avatarId,
-    modelStyle: save.modelStyle ?? 'procedural',
+    lastNameChangeAt: save.lastNameChangeAt ?? 0,
+    onboardingCompleted: save.onboardingCompleted ?? false,
+    playerAgeGroup: save.playerAgeGroup,
+    runnerExperience: save.runnerExperience,
+    modelStyle: save.modelStyle ?? 'cesium_man',
     customBossMeta: save.customBossMeta ?? {},
+    savedLanRooms: save.savedLanRooms ?? [],
+    friends: save.friends ?? [],
     settings: {
       ...save.settings,
       keybindings: { ...save.settings.keybindings },
     },
+  };
+  persistSaveData(next);
+  return next;
+}
+
+export function getNameChangeCooldownInfo(save: PlayerSaveData, nowMs = Date.now()): {
+  canChange: boolean;
+  remainingMs: number;
+  remainingHours: number;
+} {
+  const last = save.lastNameChangeAt ?? 0;
+  if (!last) return { canChange: true, remainingMs: 0, remainingHours: 0 };
+  const elapsed = nowMs - last;
+  const remainingMs = Math.max(0, NAME_CHANGE_COOLDOWN_MS - elapsed);
+  return {
+    canChange: remainingMs <= 0,
+    remainingMs,
+    remainingHours: Math.ceil(remainingMs / (60 * 60 * 1000)),
+  };
+}
+
+export function changeOfflineUsername(
+  save: PlayerSaveData,
+  newNameRaw: string,
+  nowMs = Date.now(),
+): { ok: boolean; reason?: string; nextSave: PlayerSaveData } {
+  const cleaned = newNameRaw.trim().replace(/[^\w\- áéíóúÁÉÍÓÚñÑ]/g, '').slice(0, 18);
+  if (cleaned.length < 3) {
+    return { ok: false, reason: 'El nombre debe tener al menos 3 caracteres.', nextSave: save };
+  }
+  if (cleaned === save.playerName) {
+    return { ok: false, reason: 'Ese ya es tu nombre actual.', nextSave: save };
+  }
+  const cd = getNameChangeCooldownInfo(save, nowMs);
+  if (!cd.canChange) {
+    const days = Math.floor(cd.remainingHours / 24);
+    const hrs = cd.remainingHours % 24;
+    return {
+      ok: false,
+      reason: `Debes esperar ${days}d ${hrs}h para volver a cambiar tu nombre.`,
+      nextSave: save,
+    };
+  }
+  const next: PlayerSaveData = {
+    ...save,
+    playerName: cleaned,
+    lastNameChangeAt: nowMs,
+  };
+  persistSaveData(next);
+  return { ok: true, nextSave: next };
+}
+
+export function saveLanRoomPreset(save: PlayerSaveData, room: SavedLanRoom): PlayerSaveData {
+  const existing = (save.savedLanRooms ?? []).filter((r) => r.id !== room.id && r.hostAddress !== room.hostAddress);
+  const next: PlayerSaveData = {
+    ...save,
+    savedLanRooms: [room, ...existing].slice(0, 12),
+  };
+  persistSaveData(next);
+  return next;
+}
+
+export function deleteLanRoomPreset(save: PlayerSaveData, roomId: string): PlayerSaveData {
+  const next: PlayerSaveData = {
+    ...save,
+    savedLanRooms: (save.savedLanRooms ?? []).filter((r) => r.id !== roomId),
+  };
+  persistSaveData(next);
+  return next;
+}
+
+export function upsertLocalFriend(save: PlayerSaveData, friend: FriendEntry): PlayerSaveData {
+  const existing = (save.friends ?? []).filter((f) => f.userId !== friend.userId);
+  const next: PlayerSaveData = {
+    ...save,
+    friends: [friend, ...existing].slice(0, 40),
   };
   persistSaveData(next);
   return next;
@@ -732,6 +925,7 @@ export interface RunTelemetry {
   bossDefeatedId: BossId | null;
   abilitiesUsed: number;
   slowMoUsed: number;
+  fiveLaneDistance?: number;
   secrets: number;
   revivesUsed: number;
   talismanAutoRevives: number;
@@ -782,13 +976,22 @@ export function applyRunToSave(
   const bpResult = addBattlePassXp(next.battlePass, bpXpEarned);
   next.battlePass = bpResult.nextBp;
 
-  if ((run.mode === 'tutorial' && run.victory) || run.distance >= 350) {
+  if (run.mode === 'tutorial' && (run.victory || run.distance >= 400)) {
     next.tutorialCompleted = true;
+    next.tutorialStepSaved = 8;
   }
 
   const cleanDist = Math.floor(run.distance);
   const cleanDur = Math.floor(run.durationSec);
   const cleanScore = Math.floor(run.score);
+
+  if (run.mode === 'timetrial' && cleanDur > 0) {
+    const prevBestCity = next.timeTrialBestByCity?.[run.districtId] ?? 0;
+    next.timeTrialBestByCity = {
+      ...(next.timeTrialBestByCity ?? {}),
+      [run.districtId]: Math.max(prevBestCity, cleanDur),
+    };
+  }
 
   next.stats.totalRuns += 1;
   if (run.victory) next.stats.wins += 1;
@@ -826,9 +1029,9 @@ export function applyRunToSave(
     next.stats.noReviveWins = (next.stats.noReviveWins ?? 0) + 1;
   }
 
-  const distDef = getDistrictById(run.districtId);
-  if (distDef.laneCount === 5) {
-    next.stats.fiveLaneDistance = (next.stats.fiveLaneDistance ?? 0) + cleanDist;
+  const fiveLaneDistRun = Math.floor(run.fiveLaneDistance ?? 0);
+  if (fiveLaneDistRun > 0) {
+    next.stats.fiveLaneDistance = (next.stats.fiveLaneDistance ?? 0) + fiveLaneDistRun;
   }
 
   if (run.bossDefeatedId) {
@@ -902,7 +1105,8 @@ export function applyRunToSave(
   const newlyCompletedMissions: string[] = [];
   const newlyClaimableMissions: string[] = [];
 
-  for (const m of MISSIONS) {
+  const activeMissions = getAllActiveMissions(next.seasonStartAtMs);
+  for (const m of activeMissions) {
     if (next.completedMissions.includes(m.id)) continue;
     if (m.districtReq && m.districtReq !== run.districtId) continue;
     if (m.characterReq && m.characterReq !== run.characterId) continue;
@@ -968,7 +1172,7 @@ export function applyRunToSave(
         delta = parkourChains;
         break;
       case 'fiveLaneDist':
-        if (distDef.laneCount === 5) delta = cleanDist;
+        delta = fiveLaneDistRun;
         break;
       case 'bossPhase':
         delta = bossPhasesCleared;
@@ -1020,7 +1224,7 @@ export function applyRunToSave(
   while (next.xp >= xpRequiredForLevel(next.level)) {
     next.xp -= xpRequiredForLevel(next.level);
     next.level += 1;
-    next.gems += 5;
+    next.gems += 3;
     next.coins += 250;
     leveledUp = true;
   }

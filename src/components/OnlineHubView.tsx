@@ -6,9 +6,7 @@ import {
   Copy,
   Database,
   Download,
-  FolderOpen,
   Globe,
-  HardDrive,
   KeyRound,
   Link2,
   LogOut,
@@ -43,7 +41,7 @@ import {
   getCharacterById,
   getDistrictById,
 } from '../game/data';
-import { createInitialSave, resetLocalProgressionClean } from '../game/storage';
+import { resetLocalProgressionClean } from '../game/storage';
 import {
   AccountSyncConflict,
   BossId,
@@ -54,7 +52,6 @@ import {
   InviteStatus,
   LanHostState,
   LanguageCode,
-  LocalProfileSummary,
   MultiplayerRoomState,
   NetworkConnectionMode,
   PersistentInviteRecord,
@@ -66,12 +63,10 @@ import { getCityLabel, getModeLabel, t } from '../i18n';
 import {
   addOnlineFriend,
   buildAccountConflict,
+  changeOnlinePassword,
   checkServerOnline,
-  createLocalProfileApi,
   DatabaseDiagnosticsInfo,
-  deleteLocalProfileApi,
   exportAccountBackupJson,
-  exportLocalBackupJson,
   fetchDatabaseInfo,
   fetchInvites,
   fetchLanStatus,
@@ -79,14 +74,13 @@ import {
   fetchOnlineEvents,
   fetchPublicRooms,
   fetchRankings,
-  getLocalProfileApi,
   getOnlineBackendUrl,
   getTunnelStatus,
-  importLocalBackupNative,
   linkAccountApi,
-  listLocalProfilesApi,
+  listOnlineSessions,
   loadSaveFromSqlite,
   loginOnlineUser,
+  logoutAllOnlineSessions,
   logoutOnlineUser,
   mergeSavesWithoutDuplication,
   mpClient,
@@ -102,7 +96,6 @@ import {
   resetServerTestRankings,
   respondToInvite,
   RoomInviteNotice,
-  saveLocalProfileApi,
   SearchedUserEntry,
   searchOnlineUsers,
   sendPersistentInvite,
@@ -186,7 +179,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   onDismissInvite,
   onClearNotice,
   onOnlineUserChange,
-  onSwitchLocalProfile,
+  onSwitchLocalProfile: _onSwitchLocalProfile,
   onReplaceSave,
   onStartChallenge,
 }) => {
@@ -195,12 +188,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   const [section, setSection] = useState<HubSection>('multiplayer');
   const [netTab, setNetTab] = useState<NetTabMode>('lan');
-
-  // Local Profiles state
-  const [localProfiles, setLocalProfiles] = useState<LocalProfileSummary[]>([]);
-  const [newProfileName, setNewProfileName] = useState('');
-  const [newProfileAvatar, setNewProfileAvatar] = useState(save.selectedCharacterId || 'kai');
-  const [profileNotice, setProfileNotice] = useState<string | null>(null);
 
   // Online Backend URL & Auth
   const [backendUrlInput, setBackendUrlInput] = useState(() => getOnlineBackendUrl());
@@ -228,12 +215,12 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   // LAN / VPN / Tunnel state
   const [lanState, setLanState] = useState<LanHostState | null>(null);
-  const [lanBindIp, setLanBindIp] = useState('0.0.0.0');
-  const [lanPort, setLanPort] = useState('3077');
+  const [lanBindIp, setLanBindIp] = useState(() => localStorage.getItem('mr_radmin_bind_ip') || '0.0.0.0');
+  const [lanPort, setLanPort] = useState(() => localStorage.getItem('mr_radmin_port') || '3077');
   const [lanBusy, setLanBusy] = useState(false);
   const [lanError, setLanError] = useState<string | null>(null);
-  const [directJoinAddr, setDirectJoinAddr] = useState('');
-  const [vpnJoinAddr, setVpnJoinAddr] = useState('');
+  const [directJoinAddr, setDirectJoinAddr] = useState(() => localStorage.getItem('mr_direct_join_addr') || '');
+  const [vpnJoinAddr, setVpnJoinAddr] = useState(() => localStorage.getItem('mr_radmin_join_addr') || '');
   const [internetWsInput, setInternetWsInput] = useState('');
   const [tunnelState, setTunnelState] = useState<TunnelState | null>(null);
   const [tunnelBusy, setTunnelBusy] = useState(false);
@@ -284,13 +271,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
 
   const effectiveConflict = pendingConflict ?? localConflict;
   const effectiveOnlineSave = pendingOnlineSave ?? localConflictOnlineSave;
-
-  const refreshLocalProfiles = useCallback(async () => {
-    const res = await listLocalProfilesApi();
-    if (res.ok) {
-      setLocalProfiles(res.profiles);
-    }
-  }, []);
 
   const refreshLanState = useCallback(async () => {
     const st = await fetchLanStatus();
@@ -378,7 +358,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
   }, [serverOnline, mpTargetUrl]);
 
   useEffect(() => {
-    void refreshLocalProfiles();
     void refreshLanState();
     void refreshTunnelState();
     void refreshFirewallStatus();
@@ -390,7 +369,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       });
     });
     return rtcClient.subscribe(setRtcPeers);
-  }, [refreshLocalProfiles, refreshLanState, refreshTunnelState, refreshFirewallStatus]);
+  }, [refreshLanState, refreshTunnelState, refreshFirewallStatus]);
 
   useEffect(() => {
     void refreshInvitesList();
@@ -434,6 +413,9 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     }
     if (res.state) setLanState(res.state);
     audioEngine.playClaimReward();
+
+    localStorage.setItem('mr_radmin_bind_ip', bindTarget);
+    localStorage.setItem('mr_radmin_port', String(parsedPort));
 
     // Always connect the host client over local loopback (127.0.0.1) when bound to 0.0.0.0 or a NIC
     const hostConnectIp =
@@ -673,73 +655,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     }
   };
 
-  const handleCreateLocalProfile = async (e: React.FormEvent) => {
-    e.preventDefault();
-    const cleanName = newProfileName.trim();
-    if (cleanName.length < 2) {
-      setProfileNotice('El nombre del perfil local debe tener al menos 2 caracteres.');
-      return;
-    }
-    const freshSave: PlayerSaveData = {
-      ...createInitialSave(),
-      playerName: cleanName,
-      avatarId: newProfileAvatar,
-      selectedCharacterId: newProfileAvatar,
-    };
-    const res = await createLocalProfileApi({
-      name: cleanName,
-      avatarId: newProfileAvatar,
-      save: freshSave,
-    });
-    if (!res.ok || !res.profile) {
-      setProfileNotice(res.error || 'No se pudo crear el perfil local.');
-      return;
-    }
-    audioEngine.playClaimReward();
-    setNewProfileName('');
-    setProfileNotice(`Perfil local "${cleanName}" creado y activado.`);
-    onSwitchLocalProfile(res.profile.id, freshSave);
-    void refreshLocalProfiles();
-  };
-
-  const handleSelectLocalProfile = async (id: string) => {
-    if (activeLocalProfileId) {
-      await saveLocalProfileApi(activeLocalProfileId, save);
-    }
-    const res = await getLocalProfileApi(id);
-    if (!res.ok || !res.save) {
-      setProfileNotice(res.error || 'No se pudo cargar el perfil local.');
-      return;
-    }
-    audioEngine.playUiClick(true);
-    onSwitchLocalProfile(id, res.save);
-    setProfileNotice(`Perfil local "${res.profile?.name}" cargado.`);
-  };
-
-  const handleDeleteLocalProfile = async (id: string, name: string) => {
-    if (localProfiles.length <= 1) {
-      setProfileNotice('Debe permanecer al menos un perfil local en el equipo.');
-      return;
-    }
-    const res = await deleteLocalProfileApi(id);
-    if (!res.ok) {
-      setProfileNotice(res.error || 'No se pudo eliminar el perfil.');
-      return;
-    }
-    audioEngine.playUiClick();
-    setProfileNotice(`Perfil "${name}" eliminado (con respaldo automático previo).`);
-    const list = await listLocalProfilesApi();
-    if (list.ok) {
-      setLocalProfiles(list.profiles);
-      if (activeLocalProfileId === id && list.profiles[0]) {
-        const nextLoaded = await getLocalProfileApi(list.profiles[0].id);
-        if (nextLoaded.ok && nextLoaded.save) {
-          onSwitchLocalProfile(list.profiles[0].id, nextLoaded.save);
-        }
-      }
-    }
-  };
-
   const handleTriggerAccountLink = async () => {
     if (!onlineUser) {
       setSyncNotice('Inicia sesión primero en una cuenta online para vincular.');
@@ -770,7 +685,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
         audioEngine.playClaimReward();
         onReplaceSave(merged);
         setSyncNotice(`Perfil local vinculado con ${onlineUser.username}.`);
-        void refreshLocalProfiles();
       } else {
         setSyncNotice(res.error || 'No se pudo vincular el perfil.');
       }
@@ -806,7 +720,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       onReplaceSave(chosen);
       setLocalConflict(null);
       setLocalConflictOnlineSave(null);
-      void refreshLocalProfiles();
     }
     audioEngine.playClaimReward();
     setSyncNotice(
@@ -877,7 +790,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
       mpClient.connect({ guestName: res.user.username });
       void loadDbAndRooms();
       void loadRankings();
-      void refreshLocalProfiles();
       return;
     }
 
@@ -938,27 +850,6 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
     } else {
       setSyncNotice(res.error || 'No se pudo leer desde el servidor.');
     }
-  };
-
-  const handleExportLocalBackup = async () => {
-    const res = await exportLocalBackupJson(save);
-    if (res.ok) {
-      audioEngine.playClaimReward();
-      setProfileNotice(res.message || 'Respaldo local guardado.');
-    } else {
-      setProfileNotice(res.error || 'No se pudo exportar.');
-    }
-  };
-
-  const handleImportLocalNative = async () => {
-    const res = await importLocalBackupNative();
-    if (!res.ok || !res.save) {
-      setProfileNotice(res.error || 'Importación cancelada.');
-      return;
-    }
-    audioEngine.playClaimReward();
-    onReplaceSave(res.save);
-    setProfileNotice(`Respaldo "${res.fileName}" restaurado en el perfil actual.`);
   };
 
   const handleExportAccountJson = async () => {
@@ -1208,7 +1099,7 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
         {(
           [
             ['multiplayer', 'Multijugador LAN / Internet', Users],
-            ['account', 'Cuentas Local + Online', Database],
+            ['account', 'Cuenta Online y Sesión', Database],
             ['rankings', 'Clasificaciones y Retos', Globe],
             ['network_info', 'Arquitectura de Red PC', Network],
           ] as [HubSection, string, React.ComponentType<{ className?: string }>][]
@@ -2483,135 +2374,67 @@ export const OnlineHubView: React.FC<OnlineHubViewProps> = ({
         </div>
       )}
 
-      {/* SECTION 2: DUAL ACCOUNTS (OFFLINE LOCAL PROFILES + ONLINE ACCOUNTS + SYNC + BACKUP) */}
+      {/* SECTION 2: ONLINE ACCOUNTS, BACKEND SERVER & CLOUD SYNC (Local Profiles live exclusively in Perfil §20.1) */}
       {section === 'account' && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {/* Column 1: Offline Local Profiles & Native Backups */}
+          {/* Column 1: Online Diagnostics, Account Export & Separation Info */}
           <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-3">
             <div className="flex items-center justify-between">
               <div className="font-display font-bold text-sm text-white flex items-center gap-2">
-                <HardDrive className="w-4 h-4 text-emerald-400" />
-                Perfiles Locales (100% Offline en PC)
+                <ShieldCheck className="w-4 h-4 text-cyan-400" />
+                Centro de Cuenta Online y Diagnóstico
               </div>
-              <span className="text-[11px] font-mono-num text-slate-400">
-                {localProfiles.length} perfil(es)
+              <span className="text-[11px] font-mono-num text-emerald-300">
+                {onlineUser ? 'Autenticado' : 'Sin Sesión'}
               </span>
             </div>
 
-            <p className="text-xs text-slate-400">
-              Tu progreso local funciona siempre sin Internet ni cuenta online y se guarda fuera de la carpeta del programa.
+            <p className="text-xs text-slate-300 leading-relaxed">
+              Las cuentas online permiten guardar tu progreso en servidor remoto, recuperar contraseña, participar en rankings e invitar amigos. Los perfiles offline locales se administran únicamente desde la pantalla <strong>Perfil</strong>.
             </p>
 
-            {/* Local Profiles List */}
-            <div className="space-y-1.5 max-h-48 overflow-y-auto">
-              {localProfiles.map((prof) => {
-                const isActive = prof.id === activeLocalProfileId;
-                return (
-                  <div
-                    key={prof.id}
-                    className={`p-2.5 rounded-lg border text-xs flex items-center justify-between gap-2 ${
-                      isActive
-                        ? 'bg-emerald-500/15 border-emerald-400/60'
-                        : 'bg-[#070b17] border-white/10'
-                    }`}
-                  >
-                    <div className="min-w-0">
-                      <div className="font-bold text-white truncate flex items-center gap-1.5">
-                        {prof.name}
-                        {isActive && (
-                          <span className="text-[10px] text-emerald-300 font-semibold">
-                            · Activo
-                          </span>
-                        )}
-                      </div>
-                      <div className="text-[11px] font-mono-num text-slate-400">
-                        Nv {prof.level} · {prof.coins.toLocaleString('es-ES')} M · {prof.totalRuns} carreras
-                        {prof.linkedOnlineUsername
-                          ? ` · Vinculado a ${prof.linkedOnlineUsername}`
-                          : ' · Solo Local'}
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      {!isActive && (
-                        <button
-                          onClick={() => void handleSelectLocalProfile(prof.id)}
-                          className="px-2.5 py-1 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 font-bold cursor-pointer"
-                        >
-                          Usar
-                        </button>
-                      )}
-                      {localProfiles.length > 1 && (
-                        <button
-                          onClick={() => void handleDeleteLocalProfile(prof.id, prof.name)}
-                          className="p-1.5 rounded bg-white/5 hover:bg-rose-500/25 text-slate-300 hover:text-rose-200 cursor-pointer"
-                          title="Eliminar perfil"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
+            {onlineUser ? (
+              <div className="space-y-2.5 text-xs">
+                <div className="p-3 rounded-lg bg-[#070b17] border border-white/10 space-y-1 font-mono-num">
+                  <div className="text-white font-sans font-bold">
+                    Usuario: {onlineUser.username}
                   </div>
-                );
-              })}
-            </div>
-
-            {/* Create New Local Profile */}
-            <form onSubmit={handleCreateLocalProfile} className="flex gap-2 pt-1">
-              <input
-                type="text"
-                placeholder="Nuevo perfil local (ej. Invitado_Casa)"
-                value={newProfileName}
-                onChange={(e) => setNewProfileName(e.target.value)}
-                maxLength={22}
-                className="flex-1 bg-[#070b17] border border-white/15 rounded-lg px-3 py-1.5 text-xs text-white outline-none focus:border-cyan-400"
-              />
-              <select
-                value={newProfileAvatar}
-                onChange={(e) => setNewProfileAvatar(e.target.value)}
-                className="bg-[#070b17] border border-white/15 rounded-lg px-2 py-1.5 text-xs text-white"
-              >
-                {CHARACTERS.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.name}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="submit"
-                disabled={!serverOnline}
-                className="px-3 py-1.5 rounded-lg bg-emerald-400 hover:bg-emerald-300 disabled:opacity-40 text-slate-950 text-xs font-bold cursor-pointer whitespace-nowrap"
-              >
-                + Crear
-              </button>
-            </form>
-
-            {/* Backup Export / Import / Folder */}
-            <div className="pt-2 border-t border-white/10 flex flex-wrap gap-2">
-              <button
-                onClick={() => void handleExportLocalBackup()}
-                className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-              >
-                <Download className="w-3.5 h-3.5 text-cyan-300" /> Exportar Respaldo JSON
-              </button>
-              {isElectron && (
-                <>
+                  <div className="text-slate-400">Correo: {onlineUser.email}</div>
+                  <div className="text-slate-400">
+                    ID: {onlineUser.id.slice(0, 14)} · Récord: {onlineUser.bestScore.toLocaleString('es-ES')}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-2">
                   <button
-                    onClick={() => void handleImportLocalNative()}
-                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
+                    type="button"
+                    onClick={async () => {
+                      const res = await logoutAllOnlineSessions();
+                      if (res.ok) {
+                        onOnlineUserChange(null);
+                        setSyncNotice(`Sesiones cerradas (${res.revokedCount ?? 0}).`);
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-lg bg-rose-500/15 border border-rose-400/50 hover:bg-rose-500/25 text-rose-200 font-semibold cursor-pointer"
                   >
-                    <Upload className="w-3.5 h-3.5 text-emerald-300" /> Importar Respaldo JSON
+                    Cerrar Todas las Sesiones
                   </button>
                   <button
-                    onClick={() => void window.metroDesktop?.openBackupsFolder()}
-                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-xs font-semibold text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                    type="button"
+                    onClick={() => void handleExportAccountJson()}
+                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
-                    <FolderOpen className="w-3.5 h-3.5 text-amber-300" /> Carpeta de Datos
+                    <Download className="w-3.5 h-3.5 text-amber-300" /> Exportar Cuenta Online
                   </button>
-                </>
-              )}
-            </div>
-
-            {profileNotice && <div className="text-xs text-cyan-300">{profileNotice}</div>}
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-lg bg-[#070b17] border border-white/10 text-xs text-slate-400 space-y-1.5">
+                <div className="font-semibold text-white">Sin cuenta online activa</div>
+                <p>
+                  Usa el formulario de la derecha para iniciar sesión o registrar una cuenta online nueva sin afectar tus perfiles locales.
+                </p>
+              </div>
+            )}
 
             {dbInfo && (
               <div className="p-2.5 rounded-lg bg-[#070b17] border border-white/10 text-[11px] font-mono-num text-slate-300 space-y-1 break-all">

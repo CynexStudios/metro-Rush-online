@@ -21,6 +21,7 @@ export interface ProceduralTexturePack {
   secTrimMat: THREE.MeshStandardMaterial;
   darkMetalMat: THREE.MeshStandardMaterial;
   hazardMat: THREE.MeshStandardMaterial;
+  radarWarningMat: THREE.MeshBasicMaterial;
   waterMat: THREE.MeshStandardMaterial | null;
   waterTimeUniform: { value: number };
   billboardMats: THREE.MeshBasicMaterial[];
@@ -212,18 +213,54 @@ export function createProceduralTextures(
       rhCtx.fillRect(hCx - 13, 0, 3, 256);
       rhCtx.fillRect(hCx + 10, 0, 3, 256);
     });
+  } else if (districtId === 'skyfall_towers') {
+    // High-altitude rooftop steel/concrete track with safety stripes
+    rCtx.fillStyle = '#182238';
+    rCtx.fillRect(0, 0, res, res);
+    rCtx.strokeStyle = '#334155';
+    rCtx.lineWidth = 3 * s;
+    for (let y = 0; y < res; y += Math.round(64 * s)) {
+      rCtx.strokeRect(12 * s, y, res - 24 * s, 58 * s);
+    }
+    rCtx.fillStyle = '#f59e0b';
+    for (let y = 0; y < res; y += Math.round(36 * s)) {
+      rCtx.fillRect(6 * s, y, 8 * s, 18 * s);
+      rCtx.fillRect(res - 14 * s, y, 8 * s, 18 * s);
+    }
+  } else if (districtId === 'the_creation') {
+    // Automated mega-factory floor plating & safety hazard guides
+    rCtx.fillStyle = '#1a1512';
+    rCtx.fillRect(0, 0, res, res);
+    rCtx.strokeStyle = '#452b18';
+    rCtx.lineWidth = 3 * s;
+    for (let y = 0; y < res; y += Math.round(48 * s)) {
+      rCtx.strokeRect(16 * s, y, res - 32 * s, 44 * s);
+    }
+    rhCtx.fillStyle = '#b4b4b4';
+    for (let y = 10; y < 256; y += 20) {
+      for (let x = 10; x < 256; x += 20) {
+        rhCtx.fillRect(x, y, 8, 4);
+      }
+    }
+    rCtx.fillStyle = '#f97316';
+    for (let y = 0; y < res; y += Math.round(32 * s)) {
+      rCtx.fillRect(8 * s, y, 10 * s, 14 * s);
+      rCtx.fillRect(res - 18 * s, y, 10 * s, 14 * s);
+    }
+  } else if (districtId === 'dont_drown') {
+    // Floating marine steel pier deck above open ocean
+    rCtx.fillStyle = '#132a3c';
+    rCtx.fillRect(0, 0, res, res);
+    for (let y = 0; y < res; y += Math.round(24 * s)) {
+      rCtx.fillStyle = y % Math.round(48 * s) === 0 ? '#18374d' : '#112536';
+      rCtx.fillRect(0, y, res, 21 * s);
+    }
+    rCtx.fillStyle = '#2dd4bf';
+    rCtx.fillRect(10 * s, 0, 6 * s, res);
+    rCtx.fillRect(res - 16 * s, 0, 6 * s, res);
   } else {
-    // Urban Asphalt Highway for Downtown, Skyline, and 5-lane Megacities
-    rCtx.fillStyle =
-      districtId === 'skyline'
-        ? '#171f36'
-        : districtId === 'cyber_port'
-          ? '#0f1c2b'
-          : districtId === 'obsidian_citadel'
-            ? '#0c1216'
-            : districtId === 'crimson_metropolis'
-              ? '#160b10'
-              : '#0c111e';
+    // Urban Asphalt Highway for Downtown, Skyline, and 5-lane Dynamic Events
+    rCtx.fillStyle = districtId === 'skyline' ? '#171f36' : '#0c111e';
     rCtx.fillRect(0, 0, res, res);
     const grainCount = textureQuality === 'high' ? 3200 : 1200;
     for (let i = 0; i < grainCount; i++) {
@@ -451,20 +488,20 @@ export function createProceduralTextures(
       { top: 'LÍNEA EXPRESS', sub: 'ACCESO RESTRINGIDO' },
     ],
     future: [
-      { top: 'FUTURE LABS', sub: 'GRAVEDAD 0.82G' },
-      { top: 'QUANTUM CORE', sub: 'SENTINEL GRID' },
+      { top: 'FUTURE LABS', sub: 'GRAVEDAD 0.84G' },
+      { top: 'QUANTUM CORE', sub: 'THE SENTINEL GRID' },
     ],
-    cyber_port: [
-      { top: 'PUERTO CIBER', sub: 'AUTOPISTA 5 CARRILES' },
-      { top: 'TERMINAL DELTA', sub: 'CARGA SUPERSÓNICA' },
+    skyfall_towers: [
+      { top: 'CUIDADO SI TE CAES', sub: 'AZOTEAS EXTREMAS' },
+      { top: 'TORRES SKYFALL', sub: 'ABISMOS +420M' },
     ],
-    obsidian_citadel: [
-      { top: 'CIUDADELA OBSIDIANA', sub: 'SECTOR 5 CARRILES' },
-      { top: 'EJE MONOLITO', sub: 'ACCESO BLINDADO' },
+    the_creation: [
+      { top: 'LA CREACIÓN', sub: 'PLANTA ROBÓTICA' },
+      { top: 'SECTOR ENSAMBLAJE', sub: 'PRECISIÓN PESADA' },
     ],
-    crimson_metropolis: [
-      { top: 'METRÓPOLIS CARMESÍ', sub: 'REACTOR CENTRAL' },
-      { top: 'APOCALIPSIS 3.0', sub: 'ZONA OMEGA CORE' },
+    dont_drown: [
+      { top: 'NO TE AHOGUES', sub: 'PLATAFORMAS MARINAS' },
+      { top: 'FLOTA OCEÁNICA', sub: 'OLEAJE ACTIVO' },
     ],
   };
 
@@ -599,18 +636,26 @@ export function createProceduralTextures(
       }),
   );
 
-  // Animated Ocean Material for Neon Beach (GPU vertex waves via onBeforeCompile!)
+  const radarWarningMat = new THREE.MeshBasicMaterial({
+    color: 0xf43f5e,
+    transparent: true,
+    opacity: 0.42,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+
+  // Animated Ocean Material for Neon Beach & No te ahogues (GPU vertex waves via onBeforeCompile!)
   const waterTimeUniform = { value: 0 };
   let waterMat: THREE.MeshStandardMaterial | null = null;
-  if (districtId === 'beach') {
+  if (districtId === 'beach' || districtId === 'dont_drown') {
     waterMat = new THREE.MeshStandardMaterial({
-      color: '#0d4f6b',
-      emissive: '#0c3b52',
-      emissiveIntensity: 0.35,
+      color: districtId === 'dont_drown' ? '#0b445e' : '#0d4f6b',
+      emissive: districtId === 'dont_drown' ? '#082d40' : '#0c3b52',
+      emissiveIntensity: 0.38,
       roughness: 0.16,
       metalness: 0.72,
       transparent: true,
-      opacity: 0.88,
+      opacity: 0.9,
     });
     waterMat.onBeforeCompile = (shader) => {
       shader.uniforms.uTime = waterTimeUniform;
@@ -619,7 +664,7 @@ export function createProceduralTextures(
         shader.vertexShader.replace(
           '#include <begin_vertex>',
           `#include <begin_vertex>
-           transformed.y += sin(transformed.x * 0.45 + uTime * 2.2) * 0.28 + cos(transformed.z * 0.35 + uTime * 1.7) * 0.22;`,
+           transformed.y += sin(transformed.x * 0.45 + uTime * 2.2) * 0.34 + cos(transformed.z * 0.35 + uTime * 1.7) * 0.26;`,
         );
     };
   }
@@ -643,6 +688,7 @@ export function createProceduralTextures(
     secTrimMat,
     darkMetalMat,
     hazardMat,
+    radarWarningMat,
     waterMat,
     waterTimeUniform,
     billboardMats,
@@ -666,8 +712,170 @@ export function createProceduralTextures(
       secTrimMat.dispose();
       darkMetalMat.dispose();
       hazardMat.dispose();
+      radarWarningMat.dispose();
       waterMat?.dispose();
       billboardMats.forEach((m) => m.dispose());
     },
   };
 }
+
+export interface AtmosphericSkyDome {
+  mesh: THREE.Mesh;
+  uniforms: {
+    uTime: { value: number };
+    uTopColor: { value: THREE.Color };
+    uHorizonColor: { value: THREE.Color };
+    uSunColor: { value: THREE.Color };
+    uSunDir: { value: THREE.Vector3 };
+    uCloudColor: { value: THREE.Color };
+    uNeonTint: { value: THREE.Color };
+    uCloudDensity: { value: number };
+    uNightFactor: { value: number };
+    uStormFactor: { value: number };
+    uExposure: { value: number };
+  };
+  dispose: () => void;
+}
+
+const SKY_VERT_SHADER = /* glsl */ `
+  varying vec3 vWorldDir;
+  void main() {
+    vWorldDir = normalize(position);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+
+const SKY_FRAG_SHADER = /* glsl */ `
+  precision mediump float;
+  varying vec3 vWorldDir;
+
+  uniform float uTime;
+  uniform vec3 uTopColor;
+  uniform vec3 uHorizonColor;
+  uniform vec3 uSunColor;
+  uniform vec3 uSunDir;
+  uniform vec3 uCloudColor;
+  uniform vec3 uNeonTint;
+  uniform float uCloudDensity;
+  uniform float uNightFactor;
+  uniform float uStormFactor;
+  uniform float uExposure;
+
+  float hash21(vec2 p) {
+    p = fract(p * vec2(234.34, 435.345));
+    p += dot(p, p + 34.23);
+    return fract(p.x * p.y);
+  }
+
+  float noise2(vec2 p) {
+    vec2 i = floor(p);
+    vec2 f = fract(p);
+    vec2 u = f * f * (3.0 - 2.0 * f);
+    float a = hash21(i);
+    float b = hash21(i + vec2(1.0, 0.0));
+    float c = hash21(i + vec2(0.0, 1.0));
+    float d = hash21(i + vec2(1.0, 1.0));
+    return mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+  }
+
+  float fbm(vec2 p) {
+    float v = 0.0;
+    float amp = 0.5;
+    mat2 rot = mat2(0.8, 0.6, -0.6, 0.8);
+    for (int i = 0; i < 4; i++) {
+      v += amp * noise2(p);
+      p = rot * p * 2.05;
+      amp *= 0.5;
+    }
+    return v;
+  }
+
+  void main() {
+    vec3 dir = normalize(vWorldDir);
+    float elev = clamp(dir.y, -0.1, 1.0);
+
+    // Base atmospheric gradient + cyber horizon scatter
+    float horizonPow = pow(1.0 - max(elev, 0.0), 2.4);
+    vec3 sky = mix(uTopColor, uHorizonColor, horizonPow);
+
+    // Subtle cyberpunk atmospheric glow band above skyline
+    float neonBand = exp(-abs(elev - 0.08) * 10.5) * 0.24;
+    sky += uNeonTint * neonBand;
+
+    // Solar disk & Mie horizon scatter
+    vec3 sunDir = normalize(uSunDir);
+    float sunDot = max(dot(dir, sunDir), 0.0);
+    float sunHalo = pow(sunDot, 10.0) * (0.38 - uStormFactor * 0.22);
+    float sunDisk = smoothstep(0.9965, 0.9992, sunDot) * (1.0 - uStormFactor * 0.8);
+    sky += uSunColor * (sunHalo + sunDisk * 0.9);
+
+    // Procedural drifting clouds on sky dome upper hemisphere
+    if (dir.y > 0.02 && uCloudDensity > 0.01) {
+      vec2 cloudUv = dir.xz / (dir.y + 0.22) * 1.45;
+      cloudUv += vec2(uTime * 0.016, uTime * 0.028);
+      float n = fbm(cloudUv);
+      float nDetail = fbm(cloudUv * 2.2 - vec2(uTime * 0.01, 0.0));
+      float cloud = smoothstep(0.46 - uStormFactor * 0.16, 0.82, n * 0.72 + nDetail * 0.28);
+      float cloudFade = smoothstep(0.02, 0.26, dir.y);
+      vec3 litCloud = mix(uCloudColor, uSunColor * 0.75 + uNeonTint * 0.25, 0.28);
+      sky = mix(sky, litCloud, cloud * cloudFade * uCloudDensity);
+    }
+
+    // Crisp night stars
+    if (uNightFactor > 0.15 && dir.y > 0.08) {
+      vec2 starGrid = floor(dir.xz / max(0.18, dir.y) * 95.0);
+      float starRand = hash21(starGrid);
+      if (starRand > 0.991) {
+        float twinkle = 0.65 + 0.35 * sin(uTime * 2.4 + starRand * 40.0);
+        float starMask = smoothstep(0.08, 0.35, dir.y) * uNightFactor * (1.0 - uStormFactor * 0.85);
+        sky += vec3(0.82, 0.9, 1.0) * twinkle * starMask * 0.85;
+      }
+    }
+
+    // Lightning pulse flicker during storm weather
+    if (uStormFactor > 0.5) {
+      float flash = pow(max(0.0, sin(uTime * 1.9) * sin(uTime * 5.3)), 14.0) * 0.28;
+      sky += vec3(0.45, 0.65, 1.0) * flash * max(dir.y, 0.0);
+    }
+
+    sky *= uExposure;
+    gl_FragColor = vec4(sky, 1.0);
+  }
+`;
+
+export function createAtmosphericSkyDome(): AtmosphericSkyDome {
+  const geo = new THREE.SphereGeometry(235, 32, 20);
+  const uniforms = {
+    uTime: { value: 0 },
+    uTopColor: { value: new THREE.Color('#090f24') },
+    uHorizonColor: { value: new THREE.Color('#192a4e') },
+    uSunColor: { value: new THREE.Color('#93c5fd') },
+    uSunDir: { value: new THREE.Vector3(0.45, 0.55, -0.7).normalize() },
+    uCloudColor: { value: new THREE.Color('#334155') },
+    uNeonTint: { value: new THREE.Color('#22d3ee') },
+    uCloudDensity: { value: 0.52 },
+    uNightFactor: { value: 0.7 },
+    uStormFactor: { value: 0.0 },
+    uExposure: { value: 0.96 },
+  };
+  const mat = new THREE.ShaderMaterial({
+    uniforms,
+    vertexShader: SKY_VERT_SHADER,
+    fragmentShader: SKY_FRAG_SHADER,
+    side: THREE.BackSide,
+    depthWrite: false,
+    fog: false,
+  });
+  const mesh = new THREE.Mesh(geo, mat);
+  mesh.frustumCulled = false;
+  mesh.renderOrder = -10;
+  return {
+    mesh,
+    uniforms,
+    dispose: () => {
+      geo.dispose();
+      mat.dispose();
+    },
+  };
+}
+

@@ -1,11 +1,16 @@
 import {
   BATTLE_PASS_PREMIUM_COST_GEMS,
   BATTLE_PASS_TIERS,
+  CHARACTER_BOOSTERS,
   CHARACTERS,
+  COMPANION_DRONES,
   COSMETICS,
   DISTRICTS,
+  GEM_EXCHANGE_PACKS,
+  getAllActiveMissions,
   getBattlePassXpForTier,
   MISSIONS,
+  PROFILE_AVATARS,
   SKILL_TREE,
   SPECIAL_SHOP_ITEMS,
   VEHICLES,
@@ -110,8 +115,8 @@ export function getVehicleUpgradeCoinCost(
   currentLevel: number,
 ): number {
   const v = VEHICLES.find((x) => x.id === vehicleId);
-  const base = v ? Math.max(450, Math.floor(v.unlockCostCoins * 0.35)) : 500;
-  return Math.floor(base * Math.pow(1.45, currentLevel));
+  const base = v ? Math.max(420, Math.min(1800, Math.floor(v.unlockCostCoins * 0.14))) : 480;
+  return Math.floor(base * Math.pow(1.42, currentLevel));
 }
 
 export function getVehicleUpgradeTicketCost(currentLevel: number): number {
@@ -289,6 +294,127 @@ export function purchaseSpecialItem(
   return { ok: true, nextSave: next };
 }
 
+export function purchaseOrEquipDrone(
+  save: PlayerSaveData,
+  droneId: string,
+): EconomyResult {
+  const drone = COMPANION_DRONES.find((d) => d.id === droneId);
+  if (!drone) return { ok: false, reason: 'Dron no encontrado.', nextSave: save };
+
+  const next = structuredClone(save);
+  next.ownedDrones = Array.from(new Set(next.ownedDrones ?? ['drone_aegis_mk1']));
+  if (next.ownedDrones.includes(drone.id)) {
+    next.equippedDroneId = next.equippedDroneId === drone.id ? null : drone.id;
+    return { ok: true, nextSave: next };
+  }
+
+  if (next.coins < drone.costCoins || next.gems < drone.costGems) {
+    return { ok: false, reason: 'Saldo insuficiente para adquirir este Dron.', nextSave: save };
+  }
+  next.coins -= drone.costCoins;
+  next.gems -= drone.costGems;
+  next.stats.coinsSpent += drone.costCoins;
+  next.ownedDrones.push(drone.id);
+  next.equippedDroneId = drone.id;
+
+  const costParts: string[] = [];
+  if (drone.costCoins > 0) costParts.push(`${drone.costCoins} M`);
+  if (drone.costGems > 0) costParts.push(`${drone.costGems} G`);
+  logTransaction(next, drone.name, 'Dron Acompañante', costParts.join(' + ') || 'Gratis');
+  return { ok: true, nextSave: next };
+}
+
+export function purchaseOrEquipBooster(
+  save: PlayerSaveData,
+  boosterId: string,
+): EconomyResult {
+  const booster = CHARACTER_BOOSTERS.find((b) => b.id === boosterId);
+  if (!booster) return { ok: false, reason: 'Potenciador no encontrado.', nextSave: save };
+
+  const next = structuredClone(save);
+  next.ownedBoosters = Array.from(new Set(next.ownedBoosters ?? []));
+  if (next.ownedBoosters.includes(booster.id)) {
+    next.equippedBoosterId = next.equippedBoosterId === booster.id ? null : booster.id;
+    return { ok: true, nextSave: next };
+  }
+
+  if (next.coins < booster.costCoins || next.gems < booster.costGems) {
+    return { ok: false, reason: 'Saldo insuficiente para adquirir este Potenciador.', nextSave: save };
+  }
+  next.coins -= booster.costCoins;
+  next.gems -= booster.costGems;
+  next.stats.coinsSpent += booster.costCoins;
+  next.ownedBoosters.push(booster.id);
+  next.equippedBoosterId = booster.id;
+
+  const costParts: string[] = [];
+  if (booster.costCoins > 0) costParts.push(`${booster.costCoins} M`);
+  if (booster.costGems > 0) costParts.push(`${booster.costGems} G`);
+  logTransaction(next, booster.name, 'Potenciador de Personaje', costParts.join(' + ') || 'Gratis');
+  return { ok: true, nextSave: next };
+}
+
+export function purchaseOrEquipAvatar(
+  save: PlayerSaveData,
+  avatarId: string,
+): EconomyResult {
+  const avatar = PROFILE_AVATARS.find((a) => a.id === avatarId);
+  if (!avatar) return { ok: false, reason: 'Avatar no encontrado.', nextSave: save };
+
+  const next = structuredClone(save);
+  next.ownedAvatars = Array.from(new Set(['av_runner_core', ...(next.ownedAvatars ?? [])]));
+  if (next.ownedAvatars.includes(avatar.id)) {
+    next.equippedAvatarId = avatar.id;
+    return { ok: true, nextSave: next };
+  }
+
+  if (avatar.source === 'pass' || avatar.source === 'mission') {
+    return {
+      ok: false,
+      reason:
+        avatar.source === 'pass'
+          ? 'Se desbloquea exclusivamente en el Pase de Corredor Skyline 8.0.'
+          : 'Se desbloquea completando misiones del Protocolo Skyline.',
+      nextSave: save,
+    };
+  }
+
+  if (next.coins < avatar.costCoins || next.gems < avatar.costGems) {
+    return { ok: false, reason: 'Saldo insuficiente para comprar este Avatar.', nextSave: save };
+  }
+  next.coins -= avatar.costCoins;
+  next.gems -= avatar.costGems;
+  next.stats.coinsSpent += avatar.costCoins;
+  next.ownedAvatars.push(avatar.id);
+  next.equippedAvatarId = avatar.id;
+
+  const costParts: string[] = [];
+  if (avatar.costCoins > 0) costParts.push(`${avatar.costCoins} M`);
+  if (avatar.costGems > 0) costParts.push(`${avatar.costGems} G`);
+  logTransaction(next, avatar.name, 'Avatar Perfil', costParts.join(' + ') || 'Gratis');
+  return { ok: true, nextSave: next };
+}
+
+export function exchangeGemsForCoins(
+  save: PlayerSaveData,
+  packId: string,
+): EconomyResult {
+  const pack = GEM_EXCHANGE_PACKS.find((p) => p.id === packId);
+  if (!pack) return { ok: false, reason: 'Paquete de cambio inválido.', nextSave: save };
+  if (save.gems < pack.costGems) {
+    return {
+      ok: false,
+      reason: `Moneda G insuficiente (${save.gems}/${pack.costGems} G).`,
+      nextSave: save,
+    };
+  }
+  const next = structuredClone(save);
+  next.gems -= pack.costGems;
+  next.coins += pack.grantCoins;
+  logTransaction(next, `${pack.grantCoins} Monedas`, 'Banco G -> M', `${pack.costGems} G`);
+  return { ok: true, nextSave: next };
+}
+
 export function purchaseOrSelectVehicle(
   save: PlayerSaveData,
   vehicleId: VehicleId,
@@ -450,12 +576,12 @@ export function unlockPremiumBattlePass(
   payWith: 'coins' | 'gems' = 'gems',
 ): EconomyResult {
   if (save.battlePass.premiumUnlocked) {
-    return { ok: false, reason: 'Pase Premium ya desbloqueado.', nextSave: save };
+    return { ok: false, reason: 'Pase de Corredor Premium ya desbloqueado.', nextSave: save };
   }
   if (payWith !== 'gems') {
     return {
       ok: false,
-      reason: 'El Pase de Batalla Premium solo puede adquirirse exclusivamente con Moneda G (Gemas).',
+      reason: 'El Pase de Corredor Premium solo puede adquirirse exclusivamente con Moneda G (Gemas).',
       nextSave: save,
     };
   }
@@ -470,8 +596,8 @@ export function unlockPremiumBattlePass(
   next.gems -= BATTLE_PASS_PREMIUM_COST_GEMS;
   logTransaction(
     next,
-    'Pase de Batalla Premium 3.0',
-    'Pase de Batalla',
+    'Pase de Corredor Premium 8.0',
+    'Pase de Corredor',
     `${BATTLE_PASS_PREMIUM_COST_GEMS} G`,
   );
   next.battlePass.premiumUnlocked = true;
@@ -513,9 +639,37 @@ function grantBattlePassRewardToSave(
         reward.itemId &&
         !save.ownedVehicles.includes(reward.itemId as VehicleId)
       ) {
-        save.ownedVehicles.push(reward.itemId as VehicleId);
+        const vid = reward.itemId as VehicleId;
+        const vDef = VEHICLES.find((v) => v.id === vid);
+        save.ownedVehicles.push(vid);
+        save.vehicleUpgrades[vid] = save.vehicleUpgrades[vid] ?? 0;
+        if (vDef && !save.vehiclePaints[vid]) {
+          save.vehiclePaints[vid] = vDef.defaultPaint;
+        }
       } else {
         save.coins += 1200;
+      }
+      break;
+    case 'character':
+      if (reward.itemId && !save.unlockedCharacters.includes(reward.itemId)) {
+        save.unlockedCharacters.push(reward.itemId);
+      } else {
+        save.gems += 20;
+      }
+      break;
+    case 'avatar':
+      if (reward.itemId) {
+        save.ownedAvatars = Array.from(new Set([...(save.ownedAvatars ?? []), reward.itemId]));
+      }
+      break;
+    case 'drone':
+      if (reward.itemId) {
+        save.ownedDrones = Array.from(new Set([...(save.ownedDrones ?? []), reward.itemId]));
+      }
+      break;
+    case 'booster':
+      if (reward.itemId) {
+        save.ownedBoosters = Array.from(new Set([...(save.ownedBoosters ?? []), reward.itemId]));
       }
       break;
   }
@@ -611,6 +765,9 @@ export function claimMissionReward(
   if (m.category === 'season' || m.category === 'special') {
     next.stats.challengesCompleted += 1;
   }
+  if (m.id === 'weekly_w6_norevive') {
+    next.ownedAvatars = Array.from(new Set([...(next.ownedAvatars ?? []), 'av_mission_rookie']));
+  }
   if (m.category === 'story' && m.chapter && m.chapter >= next.storyChapter) {
     next.storyChapter = Math.min(5, m.chapter + 1);
   }
@@ -621,7 +778,8 @@ export function claimMissionReward(
 export function claimAllMissions(save: PlayerSaveData): EconomyResult {
   let current = save;
   let claimedAny = false;
-  for (const m of MISSIONS) {
+  const active = getAllActiveMissions(current.seasonStartAtMs);
+  for (const m of active) {
     if (current.completedMissions.includes(m.id)) continue;
     if (
       current.claimableMissions.includes(m.id) ||
@@ -666,7 +824,8 @@ export function getPendingRewardCount(save: PlayerSaveData): {
   battlePass: number;
   total: number;
 } {
-  const missions = MISSIONS.filter(
+  const activeMissions = getAllActiveMissions(save.seasonStartAtMs);
+  const missions = activeMissions.filter(
     (m) =>
       !save.completedMissions.includes(m.id) &&
       (save.claimableMissions.includes(m.id) ||

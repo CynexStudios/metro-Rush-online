@@ -18,9 +18,9 @@ export type DistrictId =
   | 'beach'
   | 'underground'
   | 'future'
-  | 'cyber_port'
-  | 'obsidian_citadel'
-  | 'crimson_metropolis';
+  | 'skyfall_towers'
+  | 'the_creation'
+  | 'dont_drown';
 
 export type GameMode =
   | 'endless'
@@ -90,7 +90,11 @@ export type DynamicEventType =
   | 'storm_surge'
   | 'coin_surge'
   | 'pursuer_frenzy'
-  | 'talisman_signal';
+  | 'talisman_signal'
+  | 'five_lane_highway'
+  | 'underground_tunnel'
+  | 'narrow_alley_1'
+  | 'narrow_alley_2';
 
 export type ParkourAction =
   | 'idle'
@@ -118,7 +122,8 @@ export type VehicleId =
   | 'cyber_coupe'
   | 'quantum_glider'
   | 'titan_rammer'
-  | 'star_viper';
+  | 'star_viper'
+  | 'plasma_bomber';
 
 export interface UnlockRequirement {
   type: 'missions' | 'bosses' | 'distance' | 'level' | 'achievement' | 'parkourChains';
@@ -171,8 +176,62 @@ export interface SpecialShopItem {
   rarity: 'Común' | 'Raro' | 'Épico' | 'Legendario';
 }
 
+export interface CompanionDroneDef {
+  id: string;
+  name: string;
+  title: string;
+  description: string;
+  role: 'magnet_shield' | 'emp_breaker' | 'coin_pulse' | 'aerial_guardian';
+  activeDurationSec: number;
+  cooldownSec: number;
+  costCoins: number;
+  costGems: number;
+  rarity: 'Raro' | 'Épico' | 'Legendario';
+  primaryColor: string;
+  accentColor: string;
+  modelKey: 'turret' | 'bomber' | 'speeder';
+}
+
+export interface CharacterBoosterDef {
+  id: string;
+  name: string;
+  description: string;
+  rarity: 'Común' | 'Raro' | 'Épico' | 'Legendario';
+  costCoins: number;
+  costGems: number;
+  speedBonusPct: number;
+  jumpBonusPct: number;
+  shieldCooldownReductionPct: number;
+  abilityRechargeBonusPct: number;
+  vehicleChargeBonusPct: number;
+  coinBonusPct: number;
+  iconTag: string;
+  accentColor: string;
+}
+
+export interface ProfileAvatarDef {
+  id: string;
+  name: string;
+  description: string;
+  source: 'default' | 'shop' | 'pass' | 'mission';
+  costCoins: number;
+  costGems: number;
+  rarity: 'Común' | 'Raro' | 'Épico' | 'Legendario';
+  badgeGradient: string;
+  accentColor: string;
+  glyph: string;
+}
+
+export interface GemExchangePack {
+  id: string;
+  name: string;
+  costGems: number;
+  grantCoins: number;
+  bonusLabel: string;
+}
+
 export interface BattlePassReward {
-  type: 'coins' | 'gems' | 'tickets' | 'reviveTokens' | 'talismans' | 'cosmetic' | 'vehicle';
+  type: 'coins' | 'gems' | 'tickets' | 'reviveTokens' | 'talismans' | 'cosmetic' | 'vehicle' | 'character' | 'avatar' | 'drone' | 'booster';
   amount?: number;
   itemId?: string;
   label: string;
@@ -257,19 +316,51 @@ export interface CharacterStats {
   tech: number;
 }
 
+export type CharacterAbilityCategory =
+  | 'energy_blast'
+  | 'aegis_dome'
+  | 'phase_blink'
+  | 'drone_hijack'
+  | 'gravity_well'
+  | 'chrono_pulse'
+  | 'sonic_cleave'
+  | 'emp_siphon'
+  | 'nova_overdrive';
+
+export type VehicleAbilityKind =
+  | 'phase_rush'
+  | 'overcharge_emp'
+  | 'flame_ram'
+  | 'aero_lift'
+  | 'mag_surge'
+  | 'aegis_ram'
+  | 'chrono_warp'
+  | 'void_rail_cut'
+  | 'overdrive_barrage';
+
 export interface CharacterDef {
   id: string;
   name: string;
   title: string;
   origin: string;
   bio: string;
+  abilityCategory: CharacterAbilityCategory;
   abilityName: string;
   abilityDesc: string;
   abilityCooldown: number;
+  abilityDuration: number;
+  bossInteractionDesc: string;
+  mpInterferenceDesc: string;
   passiveName?: string;
   passiveDesc?: string;
   secondaryAbilityName?: string;
   secondaryAbilityDesc?: string;
+  vehicleAbilityName: string;
+  vehicleAbilityDesc: string;
+  vehicleAbilityKind: VehicleAbilityKind;
+  activeAllowedInParkour: boolean;
+  parkourRestrictionReason?: string;
+  passExclusiveTier?: number;
   unlockCostCoins: number;
   unlockCostGems: number;
   unlockRequirement?: UnlockRequirement;
@@ -284,8 +375,10 @@ export interface CharacterDef {
     sneakers: string;
   };
   hairStyle: 'spiky' | 'hood' | 'ponytail' | 'cyberhelm' | 'mohawk' | 'visorcap';
+  silhouetteGear?: 'blade_pack' | 'twin_wings' | 'tech_halo' | 'heavy_pauldrons' | 'cloak_fins' | 'drone_rig' | 'exo_frame' | 'stealth_cape' | 'overdrive_crown';
   voicePitch: number;
   quote: string;
+  modelFileKey?: 'cesium_man' | 'brain_stem' | 'astronaut_a' | 'astronaut_b' | 'xbot' | 'robot' | 'soldier';
 }
 
 export interface DistrictDef {
@@ -326,23 +419,33 @@ export interface DistrictDef {
     | 'palms'
     | 'tunnel'
     | 'reactor'
-    | 'harbor'
-    | 'citadel'
-    | 'monolith';
+    | 'skyfall'
+    | 'factory'
+    | 'ocean';
 }
 
+export type BossAttackStage = 'prep' | 'danger' | 'execute' | 'impact' | 'recovery';
+
+export type BossSupportDroneRole = 'scout' | 'bomber' | 'shield' | 'relay';
+
 export interface BossPhaseDef {
-  phase: 1 | 2 | 3 | 4;
+  phase: number; // 1..8
   name: string;
   subtitle: string;
   description: string;
   hpUnits: number;
   attackCooldownSec: number;
+  warningDurationSec: number;
   empSpawnSec: number;
+  empEnergyGain: number;
+  supportDroneCount: number;
+  droneAggression: number; // 1..4
   auraColor: string;
   envTint: string;
   scaleBoost: number;
-  patterns: ('lane_sweep' | 'dual_projectile' | 'shockwave' | 'orbital_cross' | 'homing_burst' | 'rail_overload')[];
+  shieldMaxHp?: number;
+  shieldWindowSec?: number;
+  patterns: ('lane_sweep' | 'dual_projectile' | 'shockwave' | 'orbital_cross' | 'homing_burst' | 'rail_overload' | 'drone_barrage' | 'predictive_snipe')[];
 }
 
 export interface BossDef {
@@ -354,6 +457,8 @@ export interface BossDef {
   cityId: DistrictId;
   description: string;
   hpSegments: number;
+  phaseCount: number;
+  hasShieldGate?: boolean;
   phases: string[];
   phaseDetails?: string[];
   phasesConfig: BossPhaseDef[];
@@ -503,8 +608,46 @@ export interface KeyBindings {
   sprint: string;
   interact: string;
   ability: string;
+  activateVehicle: string;
+  callDrone: string;
   slowMo: string;
   pause: string;
+}
+
+export interface FreeRunConfig {
+  randomCity: boolean;
+  districtId: DistrictId;
+  randomWeather: boolean;
+  weather: WeatherType;
+  bossesEnabled: boolean;
+  eventFrequency: 'off' | 'low' | 'normal' | 'high';
+  obstacleDensity: 'low' | 'normal' | 'high';
+  difficulty: DifficultyLevel;
+  powerupFrequency: 'scarce' | 'normal' | 'high';
+  specialRule: 'none' | 'low_gravity' | 'hyper_parkour' | 'shield_blitz' | 'underground_focus';
+}
+
+export interface ModeLaunchConfig {
+  mode: GameMode;
+  districtId?: DistrictId;
+  randomCity?: boolean;
+  difficulty?: DifficultyLevel;
+  storyChapter?: number | null;
+  bossId?: BossId | null;
+  eventId?: string | null;
+  freeRunConfig?: FreeRunConfig;
+}
+
+export interface TutorialTopicDef {
+  index: number;
+  id: string;
+  category: 'movement' | 'combat' | 'vehicles' | 'parkour' | 'systems' | 'online';
+  titleKey: string;
+  descKey: string;
+  practiceHintKey: string;
+  demoAction: ParkourAction;
+  keyAction?: keyof KeyBindings;
+  requiresPractice?: boolean;
 }
 
 export interface PCSettings {
@@ -572,6 +715,7 @@ export interface PCSettings {
   cameraSpeed: number;
   fovBase: number;
   showIndicators: boolean;
+  showOnScreenControls: boolean;
   showTutorialHints: boolean;
   subtitles: boolean;
   visualHelpers: boolean;
@@ -653,10 +797,52 @@ export interface BestRunRecord {
   highlights: string[];
 }
 
-export type PlayerModelStyle = 'procedural' | 'xbot' | 'robot' | 'soldier' | 'custom';
+export type PlayerModelStyle =
+  | 'cesium_man'
+  | 'brain_stem'
+  | 'astronaut_a'
+  | 'astronaut_b'
+  | 'xbot'
+  | 'robot'
+  | 'soldier'
+  | 'procedural'
+  | 'custom';
 
 export type NetworkConnectionMode = 'lan' | 'internet_ws' | 'internet_webrtc';
 export type ConnectionQuality = 'excellent' | 'good' | 'fair' | 'poor';
+export type GamepadBrand = 'none' | 'xbox' | 'playstation' | 'nintendo' | 'generic';
+
+export interface SavedLanRoom {
+  id: string;
+  roomName: string;
+  hostAddress: string;
+  port: number;
+  roomCode: string;
+  districtId: DistrictId;
+  mode: GameMode;
+  lastUsedAt: string;
+}
+
+export interface FriendEntry {
+  userId: string;
+  username: string;
+  avatarId: string;
+  serverKey: string;
+  online: boolean;
+  lastSeenAt: string;
+  roomCode?: string | null;
+}
+
+export interface FriendRequestRecord {
+  id: string;
+  fromUserId: string;
+  fromUsername: string;
+  toUserId: string;
+  toUsername: string;
+  serverKey: string;
+  status: 'pending' | 'accepted' | 'rejected';
+  createdAt: string;
+}
 
 export interface RoomRulesConfig {
   allowVehicles: boolean;
@@ -670,13 +856,18 @@ export interface MultiplayerPlayerTelemetry {
   username: string;
   avatarId: string;
   characterId: string;
+  modelStyle?: PlayerModelStyle;
   x: number;
   y: number;
   z: number;
+  rotY?: number;
   lane: number;
   distance: number;
   score: number;
   action: ParkourAction;
+  isRidingVehicle?: boolean;
+  vehicleId?: VehicleId;
+  abilityActive?: boolean;
   paused: boolean;
   finished: boolean;
   placement?: number;
@@ -866,7 +1057,13 @@ export interface UpdateProgressState {
 export interface PlayerSaveData {
   saveVersion: number;
   playerName: string;
+  lastNameChangeAt?: number;
+  onboardingCompleted?: boolean;
+  playerAgeGroup?: 'under_13' | 'teen_13_17' | 'adult_18_plus';
+  runnerExperience?: 'beginner' | 'casual' | 'veteran';
   avatarId: string;
+  ownedAvatars: string[];
+  equippedAvatarId: string;
   modelStyle?: PlayerModelStyle;
   level: number;
   xp: number;
@@ -883,6 +1080,10 @@ export interface PlayerSaveData {
   unlockedDistricts: DistrictId[];
   ownedCosmetics: string[];
   equippedCosmetics: Record<CosmeticSlot, string | null>;
+  ownedDrones: string[];
+  equippedDroneId: string | null;
+  ownedBoosters: string[];
+  equippedBoosterId: string | null;
   ownedVehicles: VehicleId[];
   selectedVehicleId: VehicleId;
   vehicleUpgrades: Record<VehicleId, number>;
@@ -893,15 +1094,20 @@ export interface PlayerSaveData {
   completedMissions: string[];
   dailyResetAt: number;
   weeklyResetAt: number;
+  seasonStartAtMs?: number;
   completedEvents: string[];
   defeatedBosses: BossId[];
   customBossMeta?: Partial<Record<BossId, CustomBossMeta>>;
   useCustomBossModels?: boolean;
-  ownedPets?: string[];
-  equippedPetId?: string | null;
   unlockedAchievements: string[];
   storyChapter: number;
   tutorialCompleted: boolean;
+  tutorialStepSaved?: number;
+  timeTrialBestByCity?: Partial<Record<DistrictId, number>>;
+  freeRunConfig?: FreeRunConfig;
+  lastLaunchedModeConfig?: ModeLaunchConfig | null;
+  savedLanRooms?: SavedLanRoom[];
+  friends?: FriendEntry[];
   battlePass: BattlePassState;
   transactions: TransactionRecord[];
   upgradeHistory: UpgradeRecord[];
@@ -962,7 +1168,7 @@ export interface HudSnapshot {
   mode: GameMode;
   districtId: DistrictId;
   districtName: string;
-  laneCount: 3 | 5;
+  laneCount: 1 | 2 | 3 | 5;
   timePeriod: Exclude<TimeOfDay, 'dynamic'>;
   score: number;
   distance: number;
@@ -981,6 +1187,9 @@ export interface HudSnapshot {
   vehicleAbilityLocked: boolean;
   abilityCharge: number;
   abilityActive: boolean;
+  abilityRestrictedReason: string | null;
+  abilityToastText: string | null;
+  abilityToastNonce: number;
   hasShield: boolean;
   shieldCooldown: number;
   shieldMaxCooldown: number;
@@ -992,8 +1201,19 @@ export interface HudSnapshot {
   magnetTimer: number;
   isRidingVehicle: boolean;
   vehicleIsShip: boolean;
+  vehicleFlightHeight: number;
   vehicleTimer: number;
+  vehicleEnergy: number;
+  vehicleMaxEnergy: number;
+  vehicleReady: boolean;
+  vehicleActivationCount: number;
   selectedVehicleId: VehicleId;
+  companionDroneId: string | null;
+  companionDroneName: string | null;
+  companionDroneActive: boolean;
+  companionDroneTimeLeft: number;
+  companionDroneCooldown: number;
+  companionDroneMaxCooldown: number;
   talismansHeld: number;
   reviveTokensHeld: number;
   talismanUsedRun: boolean;
@@ -1003,11 +1223,14 @@ export interface HudSnapshot {
   randomBossActive: boolean;
   storyChapter: number | null;
   storyObjectiveText: string | null;
+  storyDialogueSpeaker: string | null;
+  storyDialogueText: string | null;
   parkourFloor: 1 | 2;
   parkourChain: number;
   action: ParkourAction;
   contextPrompt: string | null;
   tutorialHint: string | null;
+  tutorialEndlessMode: boolean;
   subtitleText: string | null;
   activeEventBanner: string | null;
   activeDynamicEvent: DynamicEventType | null;
@@ -1018,15 +1241,29 @@ export interface HudSnapshot {
   bossHp: number;
   bossMaxHp: number;
   bossPhase: number;
+  bossTotalPhases: number;
   bossPhaseName: string | null;
   bossPhaseHp: number;
   bossPhaseMaxHp: number;
+  bossHasShieldGate: boolean;
+  bossShieldHp: number;
+  bossShieldMaxHp: number;
+  bossVulnerableSec: number;
+  bossSupportDronesCount: number;
+  bossTelegraphStage: BossAttackStage | null;
+  bossRadarWarningLanes: number[];
+  bossRadarCountdownSec: number;
+  bossRadarWarningMaxSec: number;
   bossIntroActive: boolean;
   bossIntroTitle: string | null;
   bossIntroSubtitle: string | null;
   bossTransitionActive: boolean;
   bossDistance: number | null;
   timeRemaining: number | null;
+  timeTrialBonusGain: number;
+  timeTrialGainNonce: number;
+  timeTrialPersonalBestSec: number;
+  timeTrialMilestoneNextSec: number;
   targetDistance: number | null;
   activeBanner: string | null;
   lastStuntText: string | null;
@@ -1040,6 +1277,7 @@ export interface HudSnapshot {
   shieldBreaksRun: number;
   doubleJumpsRun: number;
   activeRunContext: ActiveRunContext;
+  activeModeConfig: ModeLaunchConfig | null;
   fps: number;
   frameTimeMs: number;
   drawCalls: number;
@@ -1048,9 +1286,18 @@ export interface HudSnapshot {
   perfWarning: string | null;
   tutorialStep: string | null;
   tutorialProgress: string | null;
+  tutorialTopicIndex: number;
+  tutorialTotalTopics: number;
+  tutorialPaused: boolean;
   bossWarningText: string | null;
   rainEventActive: boolean;
   difficultyStage: number;
+  gamepadBrand: GamepadBrand;
+  gamepadConnected: boolean;
+  gamepadName: string | null;
+  gamepadToastText: string | null;
+  gamepadToastType: 'connected' | 'disconnected' | null;
+  gamepadToastNonce: number;
   isMultiplayer: boolean;
   mpPlayers: MultiplayerPlayerTelemetry[];
 }

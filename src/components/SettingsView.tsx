@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   AlertTriangle,
+  Award,
   Check,
   CheckCircle2,
   Cpu,
@@ -23,6 +24,7 @@ import { detectHardwareProfile } from '../game/hardware';
 import {
   CONTROL_PROFILES,
   exportSaveBackupJson,
+  findConflictingKeyBinding,
   getPresetSettings,
   importSaveBackupJson,
   resetSettingsToDefault,
@@ -43,7 +45,12 @@ import {
   UpscalerType,
 } from '../game/types';
 import { GAME_VERSION } from '../game/version';
-import { getTimeLabel, SUPPORTED_LANGUAGES, t } from '../i18n';
+import {
+  getLanguageCoveragePercent,
+  getTimeLabel,
+  SELECTABLE_LANGUAGES,
+  t,
+} from '../i18n';
 
 export type SettingsCategory =
   | 'video'
@@ -96,6 +103,7 @@ interface SettingsViewProps {
   onVideoChangeWithConfirm: (next: PCSettings, prev: PCSettings) => void;
   onRunBenchmark: () => Promise<number>;
   onStartTutorial?: () => void;
+  onOpenCredits?: () => void;
   initialCategory?: SettingsCategory;
 }
 
@@ -105,8 +113,10 @@ const KEY_LABELS: Record<keyof KeyBindings, string> = {
   jump: 'Salto / Doble Salto',
   slide: 'Deslizar / Caída Rápida',
   sprint: 'Sprint / Impulso',
-  interact: 'Gancho / Tirolina / Vehículo',
+  interact: 'Gancho / Tirolina',
   ability: 'Habilidad Especial',
+  activateVehicle: 'Activar Vehículo (Batería)',
+  callDrone: 'Llamar Dron Compañero',
   slowMo: 'Slow-Motion',
   pause: 'Pausa',
 };
@@ -138,6 +148,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   onVideoChangeWithConfirm,
   onRunBenchmark,
   onStartTutorial,
+  onOpenCredits,
   initialCategory = 'graphics_video',
 }) => {
   const [group, setGroup] = useState<SettingsGroup>(() =>
@@ -146,6 +157,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
   const [rebindingKey, setRebindingKey] = useState<keyof KeyBindings | null>(
     null,
   );
+  const [rebindConflictMsg, setRebindConflictMsg] = useState<string | null>(null);
   const [benchRunning, setBenchRunning] = useState(false);
   const [benchResultMs, setBenchResultMs] = useState<number | null>(
     diagnostics.measuredAvgFrameMs,
@@ -166,6 +178,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     const handleKey = (e: KeyboardEvent) => {
       e.preventDefault();
       e.stopPropagation();
+      if (e.code === 'Escape') {
+        setRebindingKey(null);
+        setRebindConflictMsg(null);
+        return;
+      }
+      const conflictingAction = findConflictingKeyBinding(
+        settings.keybindings,
+        rebindingKey,
+        e.code,
+      );
+      if (conflictingAction) {
+        audioEngine.playUiClick();
+        setRebindConflictMsg(
+          `${t(lang, 'settings.keyConflictBlocked')} (${formatKeyCode(e.code)} → ${KEY_LABELS[conflictingAction]})`,
+        );
+        return;
+      }
+      setRebindConflictMsg(null);
       const next: PCSettings = {
         ...settings,
         controlProfile: 'custom',
@@ -180,7 +210,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
     };
     window.addEventListener('keydown', handleKey, true);
     return () => window.removeEventListener('keydown', handleKey, true);
-  }, [rebindingKey, settings, onChangeSettings]);
+  }, [rebindingKey, settings, onChangeSettings, lang]);
 
   const keyConflicts = useMemo(() => {
     const map = new Map<string, (keyof KeyBindings)[]>();
@@ -341,11 +371,24 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
           );
         })}
 
-        <div className="hidden lg:block mt-auto pt-4 border-t border-white/10 text-[11px] text-slate-400 space-y-1">
+        <div className="hidden lg:block mt-auto pt-4 border-t border-white/10 text-[11px] text-slate-400 space-y-2">
           <div className="font-mono-num text-cyan-300 font-bold">
-            METRO RUSH v{GAME_VERSION} · Neon Apocalypse
+            METRO RUSH v{GAME_VERSION} · NEON OVERDRIVE
           </div>
-          <div>Guardado automático v3 + copia de seguridad</div>
+          <div>Guardado v5 compatible + SQLite</div>
+          {onOpenCredits && (
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playUiClick();
+                onOpenCredits();
+              }}
+              className="w-full py-1.5 px-2.5 rounded-lg bg-[#0b1224] hover:bg-[#13203d] border border-cyan-400/35 text-cyan-200 font-semibold text-left flex items-center gap-1.5 cursor-pointer"
+            >
+              <Award className="w-3.5 h-3.5 text-cyan-400 shrink-0" />
+              <span className="truncate">{t(lang, 'settings.openCredits')}</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -985,6 +1028,11 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   onChange={(v) => setPatch({ showIndicators: v })}
                 />
                 <ToggleRow
+                  label="Controles en pantalla"
+                  checked={settings.showOnScreenControls !== false}
+                  onChange={(v) => setPatch({ showOnScreenControls: v })}
+                />
+                <ToggleRow
                   label="Consejos Tutoriales"
                   checked={settings.showTutorialHints}
                   onChange={(v) => setPatch({ showTutorialHints: v })}
@@ -1019,10 +1067,10 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                 <div className="p-3.5 rounded-xl bg-[#0d162c] border border-emerald-400/35 flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-xs font-bold text-emerald-300">
-                      Tutorial Interactivo Guiado (6 Pasos)
+                      {t(lang, 'settings.replayTutorial')}
                     </div>
                     <div className="text-[11px] text-slate-300">
-                      Practica movimiento, saltos, deslizamiento, habilidades y combate sin riesgo.
+                      8 módulos interactivos esenciales: movimiento, doble salto, escudo explosivo, habilidades, dron compañero [G] y práctica infinita fácil.
                     </div>
                   </div>
                   <button
@@ -1032,7 +1080,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                     }}
                     className="px-4 py-2 rounded-lg bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-display font-bold text-xs cursor-pointer whitespace-nowrap"
                   >
-                    Repetir Tutorial
+                    {t(lang, 'settings.replayTutorial')}
                   </button>
                 </div>
               )}
@@ -1092,6 +1140,13 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                   </button>
                 ))}
               </div>
+
+              {rebindConflictMsg && (
+                <div className="p-3 rounded-lg bg-rose-950/55 border border-rose-400/70 flex items-center gap-2.5 text-xs text-rose-200 font-semibold">
+                  <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
+                  <span>{rebindConflictMsg}</span>
+                </div>
+              )}
 
               {keyConflicts.length > 0 && (
                 <div className="p-3 rounded-lg bg-amber-950/50 border border-amber-400/60 flex items-center gap-2.5 text-xs text-amber-200">
@@ -1175,16 +1230,20 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
         {/* 4. SYSTEM, LANGUAGE, ACCESSIBILITY, DIAGNOSTICS & BACKUP */}
         {group === 'system_backup' && (
           <div className="space-y-6">
-            {/* Language */}
+            {/* Language (Only 100%-complete languages per §22.5) */}
             <div className="space-y-3">
-              <div className="border-b border-white/10 pb-2.5">
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-white/10 pb-2.5">
                 <h3 className="font-display text-xl font-bold text-white">
                   Idioma y Accesibilidad
                 </h3>
+                <span className="text-[11px] text-slate-400">
+                  Selector filtrado únicamente a idiomas con cobertura al 100%
+                </span>
               </div>
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
-                {SUPPORTED_LANGUAGES.map((l) => {
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2">
+                {SELECTABLE_LANGUAGES.map((l) => {
                   const active = settings.language === l.code;
+                  const coveragePct = getLanguageCoveragePercent(l.code);
                   return (
                     <button
                       key={l.code}
@@ -1192,7 +1251,7 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         audioEngine.playUiClick(true);
                         setPatch({ language: l.code });
                       }}
-                      className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left cursor-pointer ${
+                      className={`flex items-center justify-between px-3 py-2.5 rounded-lg border text-left cursor-pointer ${
                         active
                           ? 'bg-cyan-500/20 border-cyan-400 text-white'
                           : 'bg-[#0b1224] border-white/10 text-slate-300'
@@ -1202,8 +1261,8 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
                         <div className="text-xs font-bold truncate">
                           {l.nativeName}
                         </div>
-                        <div className="text-[10px] text-slate-400">
-                          {l.code.toUpperCase()}
+                        <div className="text-[10px] text-cyan-300 font-mono-num">
+                          {l.code.toUpperCase()} · {coveragePct}% traducido
                         </div>
                       </div>
                       {active && <Check className="w-3.5 h-3.5 text-cyan-300 shrink-0" />}
@@ -1475,15 +1534,30 @@ export const SettingsView: React.FC<SettingsViewProps> = ({
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <div className="text-xs font-bold text-white">
-                    Copia de Seguridad y Restablecimiento (Save v3)
+                    Copia de Seguridad y Restablecimiento (Save v5)
                   </div>
                   <div className="text-[11px] text-slate-400">
-                    Exporta o restaura tu perfil en JSON, o restablece ajustes gráficos/sonido por defecto.
+                    Exporta o restaura tu perfil en JSON con retrocompatibilidad v3–v5, o restablece ajustes gráficos/sonido por defecto.
                   </div>
                 </div>
-                <span className="font-mono-num text-[11px] text-cyan-300 font-bold">
-                  v{GAME_VERSION}
-                </span>
+                <div className="flex items-center gap-2">
+                  {onOpenCredits && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        audioEngine.playUiClick();
+                        onOpenCredits();
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-[#0d1830] hover:bg-[#152548] border border-cyan-400/45 text-cyan-200 text-xs font-bold flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+                    >
+                      <Award className="w-3.5 h-3.5 text-cyan-400" />
+                      {t(lang, 'settings.openCredits')}
+                    </button>
+                  )}
+                  <span className="font-mono-num text-[11px] text-cyan-300 font-bold">
+                    v{GAME_VERSION}
+                  </span>
+                </div>
               </div>
 
               <div className="flex flex-wrap gap-2.5">

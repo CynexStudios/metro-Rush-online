@@ -12,6 +12,9 @@ class WebRtcP2PManager {
   private peers = new Map<string, RTCPeerConnection>();
   private channels = new Map<string, RTCDataChannel>();
   private statuses = new Map<string, RtcPeerStatus>();
+  private makingOffer = new Map<string, boolean>();
+  private ignoreOffer = new Map<string, boolean>();
+  private localUserId = '';
   private iceServers: IceServerEntry[] = [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
@@ -22,6 +25,10 @@ class WebRtcP2PManager {
   private telemetryListeners = new Set<(fromPeerId: string, data: Record<string, unknown>) => void>();
   private manualPc: RTCPeerConnection | null = null;
   private manualChannel: RTCDataChannel | null = null;
+
+  public setLocalUserId(id: string): void {
+    this.localUserId = id;
+  }
 
   public async refreshIceConfig(): Promise<{
     iceServers: IceServerEntry[];
@@ -135,6 +142,13 @@ class WebRtcP2PManager {
 
     pc.oniceconnectionstatechange = () => {
       this.updateStatus(remoteUserId, { iceState: pc.iceConnectionState });
+      if (pc.iceConnectionState === 'failed' && typeof pc.restartIce === 'function') {
+        try {
+          pc.restartIce();
+        } catch {
+          // Ignore transient restartIce error
+        }
+      }
     };
 
     pc.ondatachannel = (evt) => {
@@ -185,13 +199,19 @@ class WebRtcP2PManager {
       const ch = pc.createDataChannel('metro-rush-p2p', { ordered: false, maxRetransmits: 1 });
       this.bindDataChannel(remoteUserId, ch);
     }
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    mpClient.sendRtcSignal({
-      toUserId: remoteUserId,
-      signalType: 'offer',
-      sdp: offer,
-    });
+    this.makingOffer.set(remoteUserId, true);
+    try {
+      const offer = await pc.createOffer();
+      if (pc.signalingState !== 'stable') return;
+      await pc.setLocalDescription(offer);
+      mpClient.sendRtcSignal({
+        toUserId: remoteUserId,
+        signalType: 'offer',
+        sdp: pc.localDescription ?? offer,
+      });
+    } finally {
+      this.makingOffer.set(remoteUserId, false);
+    }
   }
 
   public async handleIncomingSignal(payload: {
@@ -205,21 +225,32 @@ class WebRtcP2PManager {
     const pc = this.createPeerConnection(fromUserId);
 
     if (signalType === 'offer' && sdp) {
+      const polite = Boolean(this.localUserId && this.localUserId < fromUserId);
+      const offerCollision =
+        (this.makingOffer.get(fromUserId) ?? false) || pc.signalingState !== 'stable';
+      const ignore = !polite && offerCollision;
+      this.ignoreOffer.set(fromUserId, ignore);
+      if (ignore) return;
+
       await pc.setRemoteDescription(new RTCSessionDescription(sdp));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       mpClient.sendRtcSignal({
         toUserId: fromUserId,
         signalType: 'answer',
-        sdp: answer,
+        sdp: pc.localDescription ?? answer,
       });
     } else if (signalType === 'answer' && sdp) {
-      await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      if (pc.signalingState === 'have-local-offer') {
+        await pc.setRemoteDescription(new RTCSessionDescription(sdp));
+      }
     } else if (signalType === 'ice' && candidate) {
       try {
         await pc.addIceCandidate(new RTCIceCandidate(candidate));
       } catch {
-        // Ignore stale ICE
+        if (!this.ignoreOffer.get(fromUserId)) {
+          // Ignore stale ICE candidate
+        }
       }
     }
   }
@@ -242,6 +273,8 @@ class WebRtcP2PManager {
     this.channels.clear();
     this.peers.clear();
     this.statuses.clear();
+    this.makingOffer.clear();
+    this.ignoreOffer.clear();
     this.emitStatuses();
   }
 

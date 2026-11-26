@@ -12,6 +12,7 @@ import {
   closeInvitationsForRoomCode,
   closeSqlite,
   createAuthSession,
+  createFriendRequest,
   createLocalProfile,
   createOrDedupeRoomInvitation,
   createUserAccount,
@@ -29,12 +30,14 @@ import {
   insertVerifiedRun,
   isRunIdUsed,
   linkLocalProfileToOnline,
+  listFriendRequestsForUser,
   listInvitationsForUser,
   listLocalProfiles,
   listUserAuthSessions,
   queryRankings,
   recordIdempotentTx,
   recoverUserPassword,
+  respondFriendRequest,
   revokeAllUserAuthSessions,
   revokeAuthSessionByRefreshToken,
   searchUsersByQuery,
@@ -867,6 +870,85 @@ export async function startAppServer(options?: {
       return;
     }
     res.json({ user: sanitizeUser(result.user) });
+  });
+
+  app.get('/api/friend-requests', (req, res) => {
+    const user = getAuthUser(req);
+    const peerId = String(req.query.userId ?? user?.id ?? '').trim();
+    if (!peerId) {
+      res.json({ incoming: [], outgoing: [], accepted: [] });
+      return;
+    }
+    res.json(listFriendRequestsForUser(peerId));
+  });
+
+  app.post('/api/friend-requests', rateLimit(30), (req, res) => {
+    const user = getAuthUser(req);
+    const fromUserId = String(user?.id ?? req.body?.fromUserId ?? '').trim();
+    const fromUsername = String(user?.username ?? req.body?.fromUsername ?? '').trim();
+    const toUserId = String(req.body?.toUserId ?? '').trim();
+    const toUsername = String(req.body?.toUsername ?? '').trim();
+    const serverKey = String(req.body?.serverKey ?? 'local').trim();
+
+    if (!fromUserId || !fromUsername || (!toUserId && !toUsername)) {
+      res.status(400).json({ error: 'Datos de solicitud de amistad incompletos.' });
+      return;
+    }
+    let resolvedToId = toUserId;
+    let resolvedToName = toUsername;
+    if (!resolvedToId && resolvedToName) {
+      const targetUser = findUserByIdentifier(resolvedToName);
+      if (targetUser) {
+        resolvedToId = targetUser.id;
+        resolvedToName = targetUser.username;
+      } else {
+        for (const p of roomManager.onlineUserProfiles.values()) {
+          if (p.username.toLowerCase() === resolvedToName.toLowerCase()) {
+            resolvedToId = p.id;
+            resolvedToName = p.username;
+            break;
+          }
+        }
+      }
+    }
+    if (!resolvedToId) {
+      res.status(404).json({ error: 'Corredor objetivo no encontrado en este servidor.' });
+      return;
+    }
+    const created = createFriendRequest({
+      fromUserId,
+      fromUsername,
+      toUserId: resolvedToId,
+      toUsername: resolvedToName || resolvedToId,
+      serverKey,
+    });
+    res.status(201).json({ request: created });
+  });
+
+  app.post('/api/friend-requests/respond', rateLimit(30), (req, res) => {
+    const user = getAuthUser(req);
+    const requestId = String(req.body?.requestId ?? '').trim();
+    const responderId = String(user?.id ?? req.body?.userId ?? '').trim();
+    const accept = Boolean(req.body?.accept);
+    if (!requestId || !responderId) {
+      res.status(400).json({ error: 'Solicitud inválida.' });
+      return;
+    }
+    const updated = respondFriendRequest(requestId, responderId, accept);
+    if (!updated) {
+      res.status(404).json({ error: 'Solicitud no encontrada o sin permiso.' });
+      return;
+    }
+    res.json({ request: updated });
+  });
+
+  app.get('/api/lan/online-peers', (_req, res) => {
+    const peers = Array.from(roomManager.onlineUserProfiles.values()).map((p) => ({
+      id: p.id,
+      username: p.username,
+      online: true,
+    }));
+    res.json({ peers });
   });
 
   /* ---------------- USER SEARCH & PERSISTENT INVITATIONS ---------------- */

@@ -1,12 +1,16 @@
 import React from 'react';
 import {
   AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   CloudRain,
   Flame,
   GraduationCap,
   Magnet,
+  MessageSquare,
   Pause,
+  Play,
   Shield,
   ShieldAlert,
   Sparkles,
@@ -17,7 +21,7 @@ import {
   Zap,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
-import { getVehicleById } from '../game/data';
+import { getVehicleById, TUTORIAL_TOPICS } from '../game/data';
 import { HudSnapshot, PCSettings } from '../game/types';
 import { getTimeLabel, t } from '../i18n';
 
@@ -26,6 +30,17 @@ interface GameHudProps {
   settings: PCSettings;
   onToggleMute: () => void;
   onPause: () => void;
+  onTutorialPrev?: () => void;
+  onTutorialNext?: () => void;
+  onTutorialTogglePause?: () => void;
+  onTutorialFinish?: () => void;
+}
+
+function formatKeyHint(code: string): string {
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code === 'Space') return 'Espacio';
+  if (code === 'ShiftLeft' || code === 'ShiftRight') return 'Shift';
+  return code;
 }
 
 const DYNAMIC_EVENT_LABELS: Record<string, string> = {
@@ -40,14 +55,35 @@ const DYNAMIC_EVENT_LABELS: Record<string, string> = {
   talisman_signal: 'SEÑAL DE TALISMÁN CERCANA',
 };
 
+const TELEGRAPH_STAGE_META: Record<
+  string,
+  { label: string; cls: string }
+> = {
+  charging: { label: 'CARGANDO ATAQUE', cls: 'bg-amber-500/20 border-amber-400 text-amber-200' },
+  locked: { label: 'CARRIL FIJADO', cls: 'bg-rose-500/25 border-rose-400 text-rose-200' },
+  strike: { label: 'IMPACTO ACTIVO', cls: 'bg-rose-600/35 border-rose-300 text-white' },
+  recover: { label: 'VENTANA DE CONTRAATAQUE', cls: 'bg-cyan-500/20 border-cyan-400 text-cyan-200' },
+};
+
 export const GameHud: React.FC<GameHudProps> = ({
   hud,
   settings,
   onToggleMute,
   onPause,
+  onTutorialPrev,
+  onTutorialNext,
+  onTutorialTogglePause,
+  onTutorialFinish,
 }) => {
   const lang = settings.language;
   const activeVehicleName = getVehicleById(hud.selectedVehicleId).name;
+  const jumpKeyHint = formatKeyHint(settings.keybindings.jump || 'Space');
+  const abilityKeyHint = formatKeyHint(settings.keybindings.ability || 'KeyF');
+  const slowMoKeyHint = formatKeyHint(settings.keybindings.slowMo || 'KeyQ');
+  const vehicleKeyHint = formatKeyHint(settings.keybindings.activateVehicle || 'KeyV');
+  const droneKeyHint = formatKeyHint(settings.keybindings.callDrone || 'KeyG');
+  const activeTutTopic =
+    TUTORIAL_TOPICS[hud.tutorialTopicIndex] ?? TUTORIAL_TOPICS[0];
 
   const scaleClass =
     settings.hudScale === 'compact'
@@ -211,7 +247,7 @@ export const GameHud: React.FC<GameHudProps> = ({
           )}
         </div>
 
-        {/* Top-Center: Story Objective, Boss Bar, Dynamic Event, Time Trial, Stunt Callout */}
+        {/* Top-Center: Story Dialogue, Boss Bar, Dynamic Event, Time Trial */}
         <div
           className={`flex flex-col items-center gap-2 max-w-md text-center ${
             settings.hudScale === 'compact'
@@ -221,33 +257,26 @@ export const GameHud: React.FC<GameHudProps> = ({
                 : ''
           }`}
         >
-          {/* Interactive 6-Step Tutorial Progress Card */}
-          {hud.mode === 'tutorial' && hud.tutorialStep && (
-            <div className="bg-[#071828]/96 border-2 border-cyan-400/75 rounded-xl px-5 py-2.5 min-w-[310px] space-y-1">
-              <div className="flex items-center justify-between gap-3 text-xs font-bold text-cyan-300">
-                <span className="flex items-center gap-1.5">
-                  <GraduationCap className="w-4 h-4" />
-                  TUTORIAL INTERACTIVO
-                </span>
-                {hud.tutorialProgress && (
-                  <span className="font-mono-num text-emerald-300">
-                    {hud.tutorialProgress}
-                  </span>
-                )}
-              </div>
-              <div className="text-sm font-semibold text-white">
-                {hud.tutorialStep}
-              </div>
-            </div>
-          )}
 
-          {/* Story Chapter Objective */}
+          {/* Story Chapter Objective & Narrative Comms */}
           {hud.mode === 'story' && hud.storyObjectiveText && (
             <div className="bg-[#120b24]/94 border border-fuchsia-400/50 rounded-lg px-4 py-1.5 text-xs">
               <span className="font-bold text-fuchsia-300 mr-1.5">
                 CAP. {hud.storyChapter ?? 1}:
               </span>
               <span className="text-white font-medium">{hud.storyObjectiveText}</span>
+            </div>
+          )}
+
+          {hud.storyDialogueText && (
+            <div className="bg-[#0e1026]/95 border border-fuchsia-400/65 rounded-xl px-4 py-2 max-w-md text-left shadow-xl">
+              <div className="flex items-center gap-1.5 text-[11px] font-bold text-fuchsia-300">
+                <MessageSquare className="w-3.5 h-3.5" />
+                <span>{hud.storyDialogueSpeaker || 'COMMS'}</span>
+              </div>
+              <div className="text-xs text-slate-100 mt-0.5 leading-snug">
+                {hud.storyDialogueText}
+              </div>
             </div>
           )}
 
@@ -275,17 +304,24 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           )}
 
-          {/* Boss Telegraphed Attack Warning Banner */}
-          {hud.bossWarningText && (
+          {/* Boss Telegraphed Attack Warning Banner + Radar Countdown */}
+          {(hud.bossWarningText || hud.bossRadarWarningLanes.length > 0) && (
             <div className="bg-[#2a0714]/96 border-2 border-rose-500 rounded-xl px-5 py-2 flex items-center gap-2 text-xs font-bold text-amber-200">
               <AlertTriangle className="w-4 h-4 text-rose-400 shrink-0" />
-              <span className="tracking-wide uppercase">{hud.bossWarningText}</span>
+              <span className="tracking-wide uppercase">
+                {hud.bossWarningText || '¡ALERTA DE RADAR EN PISTA!'}
+              </span>
+              {hud.bossRadarWarningLanes.length > 0 && (
+                <span className="font-mono-num px-2 py-0.5 rounded bg-rose-500/30 border border-rose-300/60 text-white">
+                  C{hud.bossRadarWarningLanes.map((l) => l + 1).join(',C')} · {hud.bossRadarCountdownSec.toFixed(1)}s
+                </span>
+              )}
             </div>
           )}
 
-          {/* Active 3D 4-Phase Boss Health Bar */}
+          {/* Active 3D Variable-Phase Boss Health Bar */}
           {hud.bossId && hud.bossName && (
-            <div className="bg-[#160813]/95 border border-rose-500/65 rounded-xl px-5 py-2.5 min-w-[330px] space-y-1.5">
+            <div className="bg-[#160813]/95 border border-rose-500/65 rounded-xl px-5 py-2.5 min-w-[335px] space-y-1.5">
               <div className="flex items-center justify-between gap-3 text-xs font-bold">
                 <span className="flex items-center gap-1.5 text-rose-300 truncate">
                   <Swords className="w-3.5 h-3.5 shrink-0" />
@@ -293,17 +329,60 @@ export const GameHud: React.FC<GameHudProps> = ({
                   {hud.bossName}
                 </span>
                 <span className="font-mono-num text-amber-300 whitespace-nowrap">
-                  Fase {hud.bossPhase}/4 · {hud.bossPhaseHp}/{Math.max(1, hud.bossPhaseMaxHp)} EMP
+                  Fase {hud.bossPhase}/{Math.max(1, hud.bossTotalPhases)} · {hud.bossPhaseHp}/{Math.max(1, hud.bossPhaseMaxHp)} EMP
                 </span>
               </div>
-              {hud.bossPhaseName && (
-                <div className="text-[11px] font-semibold text-slate-200 tracking-wide">
-                  {hud.bossPhaseName}
+              <div className="flex items-center justify-between gap-2 text-[11px]">
+                <span className="font-semibold text-slate-200 tracking-wide truncate">
+                  {hud.bossPhaseName || ''}
+                </span>
+                {hud.bossSupportDronesCount > 0 && (
+                  <span className="font-mono-num text-amber-300 font-bold shrink-0">
+                    {t(lang, 'hud.supportDrones')}: {hud.bossSupportDronesCount}
+                  </span>
+                )}
+              </div>
+              {hud.bossHasShieldGate && (
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[10px] font-mono-num font-bold">
+                    <span className={hud.bossShieldHp > 0 ? 'text-cyan-300' : 'text-emerald-300'}>
+                      {hud.bossShieldHp > 0
+                        ? `ESCUDO OMEGA ACTIVO (${hud.bossShieldHp}/${hud.bossShieldMaxHp})`
+                        : `VENTANA VULNERABLE · ${hud.bossVulnerableSec.toFixed(1)}s`}
+                    </span>
+                  </div>
+                  <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-150 ${
+                        hud.bossShieldHp > 0 ? 'bg-cyan-400' : 'bg-emerald-400'
+                      }`}
+                      style={{
+                        width: `${
+                          hud.bossShieldHp > 0
+                            ? Math.round((hud.bossShieldHp / Math.max(1, hud.bossShieldMaxHp)) * 100)
+                            : 100
+                        }%`,
+                      }}
+                    />
+                  </div>
                 </div>
               )}
-              {/* 4-Phase Indicator */}
-              <div className="grid grid-cols-4 gap-1">
-                {[1, 2, 3, 4].map((pNum) => {
+              {hud.bossTelegraphStage && TELEGRAPH_STAGE_META[hud.bossTelegraphStage] && (
+                <div
+                  className={`px-2 py-0.5 rounded border text-[10px] font-bold tracking-wider uppercase ${TELEGRAPH_STAGE_META[hud.bossTelegraphStage].cls}`}
+                >
+                  {TELEGRAPH_STAGE_META[hud.bossTelegraphStage].label}
+                </div>
+              )}
+              {/* Dynamic Phase Indicator */}
+              <div
+                className="grid gap-1"
+                style={{
+                  gridTemplateColumns: `repeat(${Math.max(1, hud.bossTotalPhases)}, minmax(0, 1fr))`,
+                }}
+              >
+                {Array.from({ length: Math.max(1, hud.bossTotalPhases) }).map((_, idx) => {
+                  const pNum = idx + 1;
                   const active = pNum === hud.bossPhase;
                   const cleared = pNum < hud.bossPhase;
                   return (
@@ -380,13 +459,45 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           )}
 
+          {/* Time Trial Survival Clock + Orbs + PB + Next Milestone (§5) */}
           {hud.timeRemaining !== null && (
-            <div className="bg-[#080b16]/94 border border-amber-400/45 rounded-lg px-5 py-2">
-              <div className="text-[11px] text-amber-300 font-semibold tracking-wider">
-                {t(lang, 'mode.timetrial')} · {hud.targetDistance}m
+            <div
+              className={`bg-[#080b16]/95 border rounded-xl px-5 py-2 min-w-[240px] ${
+                hud.timeRemaining <= 8
+                  ? 'border-rose-500/80'
+                  : 'border-amber-400/55'
+              }`}
+            >
+              <div className="flex items-center justify-between gap-3 text-[11px] text-amber-300 font-semibold tracking-wider">
+                <span>
+                  {t(lang, 'mode.timetrial')} · {t(lang, 'hud.timeTrialSurvival')}
+                </span>
+                <span className="text-slate-300 font-mono-num">
+                  {t(lang, 'hud.timeTrialOrbs')}
+                </span>
               </div>
-              <div className="font-mono-num text-2xl font-bold text-white">
-                {hud.timeRemaining.toFixed(1)}s
+              <div className="flex items-baseline justify-center gap-2 mt-0.5">
+                <span
+                  className={`font-mono-num text-2xl font-bold ${
+                    hud.timeRemaining <= 8 ? 'text-rose-300' : 'text-white'
+                  }`}
+                >
+                  {hud.timeRemaining.toFixed(1)}s
+                </span>
+                {hud.timeTrialBonusGain > 0 && (
+                  <span
+                    key={hud.timeTrialGainNonce}
+                    className="font-mono-num text-sm font-bold text-emerald-300 animate-bounce"
+                  >
+                    +{hud.timeTrialBonusGain.toFixed(1)}s
+                  </span>
+                )}
+              </div>
+              <div className="mt-1 pt-1 border-t border-white/10 flex items-center justify-between text-[10px] font-mono-num text-slate-300">
+                <span>PB: {hud.timeTrialPersonalBestSec}s</span>
+                <span className="text-cyan-300">
+                  Meta: {hud.timeTrialMilestoneNextSec}s
+                </span>
               </div>
             </div>
           )}
@@ -534,11 +645,35 @@ export const GameHud: React.FC<GameHudProps> = ({
           </div>
         )}
 
+        {hud.gamepadToastText && (
+          <div
+            key={hud.gamepadToastNonce}
+            className={`rounded-lg px-4 py-1 text-xs font-bold border ${
+              hud.gamepadToastType === 'connected'
+                ? 'bg-[#082419]/95 border-emerald-400/70 text-emerald-200'
+                : 'bg-[#281014]/95 border-rose-400/70 text-rose-200'
+            }`}
+          >
+            {hud.gamepadToastText}
+          </div>
+        )}
+
+        {hud.abilityToastText && (
+          <div
+            key={hud.abilityToastNonce}
+            className="bg-[#1b0b29]/95 border border-fuchsia-400/70 rounded-lg px-4 py-1 text-xs font-bold text-fuchsia-200"
+          >
+            {hud.abilityToastText}
+          </div>
+        )}
+
         {(hud.hasShield ||
           hud.shieldCooldown > 0 ||
           hud.hasMagnet ||
           hud.isRidingVehicle ||
-          hud.vehicleAbilityLocked) && (
+          hud.vehicleAbilityLocked ||
+          hud.companionDroneId ||
+          hud.abilityRestrictedReason) && (
           <div className="flex flex-wrap items-center justify-center gap-4 bg-[#080b16]/94 border border-white/15 rounded-lg px-4 py-1.5 text-xs font-medium">
             {hud.hasShield ? (
               <span className="flex items-center gap-1.5 text-cyan-300">
@@ -555,16 +690,41 @@ export const GameHud: React.FC<GameHudProps> = ({
                 {hud.magnetTimer.toFixed(1)}s
               </span>
             )}
+            {hud.companionDroneId && (
+              <span
+                className={`flex items-center gap-1.5 font-mono-num ${
+                  hud.companionDroneActive
+                    ? 'text-emerald-300 font-bold'
+                    : hud.companionDroneCooldown > 0
+                      ? 'text-slate-400'
+                      : 'text-cyan-300 font-bold'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />{' '}
+                {hud.companionDroneActive
+                  ? `${hud.companionDroneName} ${hud.companionDroneTimeLeft.toFixed(1)}s`
+                  : hud.companionDroneCooldown > 0
+                    ? `Dron CD ${hud.companionDroneCooldown.toFixed(1)}s`
+                    : `[${droneKeyHint}] ${hud.companionDroneName}`}
+              </span>
+            )}
             {hud.isRidingVehicle && (
               <span className="flex items-center gap-1.5 text-amber-300 font-mono-num">
                 <Flame className="w-3.5 h-3.5" /> {activeVehicleName}{' '}
                 {hud.vehicleTimer.toFixed(1)}s
-                {hud.vehicleIsShip ? ' (NAVE · 2x SALTO)' : ' (TERRESTRE)'}
+                {hud.vehicleIsShip
+                  ? ` (NAVE · ALT ${hud.vehicleFlightHeight.toFixed(1)}m)`
+                  : ' (TERRESTRE)'}
               </span>
             )}
             {hud.vehicleAbilityLocked && (
               <span className="text-[11px] font-bold text-rose-300">
                 IMPULSO / SLOW-MO BLOQUEADOS EN VEHÍCULO
+              </span>
+            )}
+            {hud.abilityRestrictedReason && hud.mode === 'parkour' && (
+              <span className="text-[11px] font-bold text-amber-300">
+                {hud.abilityRestrictedReason}
               </span>
             )}
           </div>
@@ -700,30 +860,193 @@ export const GameHud: React.FC<GameHudProps> = ({
             </div>
           </div>
 
-          {/* Signature Ability */}
-          <div className="w-32">
+          {/* Vehicle Battery Energy Gauge (§14.1) */}
+          <div className="w-36">
             <div className="flex items-center justify-between text-[11px] text-slate-300 mb-1">
-              <span className="flex items-center gap-1 font-semibold">
-                <Zap className="w-3 h-3 text-fuchsia-400" /> {t(lang, 'hud.ability')}
+              <span className="flex items-center gap-1 font-semibold truncate">
+                <Flame className="w-3 h-3 text-cyan-300 shrink-0" /> Vehículo
               </span>
-              <span className="font-mono-num">
-                {hud.abilityActive
-                  ? t(lang, 'hud.active')
-                  : hud.abilityCharge >= 99
-                    ? t(lang, 'hud.ready')
-                    : `${hud.abilityCharge}%`}
+              <span
+                className={`font-mono-num font-bold ${
+                  hud.isRidingVehicle
+                    ? 'text-amber-300'
+                    : hud.vehicleReady
+                      ? 'text-emerald-300'
+                      : 'text-slate-300'
+                }`}
+              >
+                {hud.isRidingVehicle
+                  ? `${hud.vehicleTimer.toFixed(0)}s`
+                  : hud.vehicleReady
+                    ? `[${vehicleKeyHint}] LISTO`
+                    : `${Math.round(hud.vehicleEnergy)}/${Math.max(1, hud.vehicleMaxEnergy)}`}
               </span>
             </div>
             <div className="h-1.5 bg-slate-800 rounded overflow-hidden">
               <div
                 className={`h-full transition-all duration-100 ${
-                  hud.abilityCharge >= 99 ? 'bg-fuchsia-400' : 'bg-fuchsia-700'
+                  hud.isRidingVehicle
+                    ? 'bg-amber-400'
+                    : hud.vehicleReady
+                      ? 'bg-emerald-400'
+                      : 'bg-cyan-500'
                 }`}
-                style={{ width: `${hud.abilityCharge}%` }}
+                style={{
+                  width: `${
+                    hud.isRidingVehicle
+                      ? 100
+                      : Math.min(
+                          100,
+                          Math.round(
+                            (hud.vehicleEnergy / Math.max(1, hud.vehicleMaxEnergy)) *
+                              100,
+                          ),
+                        )
+                  }%`,
+                }}
               />
             </div>
           </div>
+
+          {/* Signature Ability bar removed from bottom HUD; abilities notify dynamically via toast */}
         </div>
+
+        {/* Dynamic Corner Tutorial HUD (Top-Left/Side, non-blocking) */}
+        {hud.mode === 'tutorial' && !hud.tutorialEndlessMode && (
+          <div className="pointer-events-auto fixed left-4 bottom-24 z-30 bg-[#071828]/92 backdrop-blur-md border border-cyan-400/70 rounded-xl px-3.5 py-2.5 w-[290px] space-y-1.5 shadow-2xl animate-[fadeIn_0.25s_ease-out]">
+            <div className="flex items-center justify-between gap-2 text-[10px] font-bold text-cyan-300">
+              <span className="flex items-center gap-1">
+                <GraduationCap className="w-3.5 h-3.5" />
+                {t(lang, 'tut.panelTitle')}
+              </span>
+              <span className="font-mono-num text-emerald-300">
+                {hud.tutorialTopicIndex + 1}/{hud.tutorialTotalTopics}{' '}
+                {hud.tutorialProgress ? `(${hud.tutorialProgress})` : ''}
+              </span>
+            </div>
+            <div className="text-xs font-display font-bold text-white">
+              {t(lang, activeTutTopic.titleKey)}
+            </div>
+            <div className="text-[11px] text-slate-200 leading-snug">
+              {t(lang, activeTutTopic.descKey)}
+            </div>
+            <div className="text-[11px] text-amber-300 font-semibold">
+              {hud.tutorialStep || t(lang, activeTutTopic.practiceHintKey)}
+            </div>
+            <div className="flex items-center justify-between gap-1 pt-1 border-t border-white/10">
+              <button
+                type="button"
+                disabled={hud.tutorialTopicIndex <= 0}
+                onClick={() => {
+                  audioEngine.playUiClick();
+                  onTutorialPrev?.();
+                }}
+                className="px-2 py-1 rounded bg-[#0c233a] hover:bg-[#123352] disabled:opacity-40 text-[10px] font-semibold text-slate-200 flex items-center gap-0.5 cursor-pointer"
+              >
+                <ChevronLeft className="w-3 h-3" /> {t(lang, 'tut.prev')}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  audioEngine.playUiClick();
+                  onTutorialTogglePause?.();
+                }}
+                className={`px-2 py-1 rounded text-[10px] font-bold flex items-center gap-1 cursor-pointer ${
+                  hud.tutorialPaused
+                    ? 'bg-emerald-400 text-slate-950'
+                    : 'bg-amber-400/20 border border-amber-400/50 text-amber-200'
+                }`}
+              >
+                {hud.tutorialPaused ? (
+                  <>
+                    <Play className="w-3 h-3 fill-current" /> {t(lang, 'tut.resume')}
+                  </>
+                ) : (
+                  <>
+                    <Pause className="w-3 h-3" /> {t(lang, 'tut.pause')}
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  audioEngine.playUiClick(true);
+                  onTutorialNext?.();
+                }}
+                className="px-2 py-1 rounded bg-cyan-400 hover:bg-cyan-300 text-slate-950 text-[10px] font-bold flex items-center gap-0.5 cursor-pointer"
+              >
+                {hud.tutorialTopicIndex + 1 >= hud.tutorialTotalTopics
+                  ? 'Práctica'
+                  : t(lang, 'tut.next')}
+                <ChevronRight className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        )}
+
+        {hud.mode === 'tutorial' && hud.tutorialEndlessMode && (
+          <div className="pointer-events-auto fixed left-4 bottom-24 z-30 bg-[#071e1a]/95 border border-emerald-400/70 rounded-xl px-3.5 py-2 flex items-center gap-3 text-xs shadow-xl">
+            <span className="font-bold text-emerald-300">PRÁCTICA FÁCIL</span>
+            <button
+              type="button"
+              onClick={() => {
+                audioEngine.playUiClick(true);
+                onTutorialFinish?.();
+              }}
+              className="px-2.5 py-1 rounded bg-emerald-400 hover:bg-emerald-300 text-slate-950 font-bold text-[11px] cursor-pointer"
+            >
+              {t(lang, 'tut.finish')}
+            </button>
+          </div>
+        )}
+
+        {/* On-Screen Controls Hint Bar (Adapts to Keyboard vs Xbox / PlayStation / Nintendo) */}
+        {settings.showOnScreenControls !== false && (
+          <div className="flex flex-wrap items-center justify-center gap-2 bg-black/75 border border-white/15 rounded-lg px-3 py-1 text-[10px] text-slate-200 font-mono-num">
+            {hud.gamepadBrand === 'xbox' ? (
+              <>
+                <span className="text-emerald-300 font-bold">[XBOX]</span>
+                <span>[A] Saltar</span>
+                <span>[B] Deslizar</span>
+                <span>[X] Habilidad</span>
+                <span>[Y] Vehículo</span>
+                <span>[RB] Dron</span>
+                <span>[LB] Slow-Mo</span>
+              </>
+            ) : hud.gamepadBrand === 'playstation' ? (
+              <>
+                <span className="text-sky-300 font-bold">[PLAYSTATION]</span>
+                <span>[✕] Saltar</span>
+                <span>[○] Deslizar</span>
+                <span>[□] Habilidad</span>
+                <span>[△] Vehículo</span>
+                <span>[R1] Dron</span>
+                <span>[L1] Slow-Mo</span>
+              </>
+            ) : hud.gamepadBrand === 'nintendo' ? (
+              <>
+                <span className="text-rose-300 font-bold">[NINTENDO]</span>
+                <span>[B] Saltar</span>
+                <span>[A] Deslizar</span>
+                <span>[Y] Habilidad</span>
+                <span>[X] Vehículo</span>
+                <span>[R] Dron</span>
+                <span>[L] Slow-Mo</span>
+              </>
+            ) : (
+              <>
+                <span className="text-cyan-300 font-bold">[TECLADO]</span>
+                <span>[A/D] Carril</span>
+                <span>[{jumpKeyHint}] Saltar</span>
+                <span>[S/↓] Deslizar</span>
+                <span>[{abilityKeyHint}] Habilidad</span>
+                <span>[{vehicleKeyHint}] Vehículo</span>
+                <span>[G] Dron</span>
+                <span>[{slowMoKeyHint}] Slow-Mo</span>
+              </>
+            )}
+          </div>
+        )}
 
         {/* Accessibility Subtitles / Closed Captions */}
         {settings.subtitles && hud.subtitleText && (

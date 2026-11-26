@@ -235,8 +235,7 @@ export const ModelPreview3D: React.FC<ModelPreview3DProps> = ({
         : null;
 
       if (cachedGlb) {
-        const inst = instantiateGlbRunner(cachedGlb, charDef);
-        inst.modelGroup.rotation.y = Math.PI;
+        const inst = instantiateGlbRunner(cachedGlb, charDef, style);
         subjectHolder.add(inst.modelGroup);
         activeGlbAnim = inst.animState;
         disposers.push(inst.disposeGlb);

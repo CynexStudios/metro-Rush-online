@@ -3,31 +3,25 @@ import {
   Award,
   Backpack,
   BarChart3,
-  Calendar,
   Car,
   Check,
   Cpu,
   Download,
   FileBox,
   Globe,
-  Info,
   Layers,
   Lock,
   Map as MapIcon,
   Play,
   Settings,
-  Shield,
   ShoppingBag,
-  Sparkles,
   Sun,
   Swords,
-  Target,
   Trash2,
   Upload,
   User,
   UserCheck,
   X,
-  Zap,
 } from 'lucide-react';
 import { audioEngine } from '../game/audio';
 import {
@@ -56,7 +50,6 @@ import {
   setCustomBossEnabledState,
   validateAndStoreCustomBossGlb,
 } from '../game/gltfAssets';
-import { ASSET_LICENSES } from '../game/hardware';
 import {
   AccountSyncConflict,
   BossId,
@@ -74,13 +67,12 @@ import {
   TimeOfDay,
   UpdateProgressState,
 } from '../game/types';
-import { GAME_VERSION } from '../game/version';
 import { getCityLabel, getTimeLabel, t } from '../i18n';
 import { OnlineUser, RoomInviteNotice } from '../services/onlineClient';
 import { BattlePassView } from './BattlePassView';
+import { CreditsContent } from './CreditsModal';
 import { GarageView } from './GarageView';
 import { InventoryView } from './InventoryView';
-import { MissionsView } from './MissionsView';
 import { OnlineHubView } from './OnlineHubView';
 import { SettingsCategory, SettingsView } from './SettingsView';
 import { ShopView } from './ShopView';
@@ -145,6 +137,7 @@ interface MainMenuModalProps {
   onStartEvent: (evt: LiveEventDef) => void;
   onStartBossBattle: (bossId: BossId, districtId: DistrictId) => void;
   onStartTutorial: () => void;
+  onOpenCredits?: () => void;
 }
 
 const TIME_OPTIONS: TimeOfDay[] = [
@@ -198,6 +191,7 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
   onStartEvent,
   onStartBossBattle,
   onStartTutorial,
+  onOpenCredits,
 }) => {
   const [tab, setTab] = useState<MenuTab>(initialTab);
   const [eventsSub, setEventsSub] = useState<'bosses' | 'events'>('bosses');
@@ -256,25 +250,16 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
     { id: 'garage', label: t(lang, 'nav.garage'), Icon: Car },
     { id: 'districts', label: t(lang, 'nav.city'), Icon: MapIcon },
     {
-      id: 'missions',
-      label: t(lang, 'nav.missions'),
-      Icon: Target,
-      badge: pending.missions,
-    },
-    {
       id: 'battlepass',
       label: t(lang, 'nav.battlepass'),
       Icon: Award,
-      badge: pending.battlePass,
+      badge: pending.missions + pending.battlePass,
     },
-    { id: 'events', label: t(lang, 'nav.events'), Icon: Calendar },
     { id: 'shop', label: t(lang, 'nav.shop'), Icon: ShoppingBag },
     { id: 'inventory', label: t(lang, 'nav.inventory'), Icon: Backpack },
-    { id: 'stats', label: t(lang, 'nav.stats'), Icon: BarChart3 },
     { id: 'online', label: t(lang, 'nav.online'), Icon: Globe },
     { id: 'profile', label: 'Perfil', Icon: UserCheck },
     { id: 'settings', label: t(lang, 'nav.settings'), Icon: Settings },
-    { id: 'credits', label: t(lang, 'nav.credits'), Icon: Info },
   ];
 
   return (
@@ -713,10 +698,16 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           </>
         )}
 
-        {/* 4. MISSIONS (7 Categories + Achievements) */}
-        {tab === 'missions' && <MissionsView save={save} onUpdateSave={onUpdateSave} />}
+        {/* 4. MISSIONS (Unified inside Runner Pass §17) */}
+        {tab === 'missions' && (
+          <BattlePassView
+            save={save}
+            onUpdateSave={onUpdateSave}
+            initialSubTab="missions"
+          />
+        )}
 
-        {/* 5. BATTLE PASS */}
+        {/* 5. RUNNER PASS (50 Tiers + Missions) */}
         {tab === 'battlepass' && (
           <BattlePassView save={save} onUpdateSave={onUpdateSave} />
         )}
@@ -1169,21 +1160,22 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
           />
         )}
 
-        {/* 10B. UNIFIED USER PROFILE */}
+        {/* 10B. LOCAL USER PROFILE (Includes Stats Sub-Tab) */}
         {tab === 'profile' && (
           <UserProfileView
             save={save}
             serverOnline={serverOnline}
             onlineUser={onlineUser}
             activeLocalProfileId={activeLocalProfileId}
+            diagnostics={diagnostics}
+            liveHud={liveHud}
             onUpdateSave={onUpdateSave}
-            onOnlineUserChange={onOnlineUserChange}
             onSwitchLocalProfile={onSwitchLocalProfile}
             onOpenOnlineTab={() => switchTab('online')}
           />
         )}
 
-        {/* 11. SETTINGS (4 Clean Groups + JSON Backup + Official GitHub Updater) */}
+        {/* 11. SETTINGS (4 Clean Groups + JSON Backup + Official GitHub Updater + Credits) */}
         {tab === 'settings' && (
           <SettingsView
             settings={save.settings}
@@ -1203,94 +1195,12 @@ export const MainMenuModal: React.FC<MainMenuModalProps> = ({
             onVideoChangeWithConfirm={onVideoChangeWithConfirm}
             onRunBenchmark={onRunBenchmark}
             onStartTutorial={onStartTutorial}
+            onOpenCredits={onOpenCredits}
           />
         )}
 
         {/* 12. CREDITS & ASSET LICENSES */}
-        {tab === 'credits' && (
-          <div className="space-y-5 max-w-4xl mx-auto">
-            <div className="border-b border-white/10 pb-3.5 space-y-2">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="font-display text-2xl font-bold text-white">
-                  METRO RUSH: NEON CITY
-                </h2>
-                <span className="font-mono-num text-xs font-semibold text-cyan-300">
-                  v{GAME_VERSION} · Neon Apocalypse Edition
-                </span>
-              </div>
-              <p className="text-xs text-slate-300">
-                Creado y dirigido por{' '}
-                <strong className="text-white">Jaderson Liriano</strong>,{' '}
-                <strong className="text-cyan-300">Líder de XynexDevs</strong>.
-              </p>
-              <p className="text-xs text-slate-400">
-                Motor 3D Three.js PBR con LOD e Instancing, 5 Vehículos 3D (Naves Aéreas y Terrestres), Jefes 3D de 4 Fases con soporte Blender .GLB, Pase de Batalla de 40 Niveles, Parkour de 2 Pisos, Escudos con Onda Expansiva en Cadena, 10 Ciudades (3 y 5 carriles), Audio Procedural Adaptativo, Cuentas Duales SQLite y Multijugador LAN / VPN / Túnel / WebRTC.
-              </p>
-            </div>
-
-            <div className="p-4 rounded-xl bg-[#0b1224] border border-cyan-500/35 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div>
-                <div className="font-display font-bold text-sm text-white">
-                  Créditos Oficiales de Autoría
-                </div>
-                <div className="text-slate-300 mt-0.5">
-                  Dirección, Diseño de Juego y Arquitectura: <strong className="text-white">Jaderson Liriano</strong> (Líder de <strong className="text-cyan-300">XynexDevs</strong>)
-                </div>
-              </div>
-              <div className="font-mono-num text-slate-400">
-                © 2026 Jaderson Liriano · XynexDevs
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-1">
-                <div className="font-bold text-cyan-300 flex items-center gap-1.5">
-                  <Sparkles className="w-4 h-4" /> Gráficos y Shaders
-                </div>
-                <p className="text-slate-300">
-                  Renderizado WebGL2 ACES Filmic, RoomEnvironment IBL, océano GPU animado mediante shader custom y bloom calibrado.
-                </p>
-              </div>
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-1">
-                <div className="font-bold text-fuchsia-300 flex items-center gap-1.5">
-                  <Zap className="w-4 h-4" /> Audio Procedural
-                </div>
-                <p className="text-slate-300">
-                  Secuenciador musical adaptativo (Lobby, Exploración, Persecución y Jefe) con mezcla independiente de 9 canales.
-                </p>
-              </div>
-              <div className="p-4 rounded-xl bg-[#0b1224] border border-white/10 space-y-1">
-                <div className="font-bold text-emerald-300 flex items-center gap-1.5">
-                  <Shield className="w-4 h-4" /> Seguridad y Guardado v3
-                </div>
-                <p className="text-slate-300">
-                  Autenticación scrypt + HMAC SHA-256 + sesiones cifradas con safeStorage, respaldo JSON e invitaciones persistentes en SQLite.
-                </p>
-              </div>
-            </div>
-
-            <div className="rounded-xl bg-[#0b1224] border border-white/10 p-4 space-y-3">
-              <div className="font-display font-bold text-sm text-white">
-                Licencias y Atribuciones de Terceros (Preservadas)
-              </div>
-              <div className="divide-y divide-white/10 text-xs">
-                {ASSET_LICENSES.map((lic) => (
-                  <div key={lic.asset} className="py-2.5 space-y-0.5">
-                    <div className="flex flex-wrap justify-between gap-2">
-                      <span className="font-semibold text-white">{lic.asset}</span>
-                      <span className="text-cyan-300 font-semibold">
-                        {lic.license}
-                      </span>
-                    </div>
-                    <div className="text-slate-400">
-                      {lic.source} · {lic.usage}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        {tab === 'credits' && <CreditsContent />}
       </div>
     </div>
   );

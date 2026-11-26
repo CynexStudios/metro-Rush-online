@@ -9,6 +9,7 @@ import {
   MultiplayerRoomState,
   NetworkConnectionMode,
   PersistentInviteRecord,
+  PlayerModelStyle,
   PlayerSaveData,
   ReleaseUpdateInfo,
   RoomRulesConfig,
@@ -634,6 +635,7 @@ export function mergeSavesWithoutDuplication(
     'quantum_glider',
     'titan_rammer',
     'star_viper',
+    'plasma_bomber',
   ] as VehicleId[];
   const vehicleUpgrades = { ...localSave.vehicleUpgrades };
   for (const v of vehicles) {
@@ -691,11 +693,16 @@ export function mergeSavesWithoutDuplication(
     ownedCosmetics: unionArrays(localSave.ownedCosmetics, onlineSave.ownedCosmetics),
     equippedCosmetics,
     ownedVehicles: unionArrays(localSave.ownedVehicles, onlineSave.ownedVehicles),
-    ownedPets: unionArrays(localSave.ownedPets, onlineSave.ownedPets),
-    equippedPetId:
-      localSave.equippedPetId === undefined
-        ? (onlineSave.equippedPetId ?? null)
-        : localSave.equippedPetId,
+    ownedDrones: unionArrays(localSave.ownedDrones ?? [], onlineSave.ownedDrones ?? []),
+    equippedDroneId:
+      localSave.equippedDroneId === undefined
+        ? (onlineSave.equippedDroneId ?? null)
+        : localSave.equippedDroneId,
+    ownedBoosters: unionArrays(localSave.ownedBoosters ?? [], onlineSave.ownedBoosters ?? []),
+    equippedBoosterId:
+      localSave.equippedBoosterId === undefined
+        ? (onlineSave.equippedBoosterId ?? null)
+        : localSave.equippedBoosterId,
     vehicleUpgrades,
     skillLevels,
     missionProgress,
@@ -712,6 +719,14 @@ export function mergeSavesWithoutDuplication(
     unlockedAchievements: unionArrays(localSave.unlockedAchievements, onlineSave.unlockedAchievements),
     storyChapter: Math.max(localSave.storyChapter, onlineSave.storyChapter),
     tutorialCompleted: localSave.tutorialCompleted || onlineSave.tutorialCompleted,
+    tutorialStepSaved: Math.max(localSave.tutorialStepSaved ?? 0, onlineSave.tutorialStepSaved ?? 0),
+    timeTrialBestByCity: {
+      ...(onlineSave.timeTrialBestByCity ?? {}),
+      ...(localSave.timeTrialBestByCity ?? {}),
+    },
+    freeRunConfig: localSave.freeRunConfig ?? onlineSave.freeRunConfig,
+    lastLaunchedModeConfig:
+      localSave.lastLaunchedModeConfig ?? onlineSave.lastLaunchedModeConfig ?? null,
     battlePass: {
       season: Math.max(localSave.battlePass.season, onlineSave.battlePass.season),
       level: bpLevel,
@@ -1435,11 +1450,20 @@ export function normalizeWsTargetUrl(rawInput?: string): string {
   return url;
 }
 
+export type MpInterferencePayload = {
+  fromUserId: string;
+  fromUsername: string;
+  characterId: string;
+  kind: string;
+  durationSec: number;
+};
+
 export type MpClientListeners = {
   onConnection?: (connected: boolean, selfUserId?: string, targetUrl?: string) => void;
   onRoomState?: (room: MultiplayerRoomState | null) => void;
   onRoomStarted?: (room: MultiplayerRoomState) => void;
   onTelemetry?: (players: MultiplayerPlayerTelemetry[]) => void;
+  onInterference?: (payload: MpInterferencePayload) => void;
   onInvited?: (invite: RoomInviteNotice) => void;
   onNotice?: (message: string, isError?: boolean) => void;
   onHostClosed?: (reason: string) => void;
@@ -1689,6 +1713,11 @@ class MultiplayerWsClient {
             l.onTelemetry?.((p.players as MultiplayerPlayerTelemetry[]) ?? []),
           );
           break;
+        case 'room:interference':
+          this.listeners.forEach((l) =>
+            l.onInterference?.(p as unknown as MpInterferencePayload),
+          );
+          break;
         case 'room:invited':
           this.listeners.forEach((l) => l.onInvited?.(p as unknown as RoomInviteNotice));
           break;
@@ -1871,16 +1900,25 @@ class MultiplayerWsClient {
     x: number;
     y: number;
     z: number;
+    rotY?: number;
     lane: number;
     distance: number;
     score: number;
     action: string;
     paused: boolean;
+    modelStyle?: PlayerModelStyle;
+    isRidingVehicle?: boolean;
+    vehicleId?: VehicleId;
+    abilityActive?: boolean;
     coins?: number;
     eliminations?: number;
     abilityTriggered?: boolean;
   }): void {
     this.send('player:telemetry', data);
+  }
+
+  public sendAbilityInterference(params: { kind: string; durationSec?: number }): void {
+    this.send('player:ability_interference', params);
   }
 
   public sendPauseState(paused: boolean): void {

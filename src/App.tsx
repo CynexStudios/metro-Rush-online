@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AlertTriangle, Check, Globe, Power, RotateCcw } from 'lucide-react';
+import { BootSplashOnboarding } from './components/BootSplashOnboarding';
+import { CreditsModal } from './components/CreditsModal';
 import { GameHud } from './components/GameHud';
 import { MainMenuModal, MenuTab } from './components/MainMenuModal';
+import { ModeConfigModal } from './components/ModeConfigModal';
 import { PauseModal, ResultsModal } from './components/PauseResultsModal';
 import { ReviveModal } from './components/ReviveModal';
 import { SettingsCategory } from './components/SettingsView';
@@ -32,13 +35,13 @@ import {
   HardwareDiagnostics,
   HudSnapshot,
   LiveEventDef,
+  ModeLaunchConfig,
   MultiplayerPlayerTelemetry,
   MultiplayerRoomState,
   PCSettings,
   PlayerSaveData,
   ReleaseUpdateInfo,
   RunSummary,
-  TimeOfDay,
   UpdateProgressState,
 } from './game/types';
 import { t } from './i18n';
@@ -92,6 +95,9 @@ const INITIAL_HUD: HudSnapshot = {
   vehicleAbilityLocked: false,
   abilityCharge: 100,
   abilityActive: false,
+  abilityRestrictedReason: null,
+  abilityToastText: null,
+  abilityToastNonce: 0,
   hasShield: false,
   shieldCooldown: 0,
   shieldMaxCooldown: 16,
@@ -103,8 +109,19 @@ const INITIAL_HUD: HudSnapshot = {
   magnetTimer: 0,
   isRidingVehicle: false,
   vehicleIsShip: false,
+  vehicleFlightHeight: 0,
   vehicleTimer: 0,
+  vehicleEnergy: 0,
+  vehicleMaxEnergy: 100,
+  vehicleReady: false,
+  vehicleActivationCount: 0,
   selectedVehicleId: 'hover_bike',
+  companionDroneId: null,
+  companionDroneName: null,
+  companionDroneActive: false,
+  companionDroneTimeLeft: 0,
+  companionDroneCooldown: 0,
+  companionDroneMaxCooldown: 28,
   talismansHeld: 0,
   reviveTokensHeld: 0,
   talismanUsedRun: false,
@@ -114,11 +131,14 @@ const INITIAL_HUD: HudSnapshot = {
   randomBossActive: false,
   storyChapter: null,
   storyObjectiveText: null,
+  storyDialogueSpeaker: null,
+  storyDialogueText: null,
   parkourFloor: 1,
   parkourChain: 0,
   action: 'idle',
   contextPrompt: null,
   tutorialHint: null,
+  tutorialEndlessMode: false,
   subtitleText: null,
   activeEventBanner: null,
   activeDynamicEvent: null,
@@ -129,15 +149,29 @@ const INITIAL_HUD: HudSnapshot = {
   bossHp: 0,
   bossMaxHp: 0,
   bossPhase: 1,
+  bossTotalPhases: 3,
   bossPhaseName: null,
   bossPhaseHp: 0,
   bossPhaseMaxHp: 0,
+  bossHasShieldGate: false,
+  bossShieldHp: 0,
+  bossShieldMaxHp: 0,
+  bossVulnerableSec: 0,
+  bossSupportDronesCount: 0,
+  bossTelegraphStage: null,
+  bossRadarWarningLanes: [],
+  bossRadarCountdownSec: 0,
+  bossRadarWarningMaxSec: 1.5,
   bossIntroActive: false,
   bossIntroTitle: null,
   bossIntroSubtitle: null,
   bossTransitionActive: false,
   bossDistance: null,
   timeRemaining: null,
+  timeTrialBonusGain: 0,
+  timeTrialGainNonce: 0,
+  timeTrialPersonalBestSec: 0,
+  timeTrialMilestoneNextSec: 45,
   targetDistance: null,
   activeBanner: null,
   lastStuntText: null,
@@ -157,6 +191,7 @@ const INITIAL_HUD: HudSnapshot = {
     bossId: null,
     storyChapter: null,
   },
+  activeModeConfig: null,
   fps: 60,
   frameTimeMs: 16.6,
   drawCalls: 0,
@@ -165,9 +200,18 @@ const INITIAL_HUD: HudSnapshot = {
   perfWarning: null,
   tutorialStep: null,
   tutorialProgress: null,
+  tutorialTopicIndex: 0,
+  tutorialTotalTopics: 8,
+  tutorialPaused: false,
   bossWarningText: null,
   rainEventActive: false,
   difficultyStage: 1,
+  gamepadBrand: 'none',
+  gamepadConnected: false,
+  gamepadName: null,
+  gamepadToastText: null,
+  gamepadToastType: null,
+  gamepadToastNonce: 0,
   isMultiplayer: false,
   mpPlayers: [],
 };
@@ -255,6 +299,25 @@ export default function App() {
   const [showExitConfirm, setShowExitConfirm] = useState(false);
   const [exitingApp, setExitingApp] = useState(false);
   const [browserExitNotice, setBrowserExitNotice] = useState<string | null>(null);
+
+  // v7.0.1 Dedicated Mode Config, Credits & First-Launch Mandatory Tutorial State
+  const [modeConfigModal, setModeConfigModal] = useState<{
+    mode: GameMode;
+    subTab?: 'bosses' | 'events';
+    bossId?: BossId;
+  } | null>(null);
+  const [showCreditsModal, setShowCreditsModal] = useState(false);
+  const [bootSplashDone, setBootSplashDone] = useState(false);
+  const autoTutorialTriggeredRef = useRef(false);
+  const lastLaunchConfigRef = useRef<ModeLaunchConfig | null>(
+    saveRef.current.lastLaunchedModeConfig ?? null,
+  );
+  const hudPhaseRef = useRef(hud.phase);
+  hudPhaseRef.current = hud.phase;
+  const mpRoomRef = useRef(mpRoom);
+  mpRoomRef.current = mpRoom;
+  const menuTabRef = useRef(menuTab);
+  menuTabRef.current = menuTab;
 
   useEffect(() => {
     onlineUserRef.current = onlineUser;
@@ -375,89 +438,107 @@ export default function App() {
       const isUp = await checkServerOnline();
       if (!active) return;
       setServerOnline(isUp);
-      if (!isUp) return;
 
-      // 1. Ensure offline local profile exists in SQLite
-      let resolvedProfileId = activeLocalProfileIdRef.current;
-      const localList = await listLocalProfilesApi();
-      if (!active) return;
+      if (isUp) {
+        // 1. Ensure offline local profile exists in SQLite
+        let resolvedProfileId = activeLocalProfileIdRef.current;
+        const localList = await listLocalProfilesApi();
+        if (!active) return;
 
-      if (localList.ok) {
-        if (
-          resolvedProfileId &&
-          localList.profiles.some((p) => p.id === resolvedProfileId)
-        ) {
-          const loaded = await getLocalProfileApi(resolvedProfileId);
-          if (active && loaded.ok && loaded.save) {
-            const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
-            const localRuns = saveRef.current.stats?.totalRuns ?? 0;
-            if (sqliteRuns > localRuns) {
-              saveRef.current = loaded.save;
-              setSave(loaded.save);
-              persistSaveData(loaded.save);
-              engineRef.current?.syncSaveData(loaded.save);
+        if (localList.ok) {
+          if (
+            resolvedProfileId &&
+            localList.profiles.some((p) => p.id === resolvedProfileId)
+          ) {
+            const loaded = await getLocalProfileApi(resolvedProfileId);
+            if (active && loaded.ok && loaded.save) {
+              const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
+              const localRuns = saveRef.current.stats?.totalRuns ?? 0;
+              if (sqliteRuns > localRuns || loaded.save.tutorialCompleted) {
+                saveRef.current = loaded.save;
+                setSave(loaded.save);
+                persistSaveData(loaded.save);
+                engineRef.current?.syncSaveData(loaded.save);
+              }
             }
-          }
-        } else if (localList.profiles.length > 0) {
-          resolvedProfileId = localList.profiles[0].id;
-          setActiveLocalProfileId(resolvedProfileId);
-          setActiveLocalProfileState(resolvedProfileId);
-          activeLocalProfileIdRef.current = resolvedProfileId;
-          const loaded = await getLocalProfileApi(resolvedProfileId);
-          if (active && loaded.ok && loaded.save) {
-            const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
-            const localRuns = saveRef.current.stats?.totalRuns ?? 0;
-            if (localRuns === 0 && sqliteRuns > 0) {
-              saveRef.current = loaded.save;
-              setSave(loaded.save);
-              persistSaveData(loaded.save);
-              engineRef.current?.syncSaveData(loaded.save);
-            }
-          }
-        } else {
-          const created = await createLocalProfileApi({
-            name: saveRef.current.playerName || 'RUNNER_01',
-            avatarId: saveRef.current.avatarId || 'kai',
-            save: saveRef.current,
-          });
-          if (active && created.ok && created.profile) {
-            resolvedProfileId = created.profile.id;
+          } else if (localList.profiles.length > 0) {
+            resolvedProfileId = localList.profiles[0].id;
             setActiveLocalProfileId(resolvedProfileId);
             setActiveLocalProfileState(resolvedProfileId);
             activeLocalProfileIdRef.current = resolvedProfileId;
+            const loaded = await getLocalProfileApi(resolvedProfileId);
+            if (active && loaded.ok && loaded.save) {
+              const sqliteRuns = loaded.save.stats?.totalRuns ?? 0;
+              const localRuns = saveRef.current.stats?.totalRuns ?? 0;
+              if ((localRuns === 0 && sqliteRuns > 0) || loaded.save.tutorialCompleted) {
+                saveRef.current = loaded.save;
+                setSave(loaded.save);
+                persistSaveData(loaded.save);
+                engineRef.current?.syncSaveData(loaded.save);
+              }
+            }
+          } else {
+            const created = await createLocalProfileApi({
+              name: saveRef.current.playerName || 'RUNNER_01',
+              avatarId: saveRef.current.avatarId || 'kai',
+              save: saveRef.current,
+            });
+            if (active && created.ok && created.profile) {
+              resolvedProfileId = created.profile.id;
+              setActiveLocalProfileId(resolvedProfileId);
+              setActiveLocalProfileState(resolvedProfileId);
+              activeLocalProfileIdRef.current = resolvedProfileId;
+            }
           }
+        }
+
+        // 2. Check optional online account & detect sync conflicts safely (never silent overwrite)
+        const me = await fetchMeOnline();
+        if (!active) return;
+
+        if (me.ok && me.user) {
+          setOnlineUser(me.user);
+          onlineUserRef.current = me.user;
+          mpClient.connect({ guestName: me.user.username });
+
+          const cloudRes = await loadSaveFromSqlite();
+          if (active && cloudRes.ok && cloudRes.hasSave && cloudRes.save) {
+            const conflict = buildAccountConflict({
+              localProfileId: resolvedProfileId || 'local_default',
+              localSave: saveRef.current,
+              onlineUser: me.user,
+              onlineSave: cloudRes.save,
+            });
+            if (conflict.hasConflict && (saveRef.current.stats.totalRuns ?? 0) > 0 && (cloudRes.save.stats?.totalRuns ?? 0) > 0) {
+              setPendingConflict(conflict);
+              setPendingOnlineSave(cloudRes.save);
+            } else if ((saveRef.current.stats.totalRuns ?? 0) === 0) {
+              saveRef.current = cloudRes.save;
+              setSave(cloudRes.save);
+              persistSaveData(cloudRes.save);
+              engineRef.current?.syncSaveData(cloudRes.save);
+            }
+          }
+        } else {
+          mpClient.connect({ guestName: saveRef.current.playerName || 'RUNNER_PC' });
         }
       }
 
-      // 2. Check optional online account & detect sync conflicts safely (never silent overwrite)
-      const me = await fetchMeOnline();
-      if (!active) return;
-
-      if (me.ok && me.user) {
-        setOnlineUser(me.user);
-        onlineUserRef.current = me.user;
-        mpClient.connect({ guestName: me.user.username });
-
-        const cloudRes = await loadSaveFromSqlite();
-        if (active && cloudRes.ok && cloudRes.hasSave && cloudRes.save) {
-          const conflict = buildAccountConflict({
-            localProfileId: resolvedProfileId || 'local_default',
-            localSave: saveRef.current,
-            onlineUser: me.user,
-            onlineSave: cloudRes.save,
-          });
-          if (conflict.hasConflict) {
-            setPendingConflict(conflict);
-            setPendingOnlineSave(cloudRes.save);
-          } else if ((saveRef.current.stats.totalRuns ?? 0) === 0) {
-            saveRef.current = cloudRes.save;
-            setSave(cloudRes.save);
-            persistSaveData(cloudRes.save);
-            engineRef.current?.syncSaveData(cloudRes.save);
-          }
-        }
-      } else {
-        mpClient.connect({ guestName: saveRef.current.playerName || 'RUNNER_PC' });
+      // §14: Mandatory Interactive Tutorial on brand-new installation / first boot (after onboarding)
+      if (
+        active &&
+        saveRef.current.onboardingCompleted &&
+        !autoTutorialTriggeredRef.current &&
+        !saveRef.current.tutorialCompleted &&
+        !mpRoomRef.current &&
+        hudPhaseRef.current === 'title' &&
+        menuTabRef.current === null
+      ) {
+        autoTutorialTriggeredRef.current = true;
+        engineRef.current?.startRunWithConfig({
+          mode: 'tutorial',
+          districtId: 'downtown',
+        });
       }
     })();
     return () => {
@@ -483,15 +564,27 @@ export default function App() {
     };
   }, [hud.phase]);
 
-  // Browser Fullscreen sync when displayMode changes
+  // Browser Fullscreen sync & Keyboard Escape Lock when displayMode changes (§12.1)
   useEffect(() => {
     const mode = save.settings.displayMode;
     try {
       if (mode === 'fullscreen' || mode === 'borderless') {
         if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-          void document.documentElement.requestFullscreen().catch(() => {});
+          void document.documentElement
+            .requestFullscreen()
+            .then(() => {
+              const kb = (navigator as unknown as {
+                keyboard?: { lock?: (keys: string[]) => Promise<void> };
+              }).keyboard;
+              kb?.lock?.(['Escape']).catch(() => {});
+            })
+            .catch(() => {});
         }
       } else if (mode === 'windowed' && document.fullscreenElement) {
+        const kb = (navigator as unknown as {
+          keyboard?: { unlock?: () => void };
+        }).keyboard;
+        kb?.unlock?.();
         void document.exitFullscreen().catch(() => {});
       }
     } catch {
@@ -627,18 +720,22 @@ export default function App() {
       handleConsumableEvent,
     );
     engineRef.current = engine;
+    engine.setMpInterferenceCallback((payload) => {
+      mpClient.sendAbilityInterference({ kind: payload.abilityCategory });
+    });
     setDiagnostics(detectHardwareProfile());
 
     return () => {
       if (transitionTimerRef.current !== null) {
         window.clearTimeout(transitionTimerRef.current);
       }
+      engine.setMpInterferenceCallback(null);
       engine.dispose();
       engineRef.current = null;
     };
   }, [handleRunComplete, handleConsumableEvent]);
 
-  // Sync 3D Showcase Camera based on active menu tab
+  // Sync 3D Showcase Camera based on active menu tab or Boss ModeConfigModal
   useEffect(() => {
     if (!engineRef.current) return;
     let mode: ShowcaseMode = 'title';
@@ -646,8 +743,77 @@ export default function App() {
     else if (menuTab === 'characters') mode = 'characters';
     else if (menuTab === 'districts') mode = 'city';
     else if (menuTab === 'events') mode = 'boss';
+    else if (modeConfigModal?.mode === 'bosschase' && modeConfigModal.subTab !== 'events') {
+      mode = 'boss';
+    }
     engineRef.current.setShowcaseMode(mode, previewBossId);
-  }, [menuTab, previewBossId]);
+  }, [menuTab, previewBossId, modeConfigModal]);
+
+  const handleLaunchModeConfig = useCallback(
+    (config: ModeLaunchConfig, isMpLaunch = false) => {
+      if (!isMpLaunch) {
+        isMpRunRef.current = false;
+        engineRef.current?.enableMultiplayer(null);
+      } else {
+        isMpRunRef.current = true;
+      }
+
+      lastLaunchConfigRef.current = config;
+      if (config.mode !== 'tutorial') {
+        const nextSave: PlayerSaveData = {
+          ...saveRef.current,
+          selectedMode: config.mode,
+          selectedDistrictId: config.districtId ?? saveRef.current.selectedDistrictId,
+          lastLaunchedModeConfig: config,
+          freeRunConfig: config.freeRunConfig ?? saveRef.current.freeRunConfig,
+          storyChapter: config.storyChapter ?? saveRef.current.storyChapter,
+        };
+        updateSave(nextSave);
+      }
+
+      const targetDistrict = config.districtId ?? saveRef.current.selectedDistrictId;
+      const distLabel = getDistrictById(targetDistrict).name;
+      setTransitionText(
+        config.mode === 'tutorial'
+          ? 'Iniciando Tutorial Interactivo (23 Temas)...'
+          : isMpLaunch
+            ? `Sincronizando Carrera Online · ${distLabel}`
+            : config.randomCity
+              ? 'Seleccionando Sector Aleatorio...'
+              : `Desplegando en ${distLabel}...`,
+      );
+      if (transitionTimerRef.current !== null) {
+        window.clearTimeout(transitionTimerRef.current);
+      }
+      transitionTimerRef.current = window.setTimeout(() => {
+        setTransitionText(null);
+      }, 360);
+
+      setModeConfigModal(null);
+      setMenuTab(null);
+      setRunSummary(null);
+      setOnlineStatus(undefined);
+
+      activeRunSessionRef.current = null;
+      void startServerRun(targetDistrict, config.mode).then((sess) => {
+        if (sess) activeRunSessionRef.current = sess;
+      });
+
+      lastRunContextRef.current = {
+        mode: config.mode,
+        districtId: targetDistrict,
+        eventId: config.eventId ?? null,
+        bossId: config.bossId ?? null,
+        storyChapter:
+          config.mode === 'story'
+            ? (config.storyChapter ?? saveRef.current.storyChapter ?? 1)
+            : null,
+      };
+
+      engineRef.current?.startRunWithConfig(config);
+    },
+    [updateSave],
+  );
 
   const handleStartGame = useCallback(
     (
@@ -688,61 +854,37 @@ export default function App() {
         targetDistrict = saveRef.current.selectedDistrictId;
       }
 
-      if (!isMpLaunch) {
-        isMpRunRef.current = false;
-        engineRef.current?.enableMultiplayer(null);
-      } else {
-        isMpRunRef.current = true;
-      }
-
-      const distLabel = getDistrictById(targetDistrict).name;
-      setTransitionText(
-        targetMode === 'tutorial'
-          ? 'Iniciando Tutorial Interactivo...'
-          : isMpLaunch
-            ? `Sincronizando Carrera Online · ${distLabel}`
-            : `Desplegando en ${distLabel}...`,
-      );
-      if (transitionTimerRef.current !== null) {
-        window.clearTimeout(transitionTimerRef.current);
-      }
-      transitionTimerRef.current = window.setTimeout(() => {
-        setTransitionText(null);
-      }, 360);
-
-      setMenuTab(null);
-      setRunSummary(null);
-      setOnlineStatus(undefined);
-
-      // Start signed online run token in background if authenticated
-      activeRunSessionRef.current = null;
-      void startServerRun(targetDistrict, targetMode).then((sess) => {
-        if (sess) activeRunSessionRef.current = sess;
-      });
-
-      lastRunContextRef.current = {
-        mode: targetMode,
-        districtId: targetDistrict,
-        eventId: eventId ?? null,
-        bossId: bossOverride ?? null,
-        storyChapter:
-          targetMode === 'story'
-            ? (storyChapterOverride ?? saveRef.current.storyChapter ?? 1)
-            : null,
-      };
-
-      engineRef.current?.startRun(
-        targetMode,
-        targetDistrict,
-        eventId,
-        bossOverride,
-        storyChapterOverride,
+      handleLaunchModeConfig(
+        {
+          mode: targetMode,
+          districtId: targetDistrict,
+          randomCity: !districtOverride && !bossOverride && saveRef.current.settings.randomMap,
+          eventId: eventId ?? null,
+          bossId: bossOverride,
+          storyChapter:
+            targetMode === 'story'
+              ? (storyChapterOverride ?? saveRef.current.storyChapter ?? 1)
+              : undefined,
+          difficulty: saveRef.current.settings.difficulty,
+        },
+        isMpLaunch,
       );
     },
-    [],
+    [handleLaunchModeConfig],
   );
 
   const handleRestartCurrentRun = useCallback(() => {
+    setRunSummary(null);
+    setOnlineStatus(undefined);
+    if (engineRef.current) {
+      engineRef.current.restartRun();
+      return;
+    }
+    const lastCfg = lastLaunchConfigRef.current;
+    if (lastCfg) {
+      handleLaunchModeConfig(lastCfg);
+      return;
+    }
     const ctx = lastRunContextRef.current;
     handleStartGame(
       ctx.districtId,
@@ -751,7 +893,7 @@ export default function App() {
       ctx.bossId ?? undefined,
       ctx.storyChapter ?? undefined,
     );
-  }, [handleStartGame]);
+  }, [handleLaunchModeConfig, handleStartGame]);
 
   const handleCheckForUpdates = useCallback(async (repo?: string) => {
     setUpdateState((prev) => ({
@@ -840,6 +982,7 @@ export default function App() {
         if (selfUserId) {
           setMpSelfId(selfUserId);
           mpSelfIdRef.current = selfUserId;
+          rtcClient.setLocalUserId(selfUserId);
         }
       },
       onRoomState: (room) => {
@@ -864,6 +1007,13 @@ export default function App() {
       onTelemetry: (players) => {
         mpPlayersRef.current = players;
         engineRef.current?.updateRemotePlayers(players);
+      },
+      onInterference: (payload) => {
+        engineRef.current?.applyRemoteInterference({
+          fromUsername: payload.fromUsername,
+          characterId: payload.characterId,
+          abilityCategory: payload.kind,
+        });
       },
       onInvited: (invite) => {
         setMpInvite(invite);
@@ -968,32 +1118,29 @@ export default function App() {
     }
   }, [hud.isMultiplayer, hud.phase]);
 
-  const handleContinueStory = useCallback(
-    (storyChapterOverride?: number) => {
-      const chNum = storyChapterOverride ?? saveRef.current.storyChapter ?? 1;
-      const chapterDef =
-        STORY_CHAPTERS.find((c) => c.chapter === chNum) ?? STORY_CHAPTERS[0];
-      const chapterDistrict = chapterDef.districtId;
-      const unlocked = saveRef.current.unlockedDistricts.includes(chapterDistrict)
-        ? chapterDistrict
-        : saveRef.current.selectedDistrictId;
-      handleStartGame(unlocked, 'story', null, undefined, chNum);
-    },
-    [handleStartGame],
-  );
-
   const handleStartEvent = useCallback(
     (evt: LiveEventDef) => {
-      handleStartGame(evt.districtId, evt.mode, evt.id, evt.bossId);
+      handleLaunchModeConfig({
+        mode: evt.mode,
+        districtId: evt.districtId,
+        eventId: evt.id,
+        bossId: evt.bossId,
+        difficulty: saveRef.current.settings.difficulty,
+      });
     },
-    [handleStartGame],
+    [handleLaunchModeConfig],
   );
 
   const handleStartBossBattle = useCallback(
     (bossId: BossId, districtId: DistrictId) => {
-      handleStartGame(districtId, 'bosschase', null, bossId);
+      handleLaunchModeConfig({
+        mode: 'bosschase',
+        districtId,
+        bossId,
+        difficulty: saveRef.current.settings.difficulty,
+      });
     },
-    [handleStartGame],
+    [handleLaunchModeConfig],
   );
 
   const handleRunBenchmark = useCallback(async () => {
@@ -1002,25 +1149,6 @@ export default function App() {
     setDiagnostics(detectHardwareProfile(undefined, avgMs));
     return avgMs;
   }, []);
-
-  // Enter / Space launches & Escape opens Exit confirmation on Title Screen
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (hud.phase === 'title' && menuTab === null && !pendingVideoRevert) {
-        if (e.code === 'Escape') {
-          e.preventDefault();
-          setShowExitConfirm((v) => !v);
-          return;
-        }
-        if ((e.code === 'Enter' || e.code === 'Space') && !showExitConfirm) {
-          e.preventDefault();
-          handleStartGame();
-        }
-      }
-    };
-    window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [hud.phase, menuTab, pendingVideoRevert, showExitConfirm, handleStartGame]);
 
   const handleConfirmExitGame = useCallback(async () => {
     if (exitingApp) return;
@@ -1067,68 +1195,12 @@ export default function App() {
     }
   }, [updateSave, hud.phase]);
 
-  const handleToggleLobbyMusic = useCallback(() => {
-    const cur = saveRef.current;
-    const nextEnabled = !cur.settings.lobbyMusicEnabled;
-    updateSave({
-      ...cur,
-      settings: {
-        ...cur.settings,
-        lobbyMusicEnabled: nextEnabled,
-      },
-    });
-    audioEngine.unlock();
-    audioEngine.startLobbyMusicIfAllowed(nextEnabled && !cur.settings.muted);
-  }, [updateSave]);
-
   const handleSelectMode = useCallback(
     (mode: GameMode) => {
       updateSave({ ...saveRef.current, selectedMode: mode });
     },
     [updateSave],
   );
-
-  const handleSelectDistrict = useCallback(
-    (districtId: DistrictId) => {
-      if (!saveRef.current.unlockedDistricts.includes(districtId)) return;
-      updateSave({ ...saveRef.current, selectedDistrictId: districtId });
-    },
-    [updateSave],
-  );
-
-  const handleSelectTimeOfDay = useCallback(
-    (timeOfDay: TimeOfDay) => {
-      updateSave({
-        ...saveRef.current,
-        settings: {
-          ...saveRef.current.settings,
-          timeOfDay,
-          randomWeather: false,
-        },
-      });
-    },
-    [updateSave],
-  );
-
-  const handleToggleRandomMap = useCallback(() => {
-    updateSave({
-      ...saveRef.current,
-      settings: {
-        ...saveRef.current.settings,
-        randomMap: !saveRef.current.settings.randomMap,
-      },
-    });
-  }, [updateSave]);
-
-  const handleToggleRandomWeather = useCallback(() => {
-    updateSave({
-      ...saveRef.current,
-      settings: {
-        ...saveRef.current.settings,
-        randomWeather: !saveRef.current.settings.randomWeather,
-      },
-    });
-  }, [updateSave]);
 
   const colorblindFilterClass =
     save.settings.colorblindMode === 'deuteranopia'
@@ -1148,20 +1220,86 @@ export default function App() {
 
   const fontClass = save.settings.legibleFont ? 'tracking-wide' : '';
 
-  const handleQuitToTitle = useCallback(() => {
-    setRunSummary(null);
-    if (isMpRunRef.current) {
-      isMpRunRef.current = false;
-      mpClient.leaveRoom();
-    }
-    engineRef.current?.enableMultiplayer(null);
-    engineRef.current?.returnToTitle();
-  }, []);
+  const handleQuitToTitle = useCallback(
+    (openModeConfigScreen = true) => {
+      const returnMode = runSummary?.mode ?? hud.mode;
+      const returnEvent = runSummary?.activeRunContext.eventId ?? hud.activeRunContext.eventId;
+      const wasMp = isMpRunRef.current;
+      setRunSummary(null);
+      if (wasMp) {
+        isMpRunRef.current = false;
+        mpClient.leaveRoom();
+      }
+      engineRef.current?.enableMultiplayer(null);
+      engineRef.current?.returnToTitle();
+      if (openModeConfigScreen && !wasMp && returnMode !== 'tutorial') {
+        setModeConfigModal({
+          mode: returnMode,
+          subTab: returnEvent ? 'events' : 'bosses',
+        });
+      } else {
+        setModeConfigModal(null);
+      }
+    },
+    [runSummary, hud.mode, hud.activeRunContext.eventId],
+  );
 
   const openMenuFromResults = (targetTab: MenuTab) => {
-    handleQuitToTitle();
+    handleQuitToTitle(false);
     setMenuTab(targetTab);
   };
+
+  // Centralized Escape stack (§12 + §13.3): never leaks out of active menus or Revive screen
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.code !== 'Escape') return;
+      if (pendingVideoRevert) return;
+      if (showCreditsModal) {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowCreditsModal(false);
+        return;
+      }
+      if (menuTab !== null) {
+        e.preventDefault();
+        e.stopPropagation();
+        setMenuTab(null);
+        return;
+      }
+      if (modeConfigModal !== null && hud.phase === 'title') {
+        e.preventDefault();
+        e.stopPropagation();
+        setModeConfigModal(null);
+        return;
+      }
+      if (hud.phase === 'reviving') {
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      if ((hud.phase === 'gameover' || hud.phase === 'victory') && runSummary) {
+        e.preventDefault();
+        e.stopPropagation();
+        handleQuitToTitle(true);
+        return;
+      }
+      if (hud.phase === 'title') {
+        e.preventDefault();
+        e.stopPropagation();
+        setShowExitConfirm((v) => !v);
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [
+    pendingVideoRevert,
+    showCreditsModal,
+    menuTab,
+    modeConfigModal,
+    hud.phase,
+    runSummary,
+    handleQuitToTitle,
+  ]);
 
   return (
     <div
@@ -1186,22 +1324,31 @@ export default function App() {
             setMenuTab('settings');
           }}
           onSelectMode={handleSelectMode}
-          onSelectDistrict={handleSelectDistrict}
-          onSelectTimeOfDay={handleSelectTimeOfDay}
-          onToggleRandomMap={handleToggleRandomMap}
-          onToggleRandomWeather={handleToggleRandomWeather}
-          onStartGame={(storyCh) =>
-            handleStartGame(undefined, undefined, null, undefined, storyCh)
+          onOpenModeConfig={(mode, subTab) => {
+            setModeConfigModal({ mode, subTab });
+          }}
+          onStartTutorial={() =>
+            handleLaunchModeConfig({ mode: 'tutorial', districtId: 'downtown' })
           }
-          onStartTutorial={() => handleStartGame('downtown', 'tutorial')}
-          onContinueStory={handleContinueStory}
           onOpenTab={(tab) => {
             setSettingsCategory('graphics_video');
             setMenuTab(tab);
           }}
-          onToggleMute={handleToggleMute}
-          onToggleLobbyMusic={handleToggleLobbyMusic}
           onRequestExit={() => setShowExitConfirm(true)}
+        />
+      )}
+
+      {/* Mode Dedicated Setup Screen (§9) */}
+      {hud.phase === 'title' && menuTab === null && modeConfigModal && (
+        <ModeConfigModal
+          mode={modeConfigModal.mode}
+          save={save}
+          initialBossId={modeConfigModal.bossId}
+          initialSubTab={modeConfigModal.subTab}
+          onClose={() => setModeConfigModal(null)}
+          onUpdateSave={updateSave}
+          onLaunchMode={(cfg) => handleLaunchModeConfig(cfg)}
+          onLaunchEvent={handleStartEvent}
         />
       )}
 
@@ -1270,6 +1417,10 @@ export default function App() {
           settings={save.settings}
           onToggleMute={handleToggleMute}
           onPause={() => engineRef.current?.setPaused(true)}
+          onTutorialPrev={() => engineRef.current?.advanceTutorialTopic(-1)}
+          onTutorialNext={() => engineRef.current?.advanceTutorialTopic(1)}
+          onTutorialTogglePause={() => engineRef.current?.toggleTutorialPause()}
+          onTutorialFinish={() => engineRef.current?.advanceTutorialTopic(99)}
         />
       )}
 
@@ -1297,7 +1448,7 @@ export default function App() {
             setSettingsCategory('graphics_video');
             setMenuTab('settings');
           }}
-          onQuitToTitle={handleQuitToTitle}
+          onQuitToTitle={() => handleQuitToTitle(true)}
         />
       )}
 
@@ -1314,7 +1465,7 @@ export default function App() {
             onOpenMissions={() => openMenuFromResults('missions')}
             onOpenStats={() => openMenuFromResults('stats')}
             onOpenShop={() => openMenuFromResults('shop')}
-            onQuitToTitle={handleQuitToTitle}
+            onQuitToTitle={() => handleQuitToTitle(true)}
           />
         )}
 
@@ -1361,12 +1512,24 @@ export default function App() {
           onClose={() => setMenuTab(null)}
           onDeployDistrict={(districtId) => {
             updateSave({ ...saveRef.current, selectedDistrictId: districtId });
-            handleStartGame(districtId);
+            handleLaunchModeConfig({
+              mode: 'endless',
+              districtId,
+              difficulty: saveRef.current.settings.difficulty,
+            });
           }}
           onStartEvent={handleStartEvent}
           onStartBossBattle={handleStartBossBattle}
-          onStartTutorial={() => handleStartGame('downtown', 'tutorial')}
+          onStartTutorial={() =>
+            handleLaunchModeConfig({ mode: 'tutorial', districtId: 'downtown' })
+          }
+          onOpenCredits={() => setShowCreditsModal(true)}
         />
+      )}
+
+      {/* Dedicated Credits & Licenses Modal (§21) */}
+      {showCreditsModal && (
+        <CreditsModal onClose={() => setShowCreditsModal(false)} />
       )}
 
       {/* Smooth Run Launch Transition Overlay */}
@@ -1472,6 +1635,39 @@ export default function App() {
             Cerrar
           </button>
         </div>
+      )}
+
+      {!bootSplashDone && (
+        <BootSplashOnboarding
+          save={save}
+          onFinish={(updates) => {
+            const nextSave: PlayerSaveData = {
+              ...saveRef.current,
+              onboardingCompleted: updates.onboardingCompleted,
+              playerAgeGroup: updates.playerAgeGroup ?? saveRef.current.playerAgeGroup,
+              runnerExperience: updates.runnerExperience ?? saveRef.current.runnerExperience,
+              settings: updates.recommendedQuality
+                ? { ...saveRef.current.settings, graphicsQuality: updates.recommendedQuality }
+                : saveRef.current.settings,
+            };
+            updateSave(nextSave);
+            setBootSplashDone(true);
+            if (updates.openOnlineAccount) {
+              setMenuTab('online');
+            } else if (
+              !nextSave.tutorialCompleted &&
+              !autoTutorialTriggeredRef.current &&
+              !mpRoomRef.current &&
+              hudPhaseRef.current === 'title'
+            ) {
+              autoTutorialTriggeredRef.current = true;
+              engineRef.current?.startRunWithConfig({
+                mode: 'tutorial',
+                districtId: 'downtown',
+              });
+            }
+          }}
+        />
       )}
     </div>
   );
